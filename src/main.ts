@@ -215,25 +215,111 @@ function createWarehousePallets(): void {
   deckMaterial.specularPower = 64;
   deck.material = deckMaterial;
 
-  const transforms: number[] = [];
+  const crateParts: Mesh[] = [];
+  const crateBody = MeshBuilder.CreateBox('cargo-crate-body', { width: 0.56, height: 0.48, depth: 0.56 }, scene);
+  crateBody.position.y = 1.25;
+  crateParts.push(crateBody);
+  for (const x of [-0.255, 0.255]) {
+    for (const z of [-0.255, 0.255]) {
+      const brace = MeshBuilder.CreateBox('cargo-crate-brace', { width: 0.045, height: 0.52, depth: 0.045 }, scene);
+      brace.position.set(x, 1.25, z);
+      crateParts.push(brace);
+    }
+  }
+  for (const z of [-0.23, 0.23]) {
+    const batten = MeshBuilder.CreateBox('cargo-crate-batten', { width: 0.6, height: 0.045, depth: 0.055 }, scene);
+    batten.position.set(0, 1.51, z);
+    crateParts.push(batten);
+  }
+  const crate = Mesh.MergeMeshes(crateParts, true, true, undefined, false, true)!;
+  crate.name = 'cargo-crates';
+  const crateMaterial = new StandardMaterial('cargo-crate-material', scene);
+  crateMaterial.diffuseColor = Color3.FromHexString('#a96832');
+  crateMaterial.emissiveColor = Color3.FromHexString('#261307');
+  crateMaterial.specularColor = Color3.FromHexString('#d7a064');
+  crateMaterial.specularPower = 28;
+  crate.material = crateMaterial;
+
+  const cartonParts: Mesh[] = [];
+  for (const x of [-0.165, 0.165]) {
+    const carton = MeshBuilder.CreateBox('cargo-carton-lower', { width: 0.3, height: 0.32, depth: 0.52 }, scene);
+    carton.position.set(x, 1.15, 0);
+    cartonParts.push(carton);
+  }
+  const upperCarton = MeshBuilder.CreateBox('cargo-carton-upper', { width: 0.5, height: 0.28, depth: 0.42 }, scene);
+  upperCarton.position.set(0, 1.46, 0);
+  cartonParts.push(upperCarton);
+  const cartons = Mesh.MergeMeshes(cartonParts, true, true, undefined, false, true)!;
+  cartons.name = 'cargo-cartons';
+  const cartonMaterial = new StandardMaterial('cargo-carton-material', scene);
+  cartonMaterial.diffuseColor = Color3.FromHexString('#b98b5e');
+  cartonMaterial.emissiveColor = Color3.FromHexString('#291b10');
+  cartonMaterial.specularColor = Color3.FromHexString('#d7bd97');
+  cartonMaterial.specularPower = 20;
+  cartons.material = cartonMaterial;
+
+  const drumParts: Mesh[] = [];
+  for (const x of [-0.15, 0.15]) {
+    for (const z of [-0.15, 0.15]) {
+      const drum = MeshBuilder.CreateCylinder('cargo-drum', {
+        height: 0.48,
+        diameter: 0.23,
+        tessellation: 12,
+      }, scene);
+      drum.position.set(x, 1.24, z);
+      drumParts.push(drum);
+      for (const y of [1.04, 1.44]) {
+        const band = MeshBuilder.CreateTorus('cargo-drum-band', {
+          diameter: 0.2,
+          thickness: 0.025,
+          tessellation: 12,
+        }, scene);
+        band.position.set(x, y, z);
+        drumParts.push(band);
+      }
+    }
+  }
+  const drums = Mesh.MergeMeshes(drumParts, true, true, undefined, false, true)!;
+  drums.name = 'cargo-drums';
+  const drumMaterial = new StandardMaterial('cargo-drum-material', scene);
+  drumMaterial.diffuseColor = Color3.FromHexString('#296d78');
+  drumMaterial.emissiveColor = Color3.FromHexString('#09252d');
+  drumMaterial.specularColor = Color3.FromHexString('#70c8d8');
+  drumMaterial.specularPower = 52;
+  drums.material = drumMaterial;
+
+  const palletTransforms: number[] = [];
+  const crateTransforms: number[] = [];
+  const cartonTransforms: number[] = [];
+  const drumTransforms: number[] = [];
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
   for (let gx = 6; gx < MAP_WIDTH - 5; gx += 9) {
     for (let gz = 5; gz < MAP_DEPTH - 4; gz += 8) {
       for (let x = gx; x <= gx + 1; x++) {
         for (let z = gz - 2; z <= gz + 3; z++) {
-          Matrix.Translation(
+          const transform = Matrix.Translation(
             (x + 0.5) * CELL_SIZE - halfW,
             0,
             (z + 0.5) * CELL_SIZE - halfD,
-          ).copyToArray(transforms, transforms.length);
+          );
+          transform.copyToArray(palletTransforms, palletTransforms.length);
+          const cargoTransforms = (x * 31 + z * 17) % 3 === 0
+            ? crateTransforms
+            : (x * 31 + z * 17) % 3 === 1
+              ? cartonTransforms
+              : drumTransforms;
+          transform.copyToArray(cargoTransforms, cargoTransforms.length);
         }
       }
     }
   }
-  const palletTransforms = new Float32Array(transforms);
-  frame.thinInstanceSetBuffer('matrix', palletTransforms, 16, true);
-  deck.thinInstanceSetBuffer('matrix', palletTransforms, 16, true);
+  const palletMatrices = new Float32Array(palletTransforms);
+  frame.thinInstanceSetBuffer('matrix', palletMatrices, 16, true);
+  deck.thinInstanceSetBuffer('matrix', palletMatrices, 16, true);
+  crate.thinInstanceSetBuffer('matrix', new Float32Array(crateTransforms), 16, true);
+  cartons.thinInstanceSetBuffer('matrix', new Float32Array(cartonTransforms), 16, true);
+  drums.thinInstanceSetBuffer('matrix', new Float32Array(drumTransforms), 16, true);
 }
 
 function createBoundaryLights(): void {
