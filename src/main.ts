@@ -600,8 +600,8 @@ function createCarriedPalletMeshes(): {
 }
 
 function createUnloadingZone(): {
-  trigger: (stationZ: number, cargoType: number, startedAt: number, durationMs: number) => void;
-  update: (now: number) => CargoTransfer[];
+  trigger: (stationZ: number, cargoType: number, startedStep: number) => void;
+  update: (simulationStep: number) => CargoTransfer[];
   reset: () => void;
 } {
   const pad = MeshBuilder.CreateBox('unloading-pad', {
@@ -735,7 +735,7 @@ function createUnloadingZone(): {
     mesh.alwaysSelectAsActiveMesh = true;
   }
 
-  type ArmEvent = { startedAt: number; cargoType: number; durationMs: number };
+  type ArmEvent = { startedStep: number; cargoType: number };
   type Point = { x: number; y: number };
   type Pose = { elbow: Point; grip: Point };
   const events = new Map<number, ArmEvent>();
@@ -755,7 +755,7 @@ function createUnloadingZone(): {
     );
   };
 
-  const update = (now: number): CargoTransfer[] => {
+  const update = (simulationStep: number): CargoTransfer[] => {
     const transfers: CargoTransfer[] = [];
     for (let index = 0; index < UNLOAD_STATION_COUNT; index++) {
       const stationZ = UNLOAD_MIN_Z + index;
@@ -779,7 +779,9 @@ function createUnloadingZone(): {
         grip: { x: armWorld.x + 0.31, y: 1.67 },
       };
       const event = events.get(stationZ);
-      const progress = event ? Math.max(0, (now - event.startedAt) / event.durationMs) : 0;
+      const progress = event
+        ? Math.max(0, (simulationStep - event.startedStep) / UNLOAD_DWELL_TICKS)
+        : 0;
       let pose = parked;
       if (event) {
         if (progress < 0.32) pose = mixPose(parked, reached, progress / 0.32);
@@ -821,9 +823,9 @@ function createUnloadingZone(): {
 
   update(0);
   return {
-    trigger: (stationZ, cargoType, startedAt, durationMs) => {
+    trigger: (stationZ, cargoType, startedStep) => {
       if (stationZ < UNLOAD_MIN_Z || stationZ > UNLOAD_MAX_Z) return;
-      events.set(stationZ, { startedAt, cargoType, durationMs });
+      events.set(stationZ, { startedStep, cargoType });
     },
     update,
     reset: () => events.clear(),
@@ -906,7 +908,7 @@ function writeTransform(
 }
 
 function updateFallback(time: number): void {
-  unloadingScene.update(performance.now());
+  unloadingScene.update(time / FALLBACK_STEP_SECONDS);
   selectionHalo.isVisible = false;
   hideTaskMarkers();
   const step = time / FALLBACK_STEP_SECONDS;
@@ -932,10 +934,11 @@ function resetHandoffAnimations(): void {
 
 function updateLive(now: number): void {
   if (!liveCurrent) return;
-  const transfers = unloadingScene.update(now);
   const from = livePrevious ?? liveCurrent;
   const frameDurationMs = 1000 / Math.max(0.1, liveTickRate * speed);
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
+  const simulationStep = from.step + (liveCurrent.step - from.step) * alpha;
+  const transfers = unloadingScene.update(simulationStep);
   let loadedCount = 0;
   const cargoCounts = [0, 0, 0];
   loadAgentIds.fill(-1);
@@ -1097,8 +1100,7 @@ function parseFrame(buffer: ArrayBuffer): void {
         unloadingScene.trigger(
           pending.stationZ,
           palletCells[pending.palletId].cargoType,
-          receivedAt,
-          UNLOAD_DWELL_TICKS * 1000 / Math.max(0.1, liveTickRate * speed),
+          priorFrame.step,
         );
         stats.handoffs += 1;
         setAgentColor(id, statuses[id] | 4);
