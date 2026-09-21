@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050b13" />
+    <title>MAPF // Operations Deck</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="scene" aria-label="3D MAPF simulation"></canvas>
+
+      <header class="topbar glass">
+        <div class="brand">
+          <span class="brand-mark"><i></i><i></i><i></i></span>
+          <div>
+            <strong>MAPF // OPERATIONS</strong>
+            <small>Multi-agent pathfinding laboratory</small>
+          </div>
+        </div>
+        <div class="connection"><span class="pulse"></span><span id="source-label">DEMO SOURCE</span></div>
+      </header>
+
+      <aside class="stats glass">
+        <p class="eyebrow">LIVE TELEMETRY</p>
+        <div class="metric major"><span id="agents-value">1,000</span><small>ACTIVE AGENTS</small></div>
+        <div class="metric-row">
+          <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
+          <div class="metric"><span id="step-value">0</span><small>STEP</small></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
+          <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
+        </div>
+        <div class="sparkline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </aside>
+
+      <aside class="legend glass">
+        <p class="eyebrow">STATUS</p>
+        <span><i class="cyan"></i>En route</span>
+        <span><i class="violet"></i>Replanned</span>
+        <span><i class="amber"></i>Waiting</span>
+      </aside>
+
+      <section class="controls glass">
+        <button id="pause-button" class="primary" type="button"><span id="pause-icon">Ⅱ</span><span id="pause-label">PAUSE</span></button>
+        <label>
+          <span>AGENTS</span>
+          <select id="agent-count">
+            <option value="1000" selected>1,000</option>
+            <option value="2500">2,500</option>
+            <option value="5000">5,000</option>
+          </select>
+        </label>
+        <label class="speed-control">
+          <span>SPEED <output id="speed-value">1.0×</output></span>
+          <input id="speed" type="range" min="0.25" max="3" value="1" step="0.25" />
+        </label>
+        <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
+      </section>
+
+      <div class="hint">DRAG TO ORBIT · SCROLL TO ZOOM</div>
+      <div class="scanline"></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+
