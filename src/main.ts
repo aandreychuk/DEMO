@@ -17,7 +17,8 @@ import './style.css';
 
 const MAP_WIDTH = 44;
 const MAP_DEPTH = 32;
-const CELL_SIZE = 0.9;
+const CELL_SIZE = 1.056;
+const PALLET_FOOTPRINT = 0.792;
 const MAX_AGENTS = 100;
 const UNLOAD_X = MAP_WIDTH - 3;
 const UNLOAD_MIN_Z = 1;
@@ -87,10 +88,10 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.018, 0.035, 0.055, 1);
 scene.ambientColor = new Color3(0.09, 0.15, 0.2);
 
-const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 32, new Vector3(0, 0, 0), scene);
+const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 37.5, new Vector3(0, 0, 0), scene);
 camera.attachControl(canvas, true);
 camera.lowerRadiusLimit = 12;
-camera.upperRadiusLimit = 58;
+camera.upperRadiusLimit = 68;
 camera.lowerBetaLimit = 0.28;
 camera.upperBetaLimit = 1.38;
 camera.wheelPrecision = 28;
@@ -467,7 +468,7 @@ function goodsTransform(
 }
 
 function createPalletVisual(prefix: string): { frame: Mesh; deck: Mesh } {
-  const footprint = CELL_SIZE * 0.88;
+  const footprint = PALLET_FOOTPRINT;
   const half = footprint / 2;
   const legOffset = half - 0.09;
   const frameParts: Mesh[] = [];
@@ -1771,7 +1772,7 @@ document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (e
 document.querySelector('#reset-camera')!.addEventListener('click', () => {
   camera.alpha = -Math.PI / 4;
   camera.beta = 1.02;
-  camera.radius = 32;
+  camera.radius = 37.5;
   camera.target.set(0, 0, 0);
 });
 

@@ -6,6 +6,10 @@ locally in the native process. The browser receives compact state frames over a
 loopback WebSocket and renders the 100-agent lifelong warehouse with Babylon.js
 thin instances.
 
+The visual cell pitch is larger than the physical robot and pallet footprint.
+A pallet occupies about 75% of its cell, leaving visible clearance while two
+loaded agents follow adjacent paths or interpolate through an L-shaped turn.
+
 Each generated task starts with three goals: pick up a pallet, deliver it to an
 unloading station, and return it to its original cell. Every pallet holds 12
 separate goods. The unloading arm removes one item per delivery. When that item
