@@ -73,10 +73,14 @@ createUnloadingZone();
 createBoundaryLights();
 
 const robotMesh = createRobotMesh();
-const robotLoad = createRobotLoadMeshes();
+const robotLoad = createCarriedPalletMeshes();
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
-const cargoMatrices = new Float32Array(MAX_AGENTS * 16);
+const cargoMatrices = [
+  new Float32Array(MAX_AGENTS * 16),
+  new Float32Array(MAX_AGENTS * 16),
+  new Float32Array(MAX_AGENTS * 16),
+];
 const colors = new Float32Array(MAX_AGENTS * 4);
 const cells = buildFreeCells();
 let agentCount = 100;
@@ -95,10 +99,14 @@ for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
 robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
 robotMesh.thinInstanceCount = agentCount;
-robotLoad.pallet.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
-robotLoad.cargo.thinInstanceSetBuffer('matrix', cargoMatrices, 16, false);
-robotLoad.pallet.thinInstanceCount = 0;
-robotLoad.cargo.thinInstanceCount = 0;
+robotLoad.frame.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
+robotLoad.deck.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
+for (let type = 0; type < robotLoad.cargo.length; type++) {
+  robotLoad.cargo[type].thinInstanceSetBuffer('matrix', cargoMatrices[type], 16, false);
+  robotLoad.cargo[type].thinInstanceCount = 0;
+}
+robotLoad.frame.thinInstanceCount = 0;
+robotLoad.deck.thinInstanceCount = 0;
 
 function createRobotMesh(): Mesh {
   const base = MeshBuilder.CreateCylinder('agent-base', {
@@ -161,47 +169,6 @@ function createRobotMesh(): Mesh {
   return merged;
 }
 
-function createRobotLoadMeshes(): { pallet: Mesh; cargo: Mesh } {
-  const lift = MeshBuilder.CreateBox('carried-pallet', {
-    width: CELL_SIZE * 0.72,
-    height: 0.08,
-    depth: CELL_SIZE * 0.72,
-  }, scene);
-  lift.position.y = 0.75;
-  const palletMaterial = new StandardMaterial('carried-pallet-material', scene);
-  palletMaterial.diffuseColor = Color3.FromHexString('#338ca3');
-  palletMaterial.emissiveColor = Color3.FromHexString('#0b3442');
-  lift.material = palletMaterial;
-  lift.alwaysSelectAsActiveMesh = true;
-  const parts: Mesh[] = [];
-  const cargo = MeshBuilder.CreateBox('carried-cargo', {
-    width: CELL_SIZE * 0.54,
-    height: 0.46,
-    depth: CELL_SIZE * 0.54,
-  }, scene);
-  cargo.position.y = 1.02;
-  parts.push(cargo);
-  for (const x of [-0.21, 0.21]) {
-    const strap = MeshBuilder.CreateBox('carried-cargo-strap', {
-      width: 0.035,
-      height: 0.49,
-      depth: CELL_SIZE * 0.57,
-    }, scene);
-    strap.position.set(x, 1.02, 0);
-    parts.push(strap);
-  }
-  const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
-  merged.name = 'carried-goods';
-  const material = new StandardMaterial('robot-load-material', scene);
-  material.diffuseColor = Color3.FromHexString('#e9a84c');
-  material.emissiveColor = Color3.FromHexString('#3d2008');
-  material.specularColor = Color3.FromHexString('#ffe0a0');
-  material.specularPower = 42;
-  merged.material = material;
-  merged.alwaysSelectAsActiveMesh = true;
-  return { pallet: lift, cargo: merged };
-}
-
 function createGrid(): void {
   const points: Vector3[][] = [];
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
@@ -234,7 +201,9 @@ function buildPalletCells(): PalletCell[] {
   return result;
 }
 
-function createWarehousePallets(pallets: PalletCell[]): { update: (hidden: Set<number>) => void } {
+function createWarehousePallets(pallets: PalletCell[]): {
+  update: (hidden: Set<number>) => void;
+} {
   const footprint = CELL_SIZE * 0.88;
   const half = footprint / 2;
   const legOffset = half - 0.09;
@@ -352,6 +321,107 @@ function createWarehousePallets(pallets: PalletCell[]): { update: (hidden: Set<n
   return { update };
 }
 
+function createCarriedPalletMeshes(): {
+  frame: Mesh;
+  deck: Mesh;
+  cargo: [Mesh, Mesh, Mesh];
+} {
+  const footprint = CELL_SIZE * 0.88;
+  const half = footprint / 2;
+  const legOffset = half - 0.09;
+  const frameParts: Mesh[] = [];
+  for (const x of [-legOffset, legOffset]) {
+    for (const z of [-legOffset, legOffset]) {
+      const leg = MeshBuilder.CreateBox('carried-pallet-leg', { width: 0.1, height: 0.7, depth: 0.1 }, scene);
+      leg.position.set(x, 0.38, z);
+      frameParts.push(leg);
+      const foot = MeshBuilder.CreateBox('carried-pallet-foot', { width: 0.17, height: 0.08, depth: 0.17 }, scene);
+      foot.position.set(x, 0.04, z);
+      frameParts.push(foot);
+    }
+  }
+  for (const z of [-half + 0.055, half - 0.055]) {
+    const rail = MeshBuilder.CreateBox('carried-pallet-rail-x', { width: footprint, height: 0.1, depth: 0.1 }, scene);
+    rail.position.set(0, 0.78, z);
+    frameParts.push(rail);
+  }
+  for (const x of [-half + 0.055, half - 0.055]) {
+    const rail = MeshBuilder.CreateBox('carried-pallet-rail-z', { width: 0.1, height: 0.1, depth: footprint }, scene);
+    rail.position.set(x, 0.78, 0);
+    frameParts.push(rail);
+  }
+  const frame = Mesh.MergeMeshes(frameParts, true, true, undefined, false, true)!;
+  const frameMaterial = new StandardMaterial('carried-pallet-frame-material', scene);
+  frameMaterial.diffuseColor = Color3.FromHexString('#17313e');
+  frameMaterial.emissiveColor = Color3.FromHexString('#07151e');
+  frameMaterial.specularColor = Color3.FromHexString('#315d70');
+  frame.material = frameMaterial;
+
+  const deckParts: Mesh[] = [];
+  for (const z of [-0.29, -0.1, 0.1, 0.29]) {
+    const slat = MeshBuilder.CreateBox('carried-pallet-slat', { width: footprint, height: 0.09, depth: 0.13 }, scene);
+    slat.position.set(0, 0.88, z);
+    deckParts.push(slat);
+  }
+  const deck = Mesh.MergeMeshes(deckParts, true, true, undefined, false, true)!;
+  const deckMaterial = new StandardMaterial('carried-pallet-deck-material', scene);
+  deckMaterial.diffuseColor = Color3.FromHexString('#2d8098');
+  deckMaterial.emissiveColor = Color3.FromHexString('#0b3442');
+  deckMaterial.specularColor = Color3.FromHexString('#7bdcf2');
+  deckMaterial.specularPower = 64;
+  deck.material = deckMaterial;
+
+  const crateParts: Mesh[] = [];
+  const crateBody = MeshBuilder.CreateBox('carried-cargo-crate-body', { width: 0.59, height: 0.48, depth: 0.59 }, scene);
+  crateBody.position.y = 1.19;
+  crateParts.push(crateBody);
+  for (const x of [-0.275, 0.275]) {
+    for (const z of [-0.275, 0.275]) {
+      const brace = MeshBuilder.CreateBox('carried-cargo-crate-brace', { width: 0.045, height: 0.52, depth: 0.045 }, scene);
+      brace.position.set(x, 1.19, z);
+      crateParts.push(brace);
+    }
+  }
+  const crate = Mesh.MergeMeshes(crateParts, true, true, undefined, false, true)!;
+  const crateMaterial = new StandardMaterial('carried-cargo-crate-material', scene);
+  crateMaterial.diffuseColor = Color3.FromHexString('#a96832');
+  crateMaterial.emissiveColor = Color3.FromHexString('#261307');
+  crate.material = crateMaterial;
+
+  const cartonParts: Mesh[] = [];
+  for (const x of [-0.17, 0.17]) {
+    const carton = MeshBuilder.CreateBox('carried-cargo-carton-lower', { width: 0.31, height: 0.32, depth: 0.56 }, scene);
+    carton.position.set(x, 1.09, 0);
+    cartonParts.push(carton);
+  }
+  const upperCarton = MeshBuilder.CreateBox('carried-cargo-carton-upper', { width: 0.52, height: 0.28, depth: 0.44 }, scene);
+  upperCarton.position.set(0, 1.4, 0);
+  cartonParts.push(upperCarton);
+  const cartons = Mesh.MergeMeshes(cartonParts, true, true, undefined, false, true)!;
+  const cartonMaterial = new StandardMaterial('carried-cargo-carton-material', scene);
+  cartonMaterial.diffuseColor = Color3.FromHexString('#b98b5e');
+  cartonMaterial.emissiveColor = Color3.FromHexString('#291b10');
+  cartons.material = cartonMaterial;
+
+  const drumParts: Mesh[] = [];
+  for (const x of [-0.16, 0.16]) {
+    for (const z of [-0.16, 0.16]) {
+      const drum = MeshBuilder.CreateCylinder('carried-cargo-drum', { height: 0.48, diameter: 0.24, tessellation: 12 }, scene);
+      drum.position.set(x, 1.18, z);
+      drumParts.push(drum);
+    }
+  }
+  const drums = Mesh.MergeMeshes(drumParts, true, true, undefined, false, true)!;
+  const drumMaterial = new StandardMaterial('carried-cargo-drum-material', scene);
+  drumMaterial.diffuseColor = Color3.FromHexString('#296d78');
+  drumMaterial.emissiveColor = Color3.FromHexString('#09252d');
+  drums.material = drumMaterial;
+
+  const cargo: [Mesh, Mesh, Mesh] = [crate, cartons, drums];
+  for (const mesh of [frame, deck, ...cargo]) mesh.alwaysSelectAsActiveMesh = true;
+  return { frame, deck, cargo };
+}
+
 function createUnloadingZone(): void {
   const pad = MeshBuilder.CreateBox('unloading-pad', {
     width: CELL_SIZE * 0.82,
@@ -422,7 +492,13 @@ function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
   return result;
 }
 
-function writeTransform(target: Float32Array, index: number, gridX: number, gridZ: number): void {
+function writeTransform(
+  target: Float32Array,
+  index: number,
+  gridX: number,
+  gridZ: number,
+  worldY = 0.02,
+): void {
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
   const offset = index * 16;
@@ -439,7 +515,7 @@ function writeTransform(target: Float32Array, index: number, gridX: number, grid
   target[offset + 10] = 1;
   target[offset + 11] = 0;
   target[offset + 12] = (gridX + 0.5) * CELL_SIZE - halfW;
-  target[offset + 13] = 0.02;
+  target[offset + 13] = worldY;
   target[offset + 14] = (gridZ + 0.5) * CELL_SIZE - halfD;
   target[offset + 15] = 1;
 }
@@ -455,8 +531,9 @@ function updateFallback(time: number): void {
     writeTransform(matrices, i, cell.x, z);
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
-  robotLoad.pallet.thinInstanceCount = 0;
-  robotLoad.cargo.thinInstanceCount = 0;
+  robotLoad.frame.thinInstanceCount = 0;
+  robotLoad.deck.thinInstanceCount = 0;
+  for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
 }
 
 function updateLive(now: number): void {
@@ -465,7 +542,7 @@ function updateLive(now: number): void {
   const frameDurationMs = 1000 / Math.max(0.1, liveTickRate * speed);
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
   let loadedCount = 0;
-  let cargoCount = 0;
+  const cargoCounts = [0, 0, 0];
   for (let i = 0; i < agentCount; i++) {
     const x0 = from.positions[i * 2];
     const z0 = from.positions[i * 2 + 1];
@@ -475,15 +552,25 @@ function updateLive(now: number): void {
     const z = z0 + (z1 - z0) * alpha;
     writeTransform(matrices, i, x, z);
     if ((liveCurrent.statuses[i] & 2) !== 0) {
-      writeTransform(loadMatrices, loadedCount++, x, z);
-      if (liveCurrent.stages[i] === 1) writeTransform(cargoMatrices, cargoCount++, x, z);
+      writeTransform(loadMatrices, loadedCount++, x, z, 0.1);
+      const palletId = liveCurrent.palletIds[i];
+      if (liveCurrent.stages[i] === 1 && palletId < palletCells.length) {
+        const cargoType = palletCells[palletId].cargoType;
+        writeTransform(cargoMatrices[cargoType], cargoCounts[cargoType]++, x, z, 0.1);
+      }
     }
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
-  robotLoad.pallet.thinInstanceCount = loadedCount;
-  robotLoad.cargo.thinInstanceCount = cargoCount;
-  if (loadedCount) robotLoad.pallet.thinInstanceBufferUpdated('matrix');
-  if (cargoCount) robotLoad.cargo.thinInstanceBufferUpdated('matrix');
+  robotLoad.frame.thinInstanceCount = loadedCount;
+  robotLoad.deck.thinInstanceCount = loadedCount;
+  if (loadedCount) {
+    robotLoad.frame.thinInstanceBufferUpdated('matrix');
+    robotLoad.deck.thinInstanceBufferUpdated('matrix');
+  }
+  for (let type = 0; type < robotLoad.cargo.length; type++) {
+    robotLoad.cargo[type].thinInstanceCount = cargoCounts[type];
+    if (cargoCounts[type]) robotLoad.cargo[type].thinInstanceBufferUpdated('matrix');
+  }
 }
 
 function setAgentColor(index: number, status: number): void {
