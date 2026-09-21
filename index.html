@@ -21,30 +21,68 @@
         <div class="connection"><span class="pulse"></span><span id="source-label">DEMO SOURCE</span></div>
       </header>
 
-      <aside class="stats glass">
-        <p class="eyebrow">LIVE TELEMETRY</p>
-        <div class="metric major"><span id="agents-value">100</span><small>ACTIVE AGENTS</small></div>
-        <div class="metric-row">
-          <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
-          <div class="metric"><span id="step-value">0</span><small>STEP</small></div>
-        </div>
-        <div class="metric-row">
-          <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
-          <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
-        </div>
-        <div class="metric-row">
-          <div class="metric"><span id="loaded-value">0</span><small>LOADED</small></div>
-          <div class="metric"><span id="tasks-value">0</span><small>TASKS DONE</small></div>
-        </div>
-        <div class="sparkline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      </aside>
+      <aside class="inspector glass">
+        <section class="agent-inspector">
+          <div class="section-heading">
+            <p class="eyebrow">AGENT INSPECTOR</p>
+            <button id="clear-selection" class="clear-selection" type="button" aria-label="Clear agent selection">×</button>
+          </div>
+          <div id="agent-empty" class="agent-empty">
+            <span class="target-glyph">◎</span>
+            <strong>SELECT AN AGENT</strong>
+            <small>Click a robot or its carried pallet</small>
+          </div>
+          <div id="agent-details" class="agent-details" hidden>
+            <div class="agent-title-row">
+              <strong id="selected-agent">AGENT 000</strong>
+              <span id="selected-agent-state" class="state-pill">EMPTY</span>
+            </div>
+            <div class="stage-track" aria-label="Task progress">
+              <span id="stage-pickup">PICKUP</span>
+              <i></i>
+              <span id="stage-unload">UNLOAD</span>
+              <i></i>
+              <span id="stage-return">RETURN</span>
+            </div>
+            <div class="agent-facts">
+              <div><small>POSITION</small><strong id="agent-position">—</strong></div>
+              <div><small>CURRENT TASK</small><strong id="agent-task">—</strong></div>
+              <div><small>PALLET</small><strong id="agent-pallet">—</strong></div>
+              <div><small>TASK AGE</small><strong id="agent-task-age">—</strong></div>
+            </div>
+            <div class="route-card">
+              <div id="route-pickup"><span>01</span><small>PICKUP</small><strong id="pickup-coordinate">—</strong></div>
+              <div id="route-unload"><span>02</span><small>UNLOAD</small><strong id="unload-coordinate">—</strong></div>
+              <div id="route-return"><span>03</span><small>RETURN</small><strong id="return-coordinate">—</strong></div>
+            </div>
+            <div class="agent-metrics">
+              <div><strong id="agent-distance">0</strong><small>CELLS TRAVELLED</small></div>
+              <div><strong id="agent-waits">0</strong><small>WAIT TICKS</small></div>
+              <div><strong id="agent-handoffs">0</strong><small>UNLOADS</small></div>
+              <div><strong id="agent-completed">0</strong><small>TASKS DONE</small></div>
+            </div>
+          </div>
+        </section>
 
-      <aside class="legend glass">
-        <p class="eyebrow">STATUS</p>
-        <span><i class="cyan"></i>Empty</span>
-        <span><i class="violet"></i>Loaded</span>
-        <span><i class="amber"></i>Waiting</span>
-        <span><i class="green"></i>Task handoff</span>
+        <section class="telemetry-panel">
+          <p class="eyebrow">LIVE TELEMETRY</p>
+          <div class="telemetry-grid">
+            <div class="metric"><span id="agents-value">100</span><small>AGENTS</small></div>
+            <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
+            <div class="metric"><span id="step-value">0</span><small>STEP</small></div>
+            <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
+            <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
+            <div class="metric"><span id="loaded-value">0</span><small>LOADED</small></div>
+          </div>
+          <div class="tasks-total"><small>COMPLETED TASKS</small><strong id="tasks-value">0</strong></div>
+        </section>
+
+        <section class="legend">
+          <span><i class="cyan"></i>Empty</span>
+          <span><i class="violet"></i>Loaded</span>
+          <span><i class="amber"></i>Waiting</span>
+          <span><i class="green"></i>Handoff</span>
+        </section>
       </aside>
 
       <section class="controls glass">

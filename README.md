@@ -16,6 +16,11 @@ pallet and carries it into the service area while the robot returns the empty
 pallet. The robot remains in the bay for five additional simulation steps during
 the handoff so the transfer stays visually readable.
 
+Click a robot or its carried pallet to open the right-side inspector. It shows
+the assigned task and pallet, all three route goals, the active task stage, and
+per-agent distance, waiting, unloading, and completion counters. Global live
+telemetry is grouped in the same panel.
+
 ## Run the live demo
 
 The checked-in native runtime targets Linux; on Windows, run it in WSL. Activate

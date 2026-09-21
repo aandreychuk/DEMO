@@ -20,7 +20,7 @@ from websockets.exceptions import ConnectionClosed
 
 
 MAGIC = 0x4D415046
-PROTOCOL = 1
+PROTOCOL = 2
 MAX_AGENTS = 100
 
 
@@ -30,7 +30,10 @@ class AgentState:
     y: int
     loaded: bool
     task_stage: int
+    task_id: int
     pallet_id: int
+    station_x: int
+    station_y: int
     completed_tasks: int
 
 
@@ -55,7 +58,10 @@ def load_trajectory(path: Path, agent_count: int) -> list[list[AgentState]]:
                 y=int(row["y"]),
                 loaded=bool(int(row.get("loaded", "0"))),
                 task_stage=int(row.get("task_stage", "-1")),
+                task_id=int(row.get("task_id", "-1")),
                 pallet_id=int(row.get("pallet_id", "-1")),
+                station_x=int(row.get("station_x", "-1")),
+                station_y=int(row.get("station_y", "-1")),
                 completed_tasks=int(row.get("completed_tasks", "0")),
             )
     result: list[list[AgentState]] = []
@@ -74,7 +80,8 @@ def encode_frame(
     previous: list[AgentState] | None,
     final: bool = False,
 ) -> bytes:
-    payload = bytearray(16 + 16 * len(states))
+    record_size = 24
+    payload = bytearray(16 + record_size * len(states))
     completed_tasks = min(65535, states[0].completed_tasks if states else 0)
     struct.pack_into("<IHHII", payload, 0, MAGIC, PROTOCOL, completed_tasks, step, len(states))
     for agent, state in enumerate(states):
@@ -87,10 +94,12 @@ def encode_frame(
         if final:
             status |= 8
         pallet_id = 65535 if state.pallet_id < 0 else min(65534, state.pallet_id)
+        task_id = 0xFFFFFFFF if state.task_id < 0 else min(0xFFFFFFFE, state.task_id)
         struct.pack_into(
-            "<IffBBH", payload, 16 + agent * 16,
+            "<IffBBHIhh", payload, 16 + agent * record_size,
             agent, float(state.x), float(state.y), status,
-            max(0, state.task_stage), pallet_id,
+            max(0, state.task_stage), pallet_id, task_id,
+            state.station_x, state.station_y,
         )
     return bytes(payload)
 

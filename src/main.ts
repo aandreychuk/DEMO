@@ -1,7 +1,9 @@
 import '@babylonjs/core/Engines/Extensions/engine.query';
 import '@babylonjs/core/Meshes/thinInstanceMesh';
+import '@babylonjs/core/Culling/ray';
 import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera';
 import { Engine } from '@babylonjs/core/Engines/engine';
+import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
@@ -30,6 +32,8 @@ type LiveFrame = {
   statuses: Uint8Array;
   stages: Uint8Array;
   palletIds: Uint16Array;
+  taskIds: Uint32Array;
+  stationPositions: Int16Array;
   completedTasks: number;
   step: number;
   receivedAt: number;
@@ -37,6 +41,15 @@ type LiveFrame = {
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
 type CargoTransfer = { gridX: number; gridZ: number; worldY: number; cargoType: number };
+type AgentStats = {
+  distance: number;
+  moveTicks: number;
+  waitTicks: number;
+  handoffs: number;
+  completedTasks: number;
+  taskStartedAt: number;
+  lastTaskId: number;
+};
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false }, true);
@@ -79,12 +92,20 @@ createBoundaryLights();
 
 const robotMesh = createRobotMesh();
 const robotLoad = createCarriedPalletMeshes();
+const agentPicker = createAgentPicker();
+const selectionHalo = createSelectionHalo();
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
 const cargoMatrices = [
   new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
   new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
   new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
+];
+const loadAgentIds = new Int16Array(MAX_AGENTS);
+const cargoAgentIds = [
+  new Int16Array(MAX_AGENTS + UNLOAD_STATION_COUNT),
+  new Int16Array(MAX_AGENTS + UNLOAD_STATION_COUNT),
+  new Int16Array(MAX_AGENTS + UNLOAD_STATION_COUNT),
 ];
 const colors = new Float32Array(MAX_AGENTS * 4);
 const cells = buildFreeCells();
@@ -99,12 +120,16 @@ let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let lastInferenceMs = 0;
 let hiddenPalletKey = '';
+let selectedAgentId = -1;
+const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
 const cameraKeys = new Set<string>();
 
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
 robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
 robotMesh.thinInstanceCount = agentCount;
+agentPicker.thinInstanceSetBuffer('matrix', matrices, 16, false);
+agentPicker.thinInstanceCount = agentCount;
 robotLoad.frame.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 robotLoad.deck.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 for (let type = 0; type < robotLoad.cargo.length; type++) {
@@ -113,6 +138,39 @@ for (let type = 0; type < robotLoad.cargo.length; type++) {
 }
 robotLoad.frame.thinInstanceCount = 0;
 robotLoad.deck.thinInstanceCount = 0;
+robotMesh.thinInstanceEnablePicking = true;
+agentPicker.thinInstanceEnablePicking = true;
+robotLoad.frame.thinInstanceEnablePicking = true;
+robotLoad.deck.thinInstanceEnablePicking = true;
+for (const cargo of robotLoad.cargo) cargo.thinInstanceEnablePicking = true;
+
+scene.onPointerObservable.add((pointerInfo) => {
+  const pickInfo = pointerInfo.pickInfo;
+  if (pointerInfo.type !== PointerEventTypes.POINTERDOWN || !pickInfo) return;
+  const instance = pickInfo.thinInstanceIndex;
+  let agent = -1;
+  if (instance >= 0 && (pickInfo.pickedMesh === robotMesh || pickInfo.pickedMesh === agentPicker)) {
+    agent = instance;
+  } else if (instance >= 0 && (pickInfo.pickedMesh === robotLoad.frame || pickInfo.pickedMesh === robotLoad.deck)) {
+    agent = loadAgentIds[instance] ?? -1;
+  } else if (instance >= 0 && pickInfo.pickedMesh) {
+    const cargoType = robotLoad.cargo.indexOf(pickInfo.pickedMesh as Mesh);
+    if (cargoType >= 0) agent = cargoAgentIds[cargoType][instance] ?? -1;
+  }
+  if (agent < 0 && pickInfo.pickedPoint) {
+    let nearestDistance = (CELL_SIZE * 0.72) ** 2;
+    for (let id = 0; id < agentCount; id++) {
+      const dx = matrices[id * 16 + 12] - pickInfo.pickedPoint.x;
+      const dz = matrices[id * 16 + 14] - pickInfo.pickedPoint.z;
+      const distance = dx * dx + dz * dz;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        agent = id;
+      }
+    }
+  }
+  if (agent >= 0 && agent < agentCount) selectAgent(agent);
+}, PointerEventTypes.POINTERDOWN);
 
 function createRobotMesh(): Mesh {
   const base = MeshBuilder.CreateCylinder('agent-base', {
@@ -173,6 +231,40 @@ function createRobotMesh(): Mesh {
   merged.material = material;
   merged.alwaysSelectAsActiveMesh = true;
   return merged;
+}
+
+function createSelectionHalo(): Mesh {
+  const halo = MeshBuilder.CreateTorus('selected-agent-halo', {
+    diameter: 0.82,
+    thickness: 0.035,
+    tessellation: 36,
+  }, scene);
+  const material = new StandardMaterial('selected-agent-halo-material', scene);
+  material.diffuseColor = Color3.FromHexString('#fff176');
+  material.emissiveColor = Color3.FromHexString('#e3b92f');
+  material.disableLighting = true;
+  halo.material = material;
+  halo.position.y = 0.045;
+  halo.isPickable = false;
+  halo.isVisible = false;
+  halo.alwaysSelectAsActiveMesh = true;
+  return halo;
+}
+
+function createAgentPicker(): Mesh {
+  const picker = MeshBuilder.CreateCylinder('agent-pick-target', {
+    height: 1.65,
+    diameter: CELL_SIZE * 0.9,
+    tessellation: 12,
+  }, scene);
+  const material = new StandardMaterial('agent-pick-target-material', scene);
+  material.alpha = 0;
+  material.disableLighting = true;
+  picker.material = material;
+  picker.position.y = 0.78;
+  picker.isPickable = true;
+  picker.alwaysSelectAsActiveMesh = true;
+  return picker;
 }
 
 function createGrid(): void {
@@ -738,6 +830,7 @@ function writeTransform(
 
 function updateFallback(time: number): void {
   unloadingScene.update(performance.now());
+  selectionHalo.isVisible = false;
   const step = time / FALLBACK_STEP_SECONDS;
   const wholeStep = Math.floor(step);
   const phase = smoothstep(step - wholeStep);
@@ -748,6 +841,7 @@ function updateFallback(time: number): void {
     writeTransform(matrices, i, cell.x, z);
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
+  agentPicker.thinInstanceBufferUpdated('matrix');
   robotLoad.frame.thinInstanceCount = 0;
   robotLoad.deck.thinInstanceCount = 0;
   for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
@@ -761,6 +855,8 @@ function updateLive(now: number): void {
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
   let loadedCount = 0;
   const cargoCounts = [0, 0, 0];
+  loadAgentIds.fill(-1);
+  for (const ids of cargoAgentIds) ids.fill(-1);
   for (let i = 0; i < agentCount; i++) {
     const x0 = from.positions[i * 2];
     const z0 = from.positions[i * 2 + 1];
@@ -769,25 +865,39 @@ function updateLive(now: number): void {
     const x = x0 + (x1 - x0) * alpha;
     const z = z0 + (z1 - z0) * alpha;
     writeTransform(matrices, i, x, z);
+    if (i === selectedAgentId) {
+      const position = worldAt(x, z, 0.045);
+      selectionHalo.position.copyFrom(position);
+      const pulse = 1 + Math.sin(now * 0.008) * 0.055;
+      selectionHalo.scaling.set(pulse, pulse, pulse);
+      selectionHalo.isVisible = true;
+    }
     if ((liveCurrent.statuses[i] & 2) !== 0) {
-      writeTransform(loadMatrices, loadedCount++, x, z, 0.1);
+      const loadIndex = loadedCount++;
+      loadAgentIds[loadIndex] = i;
+      writeTransform(loadMatrices, loadIndex, x, z, 0.1);
       const palletId = liveCurrent.palletIds[i];
       if (liveCurrent.stages[i] === 1 && palletId < palletCells.length) {
         const cargoType = palletCells[palletId].cargoType;
-        writeTransform(cargoMatrices[cargoType], cargoCounts[cargoType]++, x, z, 0.1);
+        const cargoIndex = cargoCounts[cargoType]++;
+        cargoAgentIds[cargoType][cargoIndex] = i;
+        writeTransform(cargoMatrices[cargoType], cargoIndex, x, z, 0.1);
       }
     }
   }
   for (const transfer of transfers) {
+    const cargoIndex = cargoCounts[transfer.cargoType]++;
+    cargoAgentIds[transfer.cargoType][cargoIndex] = -1;
     writeTransform(
       cargoMatrices[transfer.cargoType],
-      cargoCounts[transfer.cargoType]++,
+      cargoIndex,
       transfer.gridX,
       transfer.gridZ,
       transfer.worldY,
     );
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
+  agentPicker.thinInstanceBufferUpdated('matrix');
   robotLoad.frame.thinInstanceCount = loadedCount;
   robotLoad.deck.thinInstanceCount = loadedCount;
   if (loadedCount) {
@@ -804,7 +914,9 @@ function setAgentColor(index: number, status: number): void {
   const loaded = (status & 2) !== 0;
   const waiting = (status & 1) !== 0;
   const transitioned = (status & 4) !== 0;
-  const color = transitioned
+  const color = index === selectedAgentId
+    ? [1, 0.93, 0.32, 1]
+    : transitioned
     ? [0.5, 1, 0.68, 1]
     : loaded
       ? (waiting ? [0.82, 0.44, 0.16, 1] : [1, 0.66, 0.2, 1])
@@ -816,20 +928,30 @@ function setAgentColor(index: number, status: number): void {
 
 function parseFrame(buffer: ArrayBuffer): void {
   const view = new DataView(buffer);
-  if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC || view.getUint16(4, true) !== 1) return;
+  if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC) return;
+  const protocol = view.getUint16(4, true);
+  if (protocol !== 1 && protocol !== 2) return;
+  const recordSize = protocol === 2 ? 24 : 16;
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
-  if (liveCurrent && step < liveCurrent.step) unloadingScene.reset();
+  if (liveCurrent && step < liveCurrent.step) {
+    unloadingScene.reset();
+    resetAgentStats();
+  }
   const completedTasks = view.getUint16(6, true);
   const count = Math.min(MAX_AGENTS, view.getUint32(12, true));
-  if (view.byteLength < 16 + count * 16) return;
+  if (view.byteLength < 16 + count * recordSize) return;
   const positions = new Float32Array(count * 2);
   const statuses = new Uint8Array(count);
   const stages = new Uint8Array(count);
   const palletIds = new Uint16Array(count);
+  const taskIds = new Uint32Array(count);
+  const stationPositions = new Int16Array(count * 2);
+  taskIds.fill(0xffffffff);
+  stationPositions.fill(-1);
   const hiddenPallets = new Set<number>();
   for (let i = 0; i < count; i++) {
-    const offset = 16 + i * 16;
+    const offset = 16 + i * recordSize;
     const id = view.getUint32(offset, true);
     if (id >= count) continue;
     positions[id * 2] = view.getFloat32(offset + 4, true);
@@ -837,6 +959,11 @@ function parseFrame(buffer: ArrayBuffer): void {
     statuses[id] = view.getUint8(offset + 12);
     stages[id] = view.getUint8(offset + 13);
     palletIds[id] = view.getUint16(offset + 14, true);
+    if (protocol === 2) {
+      taskIds[id] = view.getUint32(offset + 16, true);
+      stationPositions[id * 2] = view.getInt16(offset + 20, true);
+      stationPositions[id * 2 + 1] = view.getInt16(offset + 22, true);
+    }
     if ((statuses[id] & 2) !== 0 && palletIds[id] !== 65535) hiddenPallets.add(palletIds[id]);
     setAgentColor(id, statuses[id]);
   }
@@ -849,6 +976,22 @@ function parseFrame(buffer: ArrayBuffer): void {
   const receivedAt = performance.now();
   if (priorFrame) {
     for (let id = 0; id < count && id < priorFrame.stages.length; id++) {
+      const stats = agentStats[id];
+      const dx = Math.abs(positions[id * 2] - priorFrame.positions[id * 2]);
+      const dz = Math.abs(positions[id * 2 + 1] - priorFrame.positions[id * 2 + 1]);
+      const distance = dx + dz;
+      if (distance > 0) {
+        stats.distance += distance;
+        stats.moveTicks += 1;
+      } else {
+        stats.waitTicks += 1;
+      }
+      if (priorFrame.stages[id] === 1 && stages[id] === 2) stats.handoffs += 1;
+      if (taskIds[id] !== priorFrame.taskIds[id]) {
+        if (priorFrame.taskIds[id] !== 0xffffffff) stats.completedTasks += 1;
+        stats.taskStartedAt = step;
+        stats.lastTaskId = taskIds[id];
+      }
       if (priorFrame.stages[id] !== 1 || stages[id] !== 2) continue;
       const palletId = palletIds[id];
       const x = Math.round(positions[id * 2]);
@@ -857,10 +1000,144 @@ function parseFrame(buffer: ArrayBuffer): void {
         unloadingScene.trigger(stationZ, palletCells[palletId].cargoType, receivedAt);
       }
     }
+  } else {
+    for (let id = 0; id < count; id++) {
+      if (agentStats[id].lastTaskId === 0xffffffff) {
+        agentStats[id].lastTaskId = taskIds[id];
+        agentStats[id].taskStartedAt = step;
+      }
+    }
   }
   livePrevious = priorFrame;
-  liveCurrent = { positions, statuses, stages, palletIds, completedTasks, step, receivedAt };
+  liveCurrent = {
+    positions,
+    statuses,
+    stages,
+    palletIds,
+    taskIds,
+    stationPositions,
+    completedTasks,
+    step,
+    receivedAt,
+  };
   robotMesh.thinInstanceBufferUpdated('color');
+  renderAgentPanel();
+}
+
+function createAgentStats(): AgentStats {
+  return {
+    distance: 0,
+    moveTicks: 0,
+    waitTicks: 0,
+    handoffs: 0,
+    completedTasks: 0,
+    taskStartedAt: 0,
+    lastTaskId: 0xffffffff,
+  };
+}
+
+function resetAgentStats(): void {
+  for (let i = 0; i < agentStats.length; i++) agentStats[i] = createAgentStats();
+  renderAgentPanel();
+}
+
+function selectAgent(agent: number): void {
+  const previous = selectedAgentId;
+  selectedAgentId = agent;
+  if (previous >= 0) setAgentColor(previous, liveCurrent?.statuses[previous] ?? 0);
+  setAgentColor(agent, liveCurrent?.statuses[agent] ?? 0);
+  robotMesh.thinInstanceBufferUpdated('color');
+  selectionHalo.isVisible = true;
+  renderAgentPanel();
+}
+
+function clearAgentSelection(): void {
+  const previous = selectedAgentId;
+  selectedAgentId = -1;
+  selectionHalo.isVisible = false;
+  if (previous >= 0) {
+    setAgentColor(previous, liveCurrent?.statuses[previous] ?? 0);
+    robotMesh.thinInstanceBufferUpdated('color');
+  }
+  renderAgentPanel();
+}
+
+function renderAgentPanel(): void {
+  const empty = document.querySelector<HTMLElement>('#agent-empty')!;
+  const details = document.querySelector<HTMLElement>('#agent-details')!;
+  const clearButton = document.querySelector<HTMLButtonElement>('#clear-selection')!;
+  const frame = liveCurrent;
+  if (!frame || selectedAgentId < 0 || selectedAgentId >= frame.stages.length) {
+    empty.hidden = false;
+    details.hidden = true;
+    clearButton.hidden = true;
+    return;
+  }
+
+  empty.hidden = true;
+  details.hidden = false;
+  clearButton.hidden = false;
+  const id = selectedAgentId;
+  const stage = Math.min(2, frame.stages[id]);
+  const status = frame.statuses[id];
+  const palletId = frame.palletIds[id];
+  const taskId = frame.taskIds[id];
+  const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
+  const stationX = frame.stationPositions[id * 2];
+  const stationZ = frame.stationPositions[id * 2 + 1];
+  const stats = agentStats[id];
+  const waiting = (status & 1) !== 0;
+  const loaded = (status & 2) !== 0;
+  const transitioned = (status & 4) !== 0;
+  const atUnloadingBay = stage === 2 && Math.round(frame.positions[id * 2]) === UNLOAD_X;
+  const stateLabel = transitioned
+    ? 'HANDOFF'
+    : atUnloadingBay && waiting
+      ? 'UNLOADING'
+      : waiting
+        ? 'WAITING'
+        : loaded
+          ? 'LOADED'
+          : 'EMPTY';
+  const statePill = document.querySelector<HTMLElement>('#selected-agent-state')!;
+  statePill.textContent = stateLabel;
+  statePill.className = `state-pill${loaded ? ' loaded' : ''}${waiting ? ' waiting' : ''}`;
+
+  document.querySelector('#selected-agent')!.textContent = `AGENT ${String(id).padStart(3, '0')}`;
+  document.querySelector('#agent-position')!.textContent =
+    `${Math.round(frame.positions[id * 2])}, ${Math.round(frame.positions[id * 2 + 1])}`;
+  document.querySelector('#agent-task')!.textContent = taskId === 0xffffffff ? '—' : `#${taskId}`;
+  const cargoNames = ['CRATE', 'CARTONS', 'DRUMS'];
+  document.querySelector('#agent-pallet')!.textContent = pallet
+    ? `P${String(palletId).padStart(3, '0')} · ${cargoNames[pallet.cargoType]}`
+    : '—';
+  document.querySelector('#agent-task-age')!.textContent = `${Math.max(0, frame.step - stats.taskStartedAt)} TICKS`;
+
+  const formatCoordinate = (x: number, z: number): string => x >= 0 && z >= 0 ? `${x}, ${z}` : '—';
+  document.querySelector('#pickup-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
+  document.querySelector('#unload-coordinate')!.textContent = formatCoordinate(stationX, stationZ);
+  document.querySelector('#return-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
+
+  const stageElements = [
+    document.querySelector<HTMLElement>('#stage-pickup')!,
+    document.querySelector<HTMLElement>('#stage-unload')!,
+    document.querySelector<HTMLElement>('#stage-return')!,
+  ];
+  const routeElements = [
+    document.querySelector<HTMLElement>('#route-pickup')!,
+    document.querySelector<HTMLElement>('#route-unload')!,
+    document.querySelector<HTMLElement>('#route-return')!,
+  ];
+  for (let index = 0; index < 3; index++) {
+    const state = index < stage ? 'done' : index === stage ? 'active' : '';
+    stageElements[index].className = state;
+    routeElements[index].className = state;
+  }
+
+  document.querySelector('#agent-distance')!.textContent = stats.distance.toFixed(0);
+  document.querySelector('#agent-waits')!.textContent = String(stats.waitTicks);
+  document.querySelector('#agent-handoffs')!.textContent = String(stats.handoffs);
+  document.querySelector('#agent-completed')!.textContent = String(stats.completedTasks);
 }
 
 function setConnection(state: string, label: string): void {
@@ -871,7 +1148,9 @@ function setConnection(state: string, label: string): void {
 
 function setAgentCount(count: number): void {
   agentCount = Math.min(MAX_AGENTS, count);
+  if (selectedAgentId >= agentCount) clearAgentSelection();
   robotMesh.thinInstanceCount = agentCount;
+  agentPicker.thinInstanceCount = agentCount;
   agentsValue.textContent = agentCount.toLocaleString('en-US');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
   if ([...select.options].some((option) => Number(option.value) === agentCount)) select.value = String(agentCount);
@@ -902,11 +1181,14 @@ function connect(): void {
       liveTickRate = Number(message.tickRate) || 10;
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
+      sendControl('speed', { value: speed });
       setConnection('live', 'FASTDMM // LIFELONG');
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
       unloadingScene.reset();
+      resetAgentStats();
+      clearAgentSelection();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
     } else if (message.type === 'status' && message.state === 'complete') {
       paused = true;
@@ -923,6 +1205,8 @@ function connect(): void {
     livePrevious = null;
     liveCurrent = null;
     unloadingScene.reset();
+    resetAgentStats();
+    clearAgentSelection();
     palletScene.update(new Set());
     hiddenPalletKey = '';
     setConnection('fallback', 'DEMO // RECONNECTING');
@@ -993,6 +1277,7 @@ engine.runRenderLoop(() => {
 });
 
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
+document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
   document.querySelector('#pause-label')!.textContent = paused ? 'RUN' : 'PAUSE';
