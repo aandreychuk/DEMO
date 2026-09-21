@@ -23,6 +23,7 @@ const UNLOAD_X = MAP_WIDTH - 3;
 const UNLOAD_MIN_Z = 1;
 const UNLOAD_MAX_Z = MAP_DEPTH - 2;
 const UNLOAD_STATION_COUNT = UNLOAD_MAX_Z - UNLOAD_MIN_Z + 1;
+const UNLOAD_DWELL_TICKS = 5;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
@@ -41,6 +42,7 @@ type LiveFrame = {
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
 type CargoTransfer = { gridX: number; gridZ: number; worldY: number; cargoType: number };
+type PendingHandoff = { taskId: number; palletId: number; stationZ: number };
 type AgentStats = {
   distance: number;
   moveTicks: number;
@@ -122,6 +124,10 @@ let liveCurrent: LiveFrame | null = null;
 let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let selectedAgentId = -1;
+const pendingHandoffs: Array<PendingHandoff | null> = Array.from(
+  { length: MAX_AGENTS },
+  () => null,
+);
 const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
 const cameraKeys = new Set<string>();
 
@@ -594,7 +600,7 @@ function createCarriedPalletMeshes(): {
 }
 
 function createUnloadingZone(): {
-  trigger: (stationZ: number, cargoType: number, startedAt: number) => void;
+  trigger: (stationZ: number, cargoType: number, startedAt: number, durationMs: number) => void;
   update: (now: number) => CargoTransfer[];
   reset: () => void;
 } {
@@ -729,12 +735,10 @@ function createUnloadingZone(): {
     mesh.alwaysSelectAsActiveMesh = true;
   }
 
-  type ArmEvent = { startedAt: number; cargoType: number };
+  type ArmEvent = { startedAt: number; cargoType: number; durationMs: number };
   type Point = { x: number; y: number };
   type Pose = { elbow: Point; grip: Point };
   const events = new Map<number, ArmEvent>();
-  const durationMs = 2000;
-
   const mix = (a: number, b: number, t: number): number => a + (b - a) * smoothstep(t);
   const mixPoint = (a: Point, b: Point, t: number): Point => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) });
   const mixPose = (a: Pose, b: Pose, t: number): Pose => ({
@@ -775,7 +779,7 @@ function createUnloadingZone(): {
         grip: { x: armWorld.x + 0.31, y: 1.67 },
       };
       const event = events.get(stationZ);
-      const progress = event ? Math.max(0, (now - event.startedAt) / durationMs) : 0;
+      const progress = event ? Math.max(0, (now - event.startedAt) / event.durationMs) : 0;
       let pose = parked;
       if (event) {
         if (progress < 0.32) pose = mixPose(parked, reached, progress / 0.32);
@@ -817,9 +821,9 @@ function createUnloadingZone(): {
 
   update(0);
   return {
-    trigger: (stationZ, cargoType, startedAt) => {
+    trigger: (stationZ, cargoType, startedAt, durationMs) => {
       if (stationZ < UNLOAD_MIN_Z || stationZ > UNLOAD_MAX_Z) return;
-      events.set(stationZ, { startedAt, cargoType });
+      events.set(stationZ, { startedAt, cargoType, durationMs });
     },
     update,
     reset: () => events.clear(),
@@ -921,6 +925,11 @@ function updateFallback(time: number): void {
   for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
 }
 
+function resetHandoffAnimations(): void {
+  pendingHandoffs.fill(null);
+  unloadingScene.reset();
+}
+
 function updateLive(now: number): void {
   if (!liveCurrent) return;
   const transfers = unloadingScene.update(now);
@@ -951,7 +960,9 @@ function updateLive(now: number): void {
       loadAgentIds[loadIndex] = i;
       writeTransform(loadMatrices, loadIndex, x, z, 0.1);
       const palletId = liveCurrent.palletIds[i];
-      if (liveCurrent.stages[i] === 1 && palletId < palletCells.length) {
+      const carriesCargo = liveCurrent.stages[i] === 1
+        || (from.stages[i] === 1 && liveCurrent.stages[i] === 2);
+      if (carriesCargo && palletId < palletCells.length) {
         const cargoType = palletCells[palletId].cargoType;
         const cargoIndex = cargoCounts[cargoType]++;
         cargoAgentIds[cargoType][cargoIndex] = i;
@@ -1009,7 +1020,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
   if (liveCurrent && step < liveCurrent.step) {
-    unloadingScene.reset();
+    resetHandoffAnimations();
     resetAgentStats();
   }
   const completedTasks = view.getUint16(6, true);
@@ -1039,7 +1050,11 @@ function parseFrame(buffer: ArrayBuffer): void {
       stationPositions[id * 2 + 1] = view.getInt16(offset + 22, true);
     }
     if ((statuses[id] & 2) !== 0 && palletIds[id] !== 65535) hiddenPallets.add(palletIds[id]);
-    setAgentColor(id, statuses[id]);
+    const enteringUnloadingBay = stages[id] === 2
+      && Math.round(positions[id * 2]) === UNLOAD_X
+      && (statuses[id] & 4) !== 0
+      && (statuses[id] & 1) === 0;
+    setAgentColor(id, enteringUnloadingBay ? statuses[id] & ~4 : statuses[id]);
   }
   const nextHiddenKey = [...hiddenPallets].sort((a, b) => a - b).join(',');
   if (nextHiddenKey !== hiddenPalletKey) {
@@ -1060,18 +1075,36 @@ function parseFrame(buffer: ArrayBuffer): void {
       } else {
         stats.waitTicks += 1;
       }
-      if (priorFrame.stages[id] === 1 && stages[id] === 2) stats.handoffs += 1;
+      const enteredReturnStage = priorFrame.stages[id] === 1 && stages[id] === 2;
       if (taskIds[id] !== priorFrame.taskIds[id]) {
         if (priorFrame.taskIds[id] !== 0xffffffff) stats.completedTasks += 1;
         stats.taskStartedAt = step;
         stats.lastTaskId = taskIds[id];
       }
-      if (priorFrame.stages[id] !== 1 || stages[id] !== 2) continue;
       const palletId = palletIds[id];
       const x = Math.round(positions[id * 2]);
       const stationZ = Math.round(positions[id * 2 + 1]);
-      if (x === UNLOAD_X && palletId < palletCells.length) {
-        unloadingScene.trigger(stationZ, palletCells[palletId].cargoType, receivedAt);
+      if (enteredReturnStage && x === UNLOAD_X && palletId < palletCells.length) {
+        pendingHandoffs[id] = { taskId: taskIds[id], palletId, stationZ };
+      }
+      const pending = pendingHandoffs[id];
+      const waitingAtStation = (statuses[id] & 1) !== 0
+        && stages[id] === 2
+        && x === UNLOAD_X
+        && priorFrame.positions[id * 2] === positions[id * 2]
+        && priorFrame.positions[id * 2 + 1] === positions[id * 2 + 1];
+      if (pending && pending.taskId === taskIds[id] && waitingAtStation) {
+        unloadingScene.trigger(
+          pending.stationZ,
+          palletCells[pending.palletId].cargoType,
+          receivedAt,
+          UNLOAD_DWELL_TICKS * 1000 / Math.max(0.1, liveTickRate * speed),
+        );
+        stats.handoffs += 1;
+        setAgentColor(id, statuses[id] | 4);
+        pendingHandoffs[id] = null;
+      } else if (pending && (pending.taskId !== taskIds[id] || stages[id] !== 2)) {
+        pendingHandoffs[id] = null;
       }
     }
   } else {
@@ -1153,7 +1186,7 @@ function renderAgentPanel(): void {
   details.hidden = false;
   clearButton.hidden = false;
   const id = selectedAgentId;
-  const stage = Math.min(2, frame.stages[id]);
+  const nativeStage = Math.min(2, frame.stages[id]);
   const status = frame.statuses[id];
   const palletId = frame.palletIds[id];
   const taskId = frame.taskIds[id];
@@ -1164,8 +1197,9 @@ function renderAgentPanel(): void {
   const waiting = (status & 1) !== 0;
   const loaded = (status & 2) !== 0;
   const transitioned = (status & 4) !== 0;
-  const atUnloadingBay = stage === 2 && Math.round(frame.positions[id * 2]) === UNLOAD_X;
-  const stateLabel = transitioned
+  const atUnloadingBay = nativeStage === 2 && Math.round(frame.positions[id * 2]) === UNLOAD_X;
+  const stage = atUnloadingBay ? 1 : nativeStage;
+  const stateLabel = transitioned && waiting && atUnloadingBay
     ? 'HANDOFF'
     : atUnloadingBay && waiting
       ? 'UNLOADING'
@@ -1261,7 +1295,7 @@ function connect(): void {
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
-      unloadingScene.reset();
+      resetHandoffAnimations();
       resetAgentStats();
       clearAgentSelection();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
@@ -1281,7 +1315,7 @@ function connect(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
-    unloadingScene.reset();
+    resetHandoffAnimations();
     resetAgentStats();
     clearAgentSelection();
     palletScene.update(new Set());
@@ -1373,7 +1407,7 @@ stopButton.addEventListener('click', () => {
   paused = true;
   simTime = 0;
   syncPauseButton();
-  unloadingScene.reset();
+  resetHandoffAnimations();
   resetAgentStats();
   sendControl('stop');
   setConnection('stopped', 'SIMULATION // STOPPED');

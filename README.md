@@ -14,7 +14,8 @@ bays: an agent may enter only its assigned bay and must leave through the same
 aisle-side edge. A robotic arm behind every bay lifts the cargo from an arriving
 pallet and carries it into the service area while the robot returns the empty
 pallet. The robot remains in the bay for five additional simulation steps during
-the handoff so the transfer stays visually readable.
+the handoff so the transfer stays visually readable. The arm starts only after
+the robot has completed its entry and produced its first stationary bay tick.
 
 Click a robot or its carried pallet to open the right-side inspector. It shows
 the assigned task and pallet, all three route goals, the active task stage, and

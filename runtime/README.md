@@ -74,6 +74,8 @@ service cells behind the bays and boundary end caps leave one aisle-side
 entrance per bay. The browser renders a robotic arm in each guarded cell and
 animates the cargo transfer when an agent advances from unloading to return.
 After that transition, the native runtime holds the agent in its bay for five
-additional simulation steps before allowing it to leave.
+additional simulation steps before allowing it to leave. The renderer keeps the
+cargo on the moving pallet during entry and starts the arm on the first confirmed
+waiting step in the bay.
 Completed task templates return to the randomized queue with a new assignment
 ID, so task generation continues for the lifetime of the simulator.
