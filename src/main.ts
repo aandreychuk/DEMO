@@ -786,22 +786,35 @@ function createUnloadingZone(): {
   }
 
   type ArmEvent = { startedStep: number; cargoType: number; slot: number };
-  type Point = { x: number; y: number };
+  type Point = { x: number; y: number; z: number };
   type Pose = { elbow: Point; grip: Point };
   const events = new Map<number, ArmEvent>();
   const mix = (a: number, b: number, t: number): number => a + (b - a) * smoothstep(t);
-  const mixPoint = (a: Point, b: Point, t: number): Point => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) });
+  const mixPoint = (a: Point, b: Point, t: number): Point => ({
+    x: mix(a.x, b.x, t),
+    y: mix(a.y, b.y, t),
+    z: mix(a.z, b.z, t),
+  });
   const mixPose = (a: Pose, b: Pose, t: number): Pose => ({
     elbow: mixPoint(a.elbow, b.elbow, t),
     grip: mixPoint(a.grip, b.grip, t),
   });
-  const segmentMatrix = (from: Point, to: Point, z: number): Matrix => {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
+  const segmentMatrix = (from: Point, to: Point): Matrix => {
+    const direction = new Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
+    const length = direction.length();
+    const normalized = direction.scale(1 / Math.max(length, 1e-6));
+    const localAxis = new Vector3(1, 0, 0);
+    const dot = Math.max(-1, Math.min(1, Vector3.Dot(localAxis, normalized)));
+    const rotationAxis = Vector3.Cross(localAxis, normalized);
+    const rotation = rotationAxis.lengthSquared() > 1e-8
+      ? Quaternion.RotationAxis(rotationAxis.normalize(), Math.acos(dot))
+      : dot < 0
+        ? Quaternion.RotationAxis(Vector3.Up(), Math.PI)
+        : Quaternion.Identity();
     return Matrix.Compose(
-      new Vector3(Math.hypot(dx, dy), 1, 1),
-      Quaternion.RotationAxis(Vector3.Forward(), Math.atan2(dy, dx)),
-      new Vector3((from.x + to.x) / 2, (from.y + to.y) / 2, z),
+      new Vector3(length, 1, 1),
+      rotation,
+      new Vector3((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2),
     );
   };
 
@@ -811,24 +824,33 @@ function createUnloadingZone(): {
       const stationZ = UNLOAD_MIN_Z + index;
       const stationWorld = worldAt(UNLOAD_X, stationZ, 0);
       const armWorld = worldAt(MAP_WIDTH - 2, stationZ, 0);
-      const shoulderPoint = { x: armWorld.x, y: 0.78 };
+      const event = events.get(stationZ);
+      const slotOffset = event ? goodsSlotOffset(event.slot) : { x: 0, z: 0 };
+      const shoulderPoint = { x: armWorld.x, y: 0.78, z: armWorld.z };
       const parked: Pose = {
-        elbow: { x: armWorld.x - 0.05, y: 1.38 },
-        grip: { x: armWorld.x + 0.11, y: 1.88 },
+        elbow: { x: armWorld.x - 0.05, y: 1.38, z: armWorld.z },
+        grip: { x: armWorld.x + 0.11, y: 1.88, z: armWorld.z },
       };
       const reached: Pose = {
-        elbow: { x: armWorld.x - 0.43, y: 1.4 },
-        grip: { x: stationWorld.x, y: 1.3 },
+        elbow: {
+          x: armWorld.x - 0.43 + slotOffset.x * 0.2,
+          y: 1.4,
+          z: armWorld.z + slotOffset.z * 0.55,
+        },
+        grip: {
+          x: stationWorld.x + slotOffset.x,
+          y: GOODS_BASE_Y + 0.26,
+          z: stationWorld.z + slotOffset.z,
+        },
       };
       const lifted: Pose = {
-        elbow: { x: armWorld.x - 0.19, y: 1.5 },
-        grip: { x: armWorld.x - 0.35, y: 2.0 },
+        elbow: { x: armWorld.x - 0.19, y: 1.5, z: armWorld.z + slotOffset.z * 0.25 },
+        grip: { x: armWorld.x - 0.35, y: 2.0, z: armWorld.z + slotOffset.z * 0.4 },
       };
       const dropped: Pose = {
-        elbow: { x: armWorld.x + 0.12, y: 1.42 },
-        grip: { x: armWorld.x + 0.31, y: 1.67 },
+        elbow: { x: armWorld.x + 0.12, y: 1.42, z: armWorld.z },
+        grip: { x: armWorld.x + 0.31, y: 1.28, z: armWorld.z },
       };
-      const event = events.get(stationZ);
       const progress = event
         ? Math.max(0, (simulationStep - event.startedStep) / UNLOAD_DWELL_TICKS)
         : 0;
@@ -842,31 +864,35 @@ function createUnloadingZone(): {
         else pose = mixPose(dropped, parked, (progress - 0.91) / 0.09);
 
         if (progress < 0.9) {
-          const slotOffset = goodsSlotOffset(event.slot);
           let cargoGridX = UNLOAD_X + slotOffset.x / CELL_SIZE;
           let cargoGridZ = stationZ + slotOffset.z / CELL_SIZE;
           let cargoY = GOODS_BASE_Y + 0.1;
-          if (progress >= 0.38 && progress < 0.68) {
-            const phase = smoothstep((progress - 0.38) / 0.3);
-            cargoGridX = mix(cargoGridX, UNLOAD_X + 0.61, phase);
-            cargoGridZ = mix(cargoGridZ, stationZ, phase);
-            cargoY = mix(GOODS_BASE_Y + 0.1, 1.78, phase);
-          } else if (progress >= 0.68) {
-            const phase = smoothstep((progress - 0.68) / 0.22);
-            cargoGridX = mix(UNLOAD_X + 0.61, UNLOAD_X + 1.3, phase);
-            cargoGridZ = stationZ;
-            cargoY = mix(1.78, 1.12, phase);
+          if (progress >= 0.38) {
+            cargoGridX = (pose.grip.x + MAP_WIDTH * CELL_SIZE / 2) / CELL_SIZE - 0.5;
+            cargoGridZ = (pose.grip.z + MAP_DEPTH * CELL_SIZE / 2) / CELL_SIZE - 0.5;
+            cargoY = pose.grip.y - 0.16;
           }
           transfers.push({ gridX: cargoGridX, gridZ: cargoGridZ, worldY: cargoY, cargoType: event.cargoType });
         }
         if (progress >= 1) events.delete(stationZ);
       }
 
-      segmentMatrix(shoulderPoint, pose.elbow, armWorld.z).copyToArray(upperMatrices, index * 16);
-      segmentMatrix(pose.elbow, pose.grip, armWorld.z).copyToArray(forearmMatrices, index * 16);
-      Matrix.Translation(pose.elbow.x, pose.elbow.y, armWorld.z).copyToArray(jointMatrices, index * 32);
-      Matrix.Translation(pose.grip.x, pose.grip.y, armWorld.z).copyToArray(jointMatrices, index * 32 + 16);
-      Matrix.Translation(pose.grip.x, pose.grip.y - 0.03, armWorld.z).copyToArray(gripperMatrices, index * 16);
+      segmentMatrix(shoulderPoint, pose.elbow).copyToArray(upperMatrices, index * 16);
+      segmentMatrix(pose.elbow, pose.grip).copyToArray(forearmMatrices, index * 16);
+      Matrix.Translation(pose.elbow.x, pose.elbow.y, pose.elbow.z).copyToArray(jointMatrices, index * 32);
+      Matrix.Translation(pose.grip.x, pose.grip.y, pose.grip.z).copyToArray(jointMatrices, index * 32 + 16);
+      const closeProgress = event
+        ? Math.min(1, Math.max(0, (progress - 0.28) / 0.1))
+        : 0;
+      const openProgress = event
+        ? Math.min(1, Math.max(0, (progress - 0.84) / 0.06))
+        : 0;
+      const gripScale = 1 - 0.32 * closeProgress * (1 - openProgress);
+      Matrix.Compose(
+        new Vector3(1, 1, gripScale),
+        Quaternion.Identity(),
+        new Vector3(pose.grip.x, pose.grip.y - 0.03, pose.grip.z),
+      ).copyToArray(gripperMatrices, index * 16);
     }
     upper.thinInstanceBufferUpdated('matrix');
     forearm.thinInstanceBufferUpdated('matrix');
