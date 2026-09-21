@@ -16,8 +16,6 @@ import './style.css';
 const MAP_WIDTH = 90;
 const MAP_DEPTH = 70;
 const CELL_SIZE = 0.82;
-const RACK_WIDTH_CELLS = 2;
-const RACK_DEPTH_CELLS = 6;
 const MAX_AGENTS = 2500;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
@@ -64,7 +62,7 @@ floor.material = floorMaterial;
 floor.position.y = -0.05;
 
 createGrid();
-createWarehouseRacks();
+createWarehousePallets();
 createBoundaryLights();
 
 const robotMesh = createRobotMesh();
@@ -88,23 +86,55 @@ robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
 robotMesh.thinInstanceCount = agentCount;
 
 function createRobotMesh(): Mesh {
-  const body = MeshBuilder.CreateCylinder('agent-template', {
-    height: 0.34,
-    diameterTop: 0.46,
-    diameterBottom: 0.58,
-    tessellation: 8,
+  const base = MeshBuilder.CreateCylinder('agent-base', {
+    height: 0.12,
+    diameter: 0.64,
+    tessellation: 16,
   }, scene);
-  body.position.y = 0.28;
-  const dome = MeshBuilder.CreateCylinder('agent-dome', {
-    height: 0.14,
-    diameterTop: 0.24,
-    diameterBottom: 0.42,
-    tessellation: 8,
+  base.position.y = 0.1;
+  const bumper = MeshBuilder.CreateTorus('agent-bumper', {
+    diameter: 0.58,
+    thickness: 0.055,
+    tessellation: 20,
   }, scene);
-  dome.position.y = 0.51;
-  const nose = MeshBuilder.CreateBox('agent-heading', { width: 0.15, height: 0.08, depth: 0.18 }, scene);
-  nose.position.set(0, 0.35, 0.28);
-  const merged = Mesh.MergeMeshes([body, dome, nose], true, true, undefined, false, true)!;
+  bumper.position.y = 0.16;
+  const body = MeshBuilder.CreateCylinder('agent-body', {
+    height: 0.3,
+    diameterTop: 0.47,
+    diameterBottom: 0.56,
+    tessellation: 16,
+  }, scene);
+  body.position.y = 0.3;
+  const shoulder = MeshBuilder.CreateTorus('agent-shoulder', {
+    diameter: 0.44,
+    thickness: 0.045,
+    tessellation: 20,
+  }, scene);
+  shoulder.position.y = 0.44;
+  const dome = MeshBuilder.CreateSphere('agent-dome', { diameter: 0.34, segments: 10 }, scene);
+  dome.scaling.y = 0.48;
+  dome.position.y = 0.49;
+  const lidar = MeshBuilder.CreateCylinder('agent-lidar', {
+    height: 0.1,
+    diameter: 0.16,
+    tessellation: 12,
+  }, scene);
+  lidar.position.y = 0.59;
+  const sensorPods: Mesh[] = [];
+  for (let i = 0; i < 4; i++) {
+    const angle = i * Math.PI / 2 + Math.PI / 4;
+    const pod = MeshBuilder.CreateSphere(`agent-sensor-${i}`, { diameter: 0.085, segments: 6 }, scene);
+    pod.position.set(Math.sin(angle) * 0.2, 0.45, Math.cos(angle) * 0.2);
+    sensorPods.push(pod);
+  }
+  const merged = Mesh.MergeMeshes(
+    [base, bumper, body, shoulder, dome, lidar, ...sensorPods],
+    true,
+    true,
+    undefined,
+    false,
+    true,
+  )!;
   merged.name = 'agents';
   const material = new StandardMaterial('agent-material', scene);
   material.diffuseColor = Color3.White();
@@ -133,39 +163,77 @@ function createGrid(): void {
   grid.alpha = 0.24;
 }
 
-function createWarehouseRacks(): void {
-  const rack = MeshBuilder.CreateBox('rack-template', {
-    width: RACK_WIDTH_CELLS * CELL_SIZE,
-    height: 1.65,
-    depth: RACK_DEPTH_CELLS * CELL_SIZE,
-  }, scene);
-  const rackMaterial = new StandardMaterial('rack-material', scene);
-  rackMaterial.diffuseColor = Color3.FromHexString('#18303d');
-  rackMaterial.emissiveColor = Color3.FromHexString('#07151e');
-  rackMaterial.specularColor = Color3.FromHexString('#3c6b7c');
-  rack.material = rackMaterial;
+function createWarehousePallets(): void {
+  const footprint = CELL_SIZE * 0.88;
+  const half = footprint / 2;
+  const legOffset = half - 0.09;
+  const frameParts: Mesh[] = [];
+  for (const x of [-legOffset, legOffset]) {
+    for (const z of [-legOffset, legOffset]) {
+      const leg = MeshBuilder.CreateBox('pallet-leg', { width: 0.1, height: 0.82, depth: 0.1 }, scene);
+      leg.position.set(x, 0.43, z);
+      frameParts.push(leg);
+      const foot = MeshBuilder.CreateBox('pallet-foot', { width: 0.17, height: 0.08, depth: 0.17 }, scene);
+      foot.position.set(x, 0.04, z);
+      frameParts.push(foot);
+    }
+  }
+  for (const z of [-half + 0.055, half - 0.055]) {
+    const rail = MeshBuilder.CreateBox('pallet-rail-x', { width: footprint, height: 0.1, depth: 0.1 }, scene);
+    rail.position.set(0, 0.84, z);
+    frameParts.push(rail);
+  }
+  for (const x of [-half + 0.055, half - 0.055]) {
+    const rail = MeshBuilder.CreateBox('pallet-rail-z', { width: 0.1, height: 0.1, depth: footprint }, scene);
+    rail.position.set(x, 0.84, 0);
+    frameParts.push(rail);
+  }
+  const frame = Mesh.MergeMeshes(frameParts, true, true, undefined, false, true)!;
+  frame.name = 'pallet-frames';
+  const frameMaterial = new StandardMaterial('pallet-frame-material', scene);
+  frameMaterial.diffuseColor = Color3.FromHexString('#17313e');
+  frameMaterial.emissiveColor = Color3.FromHexString('#07151e');
+  frameMaterial.specularColor = Color3.FromHexString('#315d70');
+  frame.material = frameMaterial;
+
+  const deckParts: Mesh[] = [];
+  for (const z of [-0.27, -0.09, 0.09, 0.27]) {
+    const slat = MeshBuilder.CreateBox('pallet-slat', {
+      width: footprint,
+      height: 0.09,
+      depth: 0.12,
+    }, scene);
+    slat.position.set(0, 0.94, z);
+    deckParts.push(slat);
+  }
+  const deck = Mesh.MergeMeshes(deckParts, true, true, undefined, false, true)!;
+  deck.name = 'pallet-decks';
+  const deckMaterial = new StandardMaterial('pallet-deck-material', scene);
+  deckMaterial.diffuseColor = Color3.FromHexString('#2d8098');
+  deckMaterial.emissiveColor = Color3.FromHexString('#0b3442');
+  deckMaterial.specularColor = Color3.FromHexString('#7bdcf2');
+  deckMaterial.specularPower = 64;
+  deck.material = deckMaterial;
+
   const transforms: number[] = [];
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
   for (let gx = 6; gx < MAP_WIDTH - 5; gx += 9) {
     for (let gz = 5; gz < MAP_DEPTH - 4; gz += 8) {
-      Matrix.Translation((gx + RACK_WIDTH_CELLS / 2) * CELL_SIZE - halfW, 0.8, (gz + 1) * CELL_SIZE - halfD)
-        .copyToArray(transforms, transforms.length);
+      for (let x = gx; x <= gx + 1; x++) {
+        for (let z = gz - 2; z <= gz + 3; z++) {
+          Matrix.Translation(
+            (x + 0.5) * CELL_SIZE - halfW,
+            0,
+            (z + 0.5) * CELL_SIZE - halfD,
+          ).copyToArray(transforms, transforms.length);
+        }
+      }
     }
   }
-  rack.thinInstanceSetBuffer('matrix', new Float32Array(transforms), 16, true);
-  const cap = MeshBuilder.CreateBox('rack-cap-template', {
-    width: RACK_WIDTH_CELLS * CELL_SIZE - 0.04,
-    height: 0.07,
-    depth: RACK_DEPTH_CELLS * CELL_SIZE - 0.04,
-  }, scene);
-  const capMaterial = new StandardMaterial('rack-cap-material', scene);
-  capMaterial.emissiveColor = Color3.FromHexString('#24708d');
-  capMaterial.diffuseColor = Color3.FromHexString('#2c7995');
-  cap.material = capMaterial;
-  const capTransforms = new Float32Array(transforms);
-  for (let i = 0; i < capTransforms.length; i += 16) capTransforms[i + 13] = 1.68;
-  cap.thinInstanceSetBuffer('matrix', capTransforms, 16, true);
+  const palletTransforms = new Float32Array(transforms);
+  frame.thinInstanceSetBuffer('matrix', palletTransforms, 16, true);
+  deck.thinInstanceSetBuffer('matrix', palletTransforms, 16, true);
 }
 
 function createBoundaryLights(): void {
@@ -207,23 +275,21 @@ function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
   return result;
 }
 
-function writeMatrix(index: number, gridX: number, gridZ: number, angle: number): void {
+function writeMatrix(index: number, gridX: number, gridZ: number): void {
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
   const offset = index * 16;
-  matrices[offset] = cos;
+  matrices[offset] = 1;
   matrices[offset + 1] = 0;
-  matrices[offset + 2] = -sin;
+  matrices[offset + 2] = 0;
   matrices[offset + 3] = 0;
   matrices[offset + 4] = 0;
   matrices[offset + 5] = 1;
   matrices[offset + 6] = 0;
   matrices[offset + 7] = 0;
-  matrices[offset + 8] = sin;
+  matrices[offset + 8] = 0;
   matrices[offset + 9] = 0;
-  matrices[offset + 10] = cos;
+  matrices[offset + 10] = 1;
   matrices[offset + 11] = 0;
   matrices[offset + 12] = (gridX + 0.5) * CELL_SIZE - halfW;
   matrices[offset + 13] = 0.02;
@@ -239,7 +305,7 @@ function updateFallback(time: number): void {
     const cell = cells[(i * 47) % cells.length];
     const range = MAP_DEPTH - 2;
     const z = 1 + mod(cell.z - 1 + cell.direction * (wholeStep + phase), range);
-    writeMatrix(i, cell.x, z, cell.direction > 0 ? 0 : Math.PI);
+    writeMatrix(i, cell.x, z);
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
 }
@@ -255,10 +321,7 @@ function updateLive(now: number): void {
     const z1 = liveCurrent.positions[i * 2 + 1];
     const x = x0 + (x1 - x0) * alpha;
     const z = z0 + (z1 - z0) * alpha;
-    const dx = x1 - x0;
-    const dz = z1 - z0;
-    const angle = dx === 0 && dz === 0 ? 0 : Math.atan2(dx, dz);
-    writeMatrix(i, x, z, angle);
+    writeMatrix(i, x, z);
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
 }
