@@ -35,8 +35,8 @@ npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
 Open `http://127.0.0.1:4173/`. The agent selector starts or reuses a local run
-for 25, 50, or 100 agents. Pause, replay, playback speed, orbit, and
-zoom controls remain browser-side. If the bridge is unavailable, the page uses
+for 25, 50, or 100 agents. Pause, replay, playback speed, WASD movement, mouse
+orbit, and wheel zoom remain browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run

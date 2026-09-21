@@ -94,6 +94,7 @@ let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let lastInferenceMs = 0;
 let hiddenPalletKey = '';
+const cameraKeys = new Set<string>();
 
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
@@ -697,6 +698,29 @@ function mod(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
 }
 
+function updateCameraMovement(dt: number): void {
+  if (cameraKeys.size === 0) return;
+  const forward = camera.target.subtract(camera.position);
+  forward.y = 0;
+  if (forward.lengthSquared() < 1e-6) return;
+  forward.normalize();
+  const right = Vector3.Cross(Vector3.Up(), forward).normalize();
+  const direction = Vector3.Zero();
+  if (cameraKeys.has('w')) direction.addInPlace(forward);
+  if (cameraKeys.has('s')) direction.subtractInPlace(forward);
+  if (cameraKeys.has('d')) direction.addInPlace(right);
+  if (cameraKeys.has('a')) direction.subtractInPlace(right);
+  if (direction.lengthSquared() < 1e-6) return;
+  direction.normalize();
+  const movementSpeed = Math.max(2.5, camera.radius * 0.18);
+  camera.target.addInPlace(direction.scale(movementSpeed * dt));
+  const margin = CELL_SIZE * 3;
+  const maxX = MAP_WIDTH * CELL_SIZE / 2 + margin;
+  const maxZ = MAP_DEPTH * CELL_SIZE / 2 + margin;
+  camera.target.x = Math.max(-maxX, Math.min(maxX, camera.target.x));
+  camera.target.z = Math.max(-maxZ, Math.min(maxZ, camera.target.z));
+}
+
 const fpsValue = document.querySelector('#fps-value')!;
 const stepValue = document.querySelector('#step-value')!;
 const agentsValue = document.querySelector('#agents-value')!;
@@ -708,6 +732,7 @@ let telemetryElapsed = 0;
 
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+  updateCameraMovement(dt);
   if (!paused && !live) simTime += dt * speed;
   if (live) updateLive(performance.now());
   else updateFallback(simTime);
@@ -760,6 +785,24 @@ document.querySelector('#reset-camera')!.addEventListener('click', () => {
   camera.radius = 32;
   camera.target.set(0, 0, 0);
 });
+
+window.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement | null;
+  if (target?.matches('input:not([type="range"]), select, textarea, [contenteditable="true"]')) return;
+  const key = event.key.toLowerCase();
+  if (!['w', 'a', 's', 'd'].includes(key)) return;
+  cameraKeys.add(key);
+  event.preventDefault();
+});
+
+window.addEventListener('keyup', (event) => {
+  const key = event.key.toLowerCase();
+  if (!['w', 'a', 's', 'd'].includes(key)) return;
+  cameraKeys.delete(key);
+  event.preventDefault();
+});
+
+window.addEventListener('blur', () => cameraKeys.clear());
 
 window.addEventListener('resize', () => engine.resize());
 connect();
