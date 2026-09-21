@@ -42,6 +42,12 @@ telemetry is grouped in the same panel. Selecting an agent also highlights its
 physical pallet, assigned unloading bay, and the loading bay when the pallet is
 about to become empty.
 
+The inspector can irreversibly break the selected robot for the current run.
+The native simulator pins that robot to its current cell, exposes the failure
+in live telemetry, and rebuilds every other agent's cost-to-go and observation
+maps with the failed robot represented as a static obstacle. Stop or changing
+the agent count starts a clean simulation with no failed robots.
+
 ## Run the live demo
 
 The checked-in native runtime targets Linux; on Windows, run it in WSL. Activate

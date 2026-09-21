@@ -37,6 +37,7 @@ class AgentState:
     reload_y: int
     pallet_items: int
     reload_required: bool
+    failed: bool
     completed_tasks: int
 
 
@@ -64,7 +65,7 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
     states: list[AgentState] = []
     for record in fields[5:]:
         values = [int(value) for value in record.split(",")]
-        if len(values) != 12:
+        if len(values) not in (12, 13):
             raise RuntimeError("native simulator emitted a malformed agent record")
         states.append(
             AgentState(
@@ -80,6 +81,7 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
                 reload_y=values[9],
                 pallet_items=values[10],
                 reload_required=bool(values[11]),
+                failed=bool(values[12]) if len(values) >= 13 else False,
                 completed_tasks=completed_tasks,
             )
         )
@@ -116,6 +118,7 @@ def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes
             | (2 if state.loaded else 0)
             | (4 if transitioned else 0)
             | (8 if state.reload_required else 0)
+            | (16 if state.failed else 0)
         )
         pallet_id = 65535 if state.pallet_id < 0 else min(65534, state.pallet_id)
         task_id = (
@@ -175,6 +178,13 @@ class NativeSession:
         if self.process.stdin is None or self.process.returncode is not None:
             raise RuntimeError("native simulator is not running")
         self.process.stdin.write(b"step\n")
+        await self.process.stdin.drain()
+        return await self.read_frame()
+
+    async def fail_agent(self, agent: int) -> NativeFrame:
+        if self.process.stdin is None or self.process.returncode is not None:
+            raise RuntimeError("native simulator is not running")
+        self.process.stdin.write(f"fail {agent}\n".encode("ascii"))
         await self.process.stdin.drain()
         return await self.read_frame()
 
@@ -376,6 +386,12 @@ class Bridge:
                         speed = min(
                             3.0, max(0.25, float(message.get("value", 1)))
                         )
+                    elif action == "fail":
+                        agent = int(message.get("agent", -1))
+                        if 0 <= agent < count:
+                            frame = await session.fail_agent(agent)
+                            await socket.send(encode_frame(frame, previous))
+                            previous = frame.states
                     elif action == "load":
                         requested = int(message.get("agents", count))
                         reload_count = min(MAX_AGENTS, max(2, requested))

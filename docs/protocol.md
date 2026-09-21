@@ -65,7 +65,9 @@ Each protocol 3 agent record is 32 bytes:
 
 Coordinates are grid coordinates. Status is a bit field: bit 0 means waiting,
 bit 1 means that the robot carries a pallet, bit 2 marks a task-stage
-transition, and bit 3 means the current task requires a reload visit.
+transition, bit 3 means the current task requires a reload visit, and bit 4
+marks a failed robot. A failed robot remains on its current cell and that cell
+is treated as a static obstacle by every other agent.
 `task_stage` is 0 for pickup, 1 for unloading, 2 for batch reloading, and 3 for
 return. A pallet ID of 65,535 or task ID of 4,294,967,295 means that no
 corresponding assignment exists. Protocol 1 and 2 frames remain readable by
@@ -85,11 +87,15 @@ Commands are infrequent JSON messages:
 { "type": "control", "action": "step" }
 { "type": "control", "action": "speed", "value": 2.0 }
 { "type": "control", "action": "load", "agents": 100 }
+{ "type": "control", "action": "fail", "agent": 21 }
 ```
 
 `pause` preserves the native simulator state and stops requesting steps. `stop`
 terminates that native process, starts a fresh simulation at frame zero, and
 holds it there; `run` resumes live computation from that state.
+`fail` irreversibly disables one agent for the current simulation. The native
+planner pins it in place and rebuilds cost-to-go and observation obstacle maps
+for the remaining agents. Starting a fresh simulation clears all failures.
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.

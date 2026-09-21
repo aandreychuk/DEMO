@@ -376,6 +376,7 @@ int main(int argc, char** argv)
     std::vector<char> reload_dwell_started(ins.N, false);
     std::vector<char> return_dwell_started(ins.N, false);
     std::vector<char> task_requires_reload(ins.N, false);
+    std::vector<char> failed(ins.N, false);
     long long completed_tasks = 0;
     long long goal_updates = 0;
     long long next_task_id = 0;
@@ -491,7 +492,8 @@ int main(int argc, char** argv)
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
         std::vector<char> blocked_mask(ins.G->size(), false);
         auto& ids = blocked_vertices[i];
-        ids.reserve(pallet_vertices.size() + station_vertices.size());
+        ids.reserve(
+            pallet_vertices.size() + station_vertices.size() + ins.N);
         for (auto* station : station_vertices) {
           if (station == ins.goals[i] || station == positions[i]) continue;
           ids.push_back(station->id);
@@ -509,6 +511,13 @@ int main(int argc, char** argv)
             ids.push_back(vertex_id);
             blocked_mask[vertex_id] = true;
           }
+        }
+        for (int other = 0; other < static_cast<int>(ins.N); ++other) {
+          if (!failed[other] || other == i) continue;
+          const int vertex_id = positions[other]->id;
+          if (blocked_mask[vertex_id]) continue;
+          ids.push_back(vertex_id);
+          blocked_mask[vertex_id] = true;
         }
         distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
@@ -544,7 +553,8 @@ int main(int argc, char** argv)
                   << (task ? task->reload_x : -1) << ','
                   << (task ? task->reload_y : -1) << ','
                   << (task ? pallet_items[task->pallet_id] : 0) << ','
-                  << (task_requires_reload[i] ? 1 : 0);
+                  << (task_requires_reload[i] ? 1 : 0) << ','
+                  << (failed[i] ? 1 : 0);
       }
       std::cout << '\n' << std::flush;
     };
@@ -693,7 +703,20 @@ int main(int argc, char** argv)
       if (args.stream) {
         std::string command;
         while (std::getline(std::cin, command) &&
-               command != "step" && command != "quit") {}
+               command != "step" && command != "quit") {
+          std::istringstream input(command);
+          std::string action;
+          int agent = -1;
+          if (input >> action >> agent && action == "fail" &&
+              agent >= 0 && agent < static_cast<int>(ins.N)) {
+            failed[agent] = true;
+            service_dwell_remaining[agent] = 0;
+            ins.goals[agent] = current[agent];
+            history[agent].fill(0);
+            refresh_navigation(current);
+            emit_stream_frame(episode_steps, current);
+          }
+        }
         if (!std::cin || command == "quit") break;
       }
       std::vector<int> actions(ins.N, 0);
@@ -705,7 +728,7 @@ int main(int argc, char** argv)
           actions[i] = static_cast<int>(
               std::max_element(probs[i].begin(), probs[i].end()) -
               probs[i].begin());
-          if (service_dwell_remaining[i] > 0) actions[i] = 0;
+          if (failed[i] || service_dwell_remaining[i] > 0) actions[i] = 0;
         }
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
           std::rotate(history[i].begin(), history[i].begin() + 1,
@@ -744,6 +767,7 @@ int main(int argc, char** argv)
             forbidden.reserve(
                 station_vertices.size() +
                 (loaded[i] ? pallet_vertices.size() : 0) +
+                ins.N +
                 (service_dwell_remaining[i] > 0
                      ? current[i]->neighbor.size()
                      : 0));
@@ -760,6 +784,14 @@ int main(int argc, char** argv)
                     pallet_vertices[pallet_id] != nullptr) {
                   forbidden.push_back(pallet_vertices[pallet_id]->id);
                 }
+              }
+            }
+            for (int other = 0; other < static_cast<int>(ins.N); ++other) {
+              if (!failed[other] || other == i) continue;
+              const int vertex_id = current[other]->id;
+              if (std::find(forbidden.begin(), forbidden.end(), vertex_id) ==
+                  forbidden.end()) {
+                forbidden.push_back(vertex_id);
               }
             }
             if (service_dwell_remaining[i] > 0) {
@@ -789,6 +821,9 @@ int main(int argc, char** argv)
         int retries = 0;
         while (true) {
           next.assign(ins.N, nullptr);
+          for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+            if (failed[i]) next[i] = current[i];
+          }
           const auto* forbidden =
               (lifelong || retries > 0) ? &forbidden_vertex_ids : nullptr;
           if (!active_pibt->set_new_config(current, next, order, {}, &history,
@@ -1008,6 +1043,7 @@ int main(int argc, char** argv)
           }
         }
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+          if (failed[i]) continue;
           if (agent_task[i] < 0 || current[i] != ins.goals[i]) continue;
           const auto& task = lifelong_tasks[agent_task[i]];
           if (task_stage[i] == 0) {

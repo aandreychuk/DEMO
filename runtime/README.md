@@ -63,6 +63,9 @@ precomputed or replayed by the browser bridge.
 
 Supported demo sizes are 25, 50, and 100 agents. The bridge uses an unbounded
 native horizon by default. Pass a positive `--max-steps` only for diagnostics.
+The browser can also send `fail <agent>` through the bridge. The native runner
+then pins that agent to its current vertex and includes the vertex in every
+other agent's dynamic obstacle mask and cost-to-go recomputation.
 
 `generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,

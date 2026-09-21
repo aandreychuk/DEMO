@@ -64,6 +64,9 @@
               <div><strong id="agent-handoffs">0</strong><small>UNLOADS</small></div>
               <div><strong id="agent-completed">0</strong><small>TASKS DONE</small></div>
             </div>
+            <button id="fail-agent-button" class="fail-agent-button" type="button">
+              <span>⚠</span><span id="fail-agent-label">BREAK AGENT</span>
+            </button>
           </div>
         </section>
 
@@ -76,6 +79,7 @@
             <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
             <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
             <div class="metric"><span id="loaded-value">0</span><small>LOADED</small></div>
+            <div class="metric"><span id="failed-value">0</span><small>FAILED</small></div>
           </div>
           <div class="tasks-total"><small>COMPLETED TASKS</small><strong id="tasks-value">0</strong></div>
         </section>
@@ -85,6 +89,7 @@
           <span><i class="violet"></i>Loaded</span>
           <span><i class="amber"></i>Waiting</span>
           <span><i class="green"></i>Handoff</span>
+          <span><i class="red"></i>Failed</span>
         </section>
       </aside>
 

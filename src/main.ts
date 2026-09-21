@@ -1557,7 +1557,10 @@ function setAgentColor(index: number, status: number): void {
   const loaded = (status & 2) !== 0;
   const waiting = (status & 1) !== 0;
   const transitioned = (status & 4) !== 0;
-  const color = index === selectedAgentId
+  const failed = (status & 16) !== 0;
+  const color = failed
+    ? [1, 0.12, 0.07, 1]
+    : index === selectedAgentId
     ? [1, 0.93, 0.32, 1]
     : transitioned
     ? [0.5, 1, 0.68, 1]
@@ -1833,13 +1836,16 @@ function renderAgentPanel(): void {
   const waiting = (status & 1) !== 0;
   const loaded = (status & 2) !== 0;
   const transitioned = (status & 4) !== 0;
+  const failed = (status & 16) !== 0;
   const agentX = Math.round(frame.positions[id * 2]);
   const agentZ = Math.round(frame.positions[id * 2 + 1]);
   const atUnloadingBay = nativeStage >= 2 && agentX === UNLOAD_X && agentZ === stationZ;
   const atReloadingBay = nativeStage >= 2 && agentX === reloadX && agentZ === reloadZ;
   const stage = atUnloadingBay ? 1 : atReloadingBay ? 2 : nativeStage;
   const palletMotion = palletMotions[id];
-  const stateLabel = palletMotion?.kind === 'pickup' && waiting
+  const stateLabel = failed
+    ? 'FAILED'
+    : palletMotion?.kind === 'pickup' && waiting
     ? 'LOADING PALLET'
     : palletMotion?.kind === 'drop' && waiting
       ? 'PARKING PALLET'
@@ -1856,7 +1862,10 @@ function renderAgentPanel(): void {
           : 'EMPTY';
   const statePill = document.querySelector<HTMLElement>('#selected-agent-state')!;
   statePill.textContent = stateLabel;
-  statePill.className = `state-pill${loaded ? ' loaded' : ''}${waiting ? ' waiting' : ''}`;
+  statePill.className = `state-pill${failed ? ' failed' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
+  const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
+  failButton.disabled = failed || socket?.readyState !== WebSocket.OPEN;
+  document.querySelector('#fail-agent-label')!.textContent = failed ? 'AGENT FAILED' : 'BREAK AGENT';
 
   document.querySelector('#selected-agent')!.textContent = `AGENT ${String(id).padStart(3, '0')}`;
   document.querySelector('#agent-position')!.textContent =
@@ -2020,6 +2029,7 @@ const agentsValue = document.querySelector('#agents-value')!;
 const throughputValue = document.querySelector('#throughput-value')!;
 const latencyValue = document.querySelector('#latency-value')!;
 const loadedValue = document.querySelector('#loaded-value')!;
+const failedValue = document.querySelector('#failed-value')!;
 const tasksValue = document.querySelector('#tasks-value')!;
 let telemetryElapsed = 0;
 
@@ -2042,12 +2052,14 @@ engine.runRenderLoop(() => {
       : Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
     latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
+    failedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) : 0);
     tasksValue.textContent = String(liveCurrent?.completedTasks ?? 0);
   }
 });
 
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
+const failAgentButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
@@ -2067,6 +2079,14 @@ stopButton.addEventListener('click', () => {
   resetAgentStats();
   sendControl('stop');
   setConnection('stopped', 'SIMULATION // STOPPED');
+});
+
+failAgentButton.addEventListener('click', () => {
+  if (selectedAgentId < 0 || !liveCurrent) return;
+  if ((liveCurrent.statuses[selectedAgentId] & 16) !== 0) return;
+  failAgentButton.disabled = true;
+  document.querySelector('#fail-agent-label')!.textContent = 'BREAKING…';
+  sendControl('fail', { agent: selectedAgentId });
 });
 
 document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('change', (event) => {
