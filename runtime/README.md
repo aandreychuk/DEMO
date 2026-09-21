@@ -72,5 +72,5 @@ the agent's assigned target are masked from both cost-to-go and PIBT. Guarded
 service cells behind the bays and boundary end caps leave one aisle-side
 entrance per bay. The browser renders a robotic arm in each guarded cell and
 animates the cargo transfer when an agent advances from unloading to return.
-After that transition, the native runtime holds the agent in its bay for two
+After that transition, the native runtime holds the agent in its bay for five
 additional simulation steps before allowing it to leave.

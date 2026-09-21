@@ -162,7 +162,7 @@ struct LifelongTask {
   int station_y;
 };
 
-constexpr int kUnloadingDwellSteps = 2;
+constexpr int kUnloadingDwellSteps = 5;
 
 std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
 {
