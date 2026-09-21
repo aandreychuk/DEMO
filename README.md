@@ -9,7 +9,9 @@ thin instances.
 Each generated task has three goals: pick up a pallet, deliver it to an
 unloading station, and return it to its original cell. Empty robots can pass
 under parked pallets. Loaded robots receive a pallet-aware cost-to-go map and
-cannot enter cells occupied by parked pallets.
+cannot enter cells occupied by parked pallets. Unloading cells are dead-end
+bays: an agent may enter only its assigned bay and must leave through the same
+aisle-side edge.
 
 ## Run the live demo
 
@@ -48,9 +50,9 @@ deterministic FastDMM 0.8M + PIBT run on the current machine completed this
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed three-goal tasks | 722 |
-| native runtime | 5.64 s |
-| mean AOTI inference | 4.93 ms |
+| completed three-goal tasks | 717 |
+| native runtime | 6.07 s |
+| mean AOTI inference | 5.49 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

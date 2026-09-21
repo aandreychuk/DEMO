@@ -17,11 +17,11 @@ The first server message is JSON so integrations are easy to inspect:
   "agents": 100,
   "tickRate": 10,
   "frames": 601,
-  "planningSeconds": 5.7,
-  "inferenceMs": 4.9,
+  "planningSeconds": 6.1,
+  "inferenceMs": 5.5,
   "lifelong": true,
   "layout": { "pallets": [], "stations": [] },
-  "summary": { "status": "lifelong_horizon", "completed_tasks": 722 }
+  "summary": { "status": "lifelong_horizon", "completed_tasks": 717 }
 }
 ```
 

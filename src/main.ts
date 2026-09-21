@@ -441,6 +441,38 @@ function createUnloadingZone(): void {
   }
   pad.thinInstanceSetBuffer('matrix', new Float32Array(padTransforms), 16, true);
 
+  const backstop = MeshBuilder.CreateBox('unloading-backstop', {
+    width: 0.14,
+    height: 0.42,
+    depth: CELL_SIZE * 0.9,
+  }, scene);
+  const backstopMaterial = new StandardMaterial('unloading-backstop-material', scene);
+  backstopMaterial.diffuseColor = Color3.FromHexString('#704619');
+  backstopMaterial.emissiveColor = Color3.FromHexString('#3a2107');
+  backstopMaterial.specularColor = Color3.FromHexString('#ffc45d');
+  backstop.material = backstopMaterial;
+  const backstopTransforms: number[] = [];
+  for (let z = 5; z < MAP_DEPTH - 5; z++) {
+    const transform = gridTransform(MAP_WIDTH - 2, z);
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.21, 0)));
+    transform.copyToArray(backstopTransforms, backstopTransforms.length);
+  }
+  backstop.thinInstanceSetBuffer('matrix', new Float32Array(backstopTransforms), 16, true);
+
+  const endstop = MeshBuilder.CreateBox('unloading-endstop', {
+    width: CELL_SIZE * 0.9,
+    height: 0.42,
+    depth: 0.14,
+  }, scene);
+  endstop.material = backstopMaterial;
+  const endstopTransforms: number[] = [];
+  for (const z of [4, MAP_DEPTH - 5]) {
+    const transform = gridTransform(MAP_WIDTH - 3, z);
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.21, 0)));
+    transform.copyToArray(endstopTransforms, endstopTransforms.length);
+  }
+  endstop.thinInstanceSetBuffer('matrix', new Float32Array(endstopTransforms), 16, true);
+
   const beacon = MeshBuilder.CreateCylinder('unloading-beacon', { height: 0.09, diameter: 0.18, tessellation: 12 }, scene);
   const beaconMaterial = new StandardMaterial('unloading-beacon-material', scene);
   beaconMaterial.emissiveColor = Color3.FromHexString('#ffbd3e');
@@ -487,6 +519,7 @@ function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
   const result: Array<{ x: number; z: number; direction: number }> = [];
   for (let x = 1; x < MAP_WIDTH - 1; x++) {
     for (let z = 1; z < MAP_DEPTH - 1; z++) {
+      if (z >= 5 && z < MAP_DEPTH - 5 && x >= MAP_WIDTH - 3) continue;
       result.push({ x, z, direction: x % 2 === 0 ? 1 : -1 });
     }
   }

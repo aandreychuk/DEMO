@@ -67,4 +67,6 @@ Supported demo sizes are 25, 50, and 100 agents. The default native horizon is
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
 one unloading cell, and the original pallet cell. The native runner updates the
 goal and cost-to-go after every stage. Parked pallets are per-agent dynamic
-obstacles only while that agent is carrying a load.
+obstacles only while that agent is carrying a load. All unloading bays except
+the agent's assigned target are masked from both cost-to-go and PIBT. A back
+wall and end caps leave one aisle-side entrance per bay.

@@ -15,6 +15,7 @@ PALLET_X = range(5, WIDTH - 4, 8)
 PALLET_Y = range(4, HEIGHT - 3, 7)
 UNLOAD_X = WIDTH - 3
 UNLOAD_Y = range(5, HEIGHT - 5)
+UNLOAD_BACK_X = UNLOAD_X + 1
 
 
 def pallet_cells() -> list[tuple[int, int]]:
@@ -45,8 +46,19 @@ def main() -> None:
 
     pallets = pallet_cells()
     stations = [(UNLOAD_X, y) for y in UNLOAD_Y]
+    walls = {
+        (x, y)
+        for y in range(HEIGHT)
+        for x in range(WIDTH)
+        if x in (0, WIDTH - 1) or y in (0, HEIGHT - 1)
+    }
+    walls.update((UNLOAD_BACK_X, y) for y in UNLOAD_Y)
+    walls.update({
+        (UNLOAD_X, min(UNLOAD_Y) - 1),
+        (UNLOAD_X, max(UNLOAD_Y) + 1),
+    })
     rows = [
-        "".join("@" if x in (0, WIDTH - 1) or y in (0, HEIGHT - 1) else "." for x in range(WIDTH))
+        "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)
     ]
     excluded = set(pallets) | set(stations)
@@ -54,7 +66,7 @@ def main() -> None:
         (x, y)
         for y in range(1, HEIGHT - 1)
         for x in range(1, WIDTH - 1)
-        if (x, y) not in excluded
+        if (x, y) not in excluded and (x, y) not in walls
     ]
     if args.agents > len(starts_pool) or args.agents > len(pallets):
         raise SystemExit("warehouse does not have enough starts or pallets")
@@ -83,7 +95,10 @@ def main() -> None:
                 "width": WIDTH,
                 "height": HEIGHT,
                 "pallets": pallet_records,
-                "stations": [{"id": index, "x": x, "y": y} for index, (x, y) in enumerate(stations)],
+                "stations": [
+                    {"id": index, "x": x, "y": y, "accessSide": "west"}
+                    for index, (x, y) in enumerate(stations)
+                ],
             },
             indent=2,
         ) + "\n",

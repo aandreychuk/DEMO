@@ -353,6 +353,8 @@ int main(int argc, char** argv)
     std::vector<Vertex*> pallet_vertices;
     std::vector<char> pallet_reserved;
     std::vector<char> pallet_present;
+    std::vector<Vertex*> station_vertices;
+    std::vector<char> station_mask(ins.G->size(), false);
     std::vector<int> agent_task(ins.N, -1);
     std::vector<int> task_stage(ins.N, 0);
     std::vector<char> loaded(ins.N, false);
@@ -382,6 +384,10 @@ int main(int argc, char** argv)
           throw std::runtime_error("pallet id maps to multiple cells");
         }
         pallet_vertices[task.pallet_id] = pallet;
+        if (!station_mask[station->id]) {
+          station_mask[station->id] = true;
+          station_vertices.push_back(station);
+        }
         pending_tasks.push_back(index);
       }
       assign_task = [&](int agent, Vertex* current_position) {
@@ -447,14 +453,20 @@ int main(int argc, char** argv)
       }
     }
 
-    auto refresh_navigation = [&]() {
+    Config current = ins.starts;
+    auto refresh_navigation = [&](const Config& positions) {
       if (!lifelong) return;
       std::vector<std::vector<int>> blocked_vertices(ins.N);
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
         std::vector<char> blocked_mask(ins.G->size(), false);
+        auto& ids = blocked_vertices[i];
+        ids.reserve(pallet_vertices.size() + station_vertices.size());
+        for (auto* station : station_vertices) {
+          if (station == ins.goals[i] || station == positions[i]) continue;
+          ids.push_back(station->id);
+          blocked_mask[station->id] = true;
+        }
         if (loaded[i]) {
-          auto& ids = blocked_vertices[i];
-          ids.reserve(pallet_vertices.size());
           for (int pallet_id = 0;
                pallet_id < static_cast<int>(pallet_vertices.size());
                ++pallet_id) {
@@ -467,8 +479,7 @@ int main(int argc, char** argv)
             blocked_mask[vertex_id] = true;
           }
         }
-        distances.set_goal(i, ins.goals[i],
-                           loaded[i] ? &blocked_mask : nullptr);
+        distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
       if (raw_policy) raw_policy->set_dynamic_obstacles(blocked_vertices);
       if (pibt) pibt->policy.set_dynamic_obstacles(blocked_vertices);
@@ -476,9 +487,8 @@ int main(int argc, char** argv)
         fallback_pibt->policy.set_dynamic_obstacles(blocked_vertices);
       }
     };
-    refresh_navigation();
+    refresh_navigation(current);
 
-    Config current = ins.starts;
     std::ofstream trajectory;
     std::ofstream decisions;
     std::ofstream training_dump;
@@ -654,14 +664,23 @@ int main(int argc, char** argv)
         std::vector<std::vector<int>> forbidden_vertex_ids(ins.N);
         if (lifelong) {
           for (int i = 0; i < static_cast<int>(ins.N); ++i) {
-            if (!loaded[i]) continue;
-            for (int pallet_id = 0;
-                 pallet_id < static_cast<int>(pallet_vertices.size());
-                 ++pallet_id) {
-              if (pallet_present[pallet_id] &&
-                  pallet_vertices[pallet_id] != nullptr) {
-                forbidden_vertex_ids[i].push_back(
-                    pallet_vertices[pallet_id]->id);
+            auto& forbidden = forbidden_vertex_ids[i];
+            forbidden.reserve(
+                station_vertices.size() +
+                (loaded[i] ? pallet_vertices.size() : 0));
+            for (auto* station : station_vertices) {
+              if (station != current[i] && station != ins.goals[i]) {
+                forbidden.push_back(station->id);
+              }
+            }
+            if (loaded[i]) {
+              for (int pallet_id = 0;
+                   pallet_id < static_cast<int>(pallet_vertices.size());
+                   ++pallet_id) {
+                if (pallet_present[pallet_id] &&
+                    pallet_vertices[pallet_id] != nullptr) {
+                  forbidden.push_back(pallet_vertices[pallet_id]->id);
+                }
               }
             }
           }
@@ -884,6 +903,15 @@ int main(int argc, char** argv)
         }
       }
 
+      bool station_membership_changed = false;
+      if (lifelong) {
+        for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+          if (station_mask[current[i]->id] != station_mask[next[i]->id]) {
+            station_membership_changed = true;
+            break;
+          }
+        }
+      }
       current = std::move(next);
       bool navigation_changed = false;
       if (lifelong) {
@@ -914,7 +942,9 @@ int main(int argc, char** argv)
           priorities[i] -= std::floor(priorities[i]);
           navigation_changed = true;
         }
-        if (navigation_changed) refresh_navigation();
+        if (navigation_changed || station_membership_changed) {
+          refresh_navigation(current);
+        }
       }
       remember_config(current);
       episode_steps = step + 1;

@@ -968,112 +968,134 @@
     {
       "id": 0,
       "x": 41,
-      "y": 5
+      "y": 5,
+      "accessSide": "west"
     },
     {
       "id": 1,
       "x": 41,
-      "y": 6
+      "y": 6,
+      "accessSide": "west"
     },
     {
       "id": 2,
       "x": 41,
-      "y": 7
+      "y": 7,
+      "accessSide": "west"
     },
     {
       "id": 3,
       "x": 41,
-      "y": 8
+      "y": 8,
+      "accessSide": "west"
     },
     {
       "id": 4,
       "x": 41,
-      "y": 9
+      "y": 9,
+      "accessSide": "west"
     },
     {
       "id": 5,
       "x": 41,
-      "y": 10
+      "y": 10,
+      "accessSide": "west"
     },
     {
       "id": 6,
       "x": 41,
-      "y": 11
+      "y": 11,
+      "accessSide": "west"
     },
     {
       "id": 7,
       "x": 41,
-      "y": 12
+      "y": 12,
+      "accessSide": "west"
     },
     {
       "id": 8,
       "x": 41,
-      "y": 13
+      "y": 13,
+      "accessSide": "west"
     },
     {
       "id": 9,
       "x": 41,
-      "y": 14
+      "y": 14,
+      "accessSide": "west"
     },
     {
       "id": 10,
       "x": 41,
-      "y": 15
+      "y": 15,
+      "accessSide": "west"
     },
     {
       "id": 11,
       "x": 41,
-      "y": 16
+      "y": 16,
+      "accessSide": "west"
     },
     {
       "id": 12,
       "x": 41,
-      "y": 17
+      "y": 17,
+      "accessSide": "west"
     },
     {
       "id": 13,
       "x": 41,
-      "y": 18
+      "y": 18,
+      "accessSide": "west"
     },
     {
       "id": 14,
       "x": 41,
-      "y": 19
+      "y": 19,
+      "accessSide": "west"
     },
     {
       "id": 15,
       "x": 41,
-      "y": 20
+      "y": 20,
+      "accessSide": "west"
     },
     {
       "id": 16,
       "x": 41,
-      "y": 21
+      "y": 21,
+      "accessSide": "west"
     },
     {
       "id": 17,
       "x": 41,
-      "y": 22
+      "y": 22,
+      "accessSide": "west"
     },
     {
       "id": 18,
       "x": 41,
-      "y": 23
+      "y": 23,
+      "accessSide": "west"
     },
     {
       "id": 19,
       "x": 41,
-      "y": 24
+      "y": 24,
+      "accessSide": "west"
     },
     {
       "id": 20,
       "x": 41,
-      "y": 25
+      "y": 25,
+      "accessSide": "west"
     },
     {
       "id": 21,
       "x": 41,
-      "y": 26
+      "y": 26,
+      "accessSide": "west"
     }
   ]
 }
