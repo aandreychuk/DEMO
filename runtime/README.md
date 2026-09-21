@@ -68,5 +68,7 @@ layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
 one unloading cell, and the original pallet cell. The native runner updates the
 goal and cost-to-go after every stage. Parked pallets are per-agent dynamic
 obstacles only while that agent is carrying a load. All unloading bays except
-the agent's assigned target are masked from both cost-to-go and PIBT. A back
-wall and end caps leave one aisle-side entrance per bay.
+the agent's assigned target are masked from both cost-to-go and PIBT. Guarded
+service cells behind the bays and boundary end caps leave one aisle-side
+entrance per bay. The browser renders a robotic arm in each guarded cell and
+animates the cargo transfer when an agent advances from unloading to return.

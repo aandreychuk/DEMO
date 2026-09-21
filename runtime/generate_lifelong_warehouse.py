@@ -14,7 +14,7 @@ HEIGHT = 32
 PALLET_X = range(5, WIDTH - 4, 8)
 PALLET_Y = range(4, HEIGHT - 3, 7)
 UNLOAD_X = WIDTH - 3
-UNLOAD_Y = range(5, HEIGHT - 5)
+UNLOAD_Y = range(1, HEIGHT - 1)
 UNLOAD_BACK_X = UNLOAD_X + 1
 
 

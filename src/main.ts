@@ -7,7 +7,7 @@ import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
@@ -17,6 +17,10 @@ const MAP_WIDTH = 44;
 const MAP_DEPTH = 32;
 const CELL_SIZE = 0.9;
 const MAX_AGENTS = 100;
+const UNLOAD_X = MAP_WIDTH - 3;
+const UNLOAD_MIN_Z = 1;
+const UNLOAD_MAX_Z = MAP_DEPTH - 2;
+const UNLOAD_STATION_COUNT = UNLOAD_MAX_Z - UNLOAD_MIN_Z + 1;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
@@ -32,6 +36,7 @@ type LiveFrame = {
 };
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
+type CargoTransfer = { gridX: number; gridZ: number; worldY: number; cargoType: number };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false }, true);
@@ -69,7 +74,7 @@ floor.position.y = -0.05;
 createGrid();
 const palletCells = buildPalletCells();
 const palletScene = createWarehousePallets(palletCells);
-createUnloadingZone();
+const unloadingScene = createUnloadingZone();
 createBoundaryLights();
 
 const robotMesh = createRobotMesh();
@@ -77,9 +82,9 @@ const robotLoad = createCarriedPalletMeshes();
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
 const cargoMatrices = [
-  new Float32Array(MAX_AGENTS * 16),
-  new Float32Array(MAX_AGENTS * 16),
-  new Float32Array(MAX_AGENTS * 16),
+  new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
+  new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
+  new Float32Array((MAX_AGENTS + UNLOAD_STATION_COUNT) * 16),
 ];
 const colors = new Float32Array(MAX_AGENTS * 4);
 const cells = buildFreeCells();
@@ -423,7 +428,11 @@ function createCarriedPalletMeshes(): {
   return { frame, deck, cargo };
 }
 
-function createUnloadingZone(): void {
+function createUnloadingZone(): {
+  trigger: (stationZ: number, cargoType: number, startedAt: number) => void;
+  update: (now: number) => CargoTransfer[];
+  reset: () => void;
+} {
   const pad = MeshBuilder.CreateBox('unloading-pad', {
     width: CELL_SIZE * 0.82,
     height: 0.035,
@@ -434,41 +443,38 @@ function createUnloadingZone(): void {
   padMaterial.emissiveColor = Color3.FromHexString('#0e5365');
   pad.material = padMaterial;
   const padTransforms: number[] = [];
-  for (let z = 5; z < MAP_DEPTH - 5; z++) {
-    const transform = gridTransform(MAP_WIDTH - 3, z);
+  for (let z = UNLOAD_MIN_Z; z <= UNLOAD_MAX_Z; z++) {
+    const transform = gridTransform(UNLOAD_X, z);
     transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.02, 0)));
     transform.copyToArray(padTransforms, padTransforms.length);
   }
   pad.thinInstanceSetBuffer('matrix', new Float32Array(padTransforms), 16, true);
 
-  const backstop = MeshBuilder.CreateBox('unloading-backstop', {
-    width: 0.14,
-    height: 0.42,
-    depth: CELL_SIZE * 0.9,
+  const serviceStrip = MeshBuilder.CreateBox('unloading-service-strip', {
+    width: CELL_SIZE * 0.86,
+    height: 0.035,
+    depth: UNLOAD_STATION_COUNT * CELL_SIZE,
   }, scene);
-  const backstopMaterial = new StandardMaterial('unloading-backstop-material', scene);
-  backstopMaterial.diffuseColor = Color3.FromHexString('#704619');
-  backstopMaterial.emissiveColor = Color3.FromHexString('#3a2107');
-  backstopMaterial.specularColor = Color3.FromHexString('#ffc45d');
-  backstop.material = backstopMaterial;
-  const backstopTransforms: number[] = [];
-  for (let z = 5; z < MAP_DEPTH - 5; z++) {
-    const transform = gridTransform(MAP_WIDTH - 2, z);
-    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.21, 0)));
-    transform.copyToArray(backstopTransforms, backstopTransforms.length);
-  }
-  backstop.thinInstanceSetBuffer('matrix', new Float32Array(backstopTransforms), 16, true);
+  const serviceMaterial = new StandardMaterial('unloading-service-material', scene);
+  serviceMaterial.diffuseColor = Color3.FromHexString('#17242b');
+  serviceMaterial.emissiveColor = Color3.FromHexString('#121a1f');
+  serviceMaterial.specularColor = Color3.FromHexString('#526b73');
+  serviceStrip.material = serviceMaterial;
+  serviceStrip.position.copyFrom(worldAt(MAP_WIDTH - 2, (UNLOAD_MIN_Z + UNLOAD_MAX_Z) / 2, -0.01));
 
   const endstop = MeshBuilder.CreateBox('unloading-endstop', {
     width: CELL_SIZE * 0.9,
-    height: 0.42,
+    height: 0.2,
     depth: 0.14,
   }, scene);
-  endstop.material = backstopMaterial;
+  const safetyMaterial = new StandardMaterial('unloading-safety-material', scene);
+  safetyMaterial.diffuseColor = Color3.FromHexString('#be7626');
+  safetyMaterial.emissiveColor = Color3.FromHexString('#44260a');
+  endstop.material = safetyMaterial;
   const endstopTransforms: number[] = [];
-  for (const z of [4, MAP_DEPTH - 5]) {
-    const transform = gridTransform(MAP_WIDTH - 3, z);
-    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.21, 0)));
+  for (const z of [0, MAP_DEPTH - 1]) {
+    const transform = gridTransform(UNLOAD_X, z);
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.1, 0)));
     transform.copyToArray(endstopTransforms, endstopTransforms.length);
   }
   endstop.thinInstanceSetBuffer('matrix', new Float32Array(endstopTransforms), 16, true);
@@ -479,12 +485,188 @@ function createUnloadingZone(): void {
   beaconMaterial.disableLighting = true;
   beacon.material = beaconMaterial;
   const beaconTransforms: number[] = [];
-  for (const z of [5, MAP_DEPTH - 6]) {
+  for (const z of [UNLOAD_MIN_Z, UNLOAD_MAX_Z]) {
     const transform = gridTransform(MAP_WIDTH - 2, z);
-    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.08, 0)));
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.16, 0)));
     transform.copyToArray(beaconTransforms, beaconTransforms.length);
   }
   beacon.thinInstanceSetBuffer('matrix', new Float32Array(beaconTransforms), 16, true);
+
+  const armMaterial = new StandardMaterial('robotic-arm-material', scene);
+  armMaterial.diffuseColor = Color3.FromHexString('#d9822b');
+  armMaterial.emissiveColor = Color3.FromHexString('#3d1c05');
+  armMaterial.specularColor = Color3.FromHexString('#ffd08b');
+  armMaterial.specularPower = 72;
+  const jointMaterial = new StandardMaterial('robotic-arm-joint-material', scene);
+  jointMaterial.diffuseColor = Color3.FromHexString('#263944');
+  jointMaterial.emissiveColor = Color3.FromHexString('#0b171d');
+  jointMaterial.specularColor = Color3.FromHexString('#99c0ca');
+  const gripperMaterial = new StandardMaterial('robotic-arm-gripper-material', scene);
+  gripperMaterial.diffuseColor = Color3.FromHexString('#63d8e8');
+  gripperMaterial.emissiveColor = Color3.FromHexString('#123e48');
+
+  const base = MeshBuilder.CreateCylinder('robotic-arm-base', { height: 0.16, diameter: 0.58, tessellation: 20 }, scene);
+  base.material = jointMaterial;
+  const pedestal = MeshBuilder.CreateCylinder('robotic-arm-pedestal', {
+    height: 0.58,
+    diameterTop: 0.29,
+    diameterBottom: 0.38,
+    tessellation: 16,
+  }, scene);
+  pedestal.material = armMaterial;
+  const shoulder = MeshBuilder.CreateSphere('robotic-arm-shoulder', { diameter: 0.31, segments: 12 }, scene);
+  shoulder.material = jointMaterial;
+  const upper = MeshBuilder.CreateBox('robotic-arm-upper', { width: 1, height: 0.16, depth: 0.18 }, scene);
+  upper.material = armMaterial;
+  const forearm = MeshBuilder.CreateBox('robotic-arm-forearm', { width: 1, height: 0.13, depth: 0.15 }, scene);
+  forearm.material = armMaterial;
+  const movingJoint = MeshBuilder.CreateSphere('robotic-arm-moving-joint', { diameter: 0.24, segments: 10 }, scene);
+  movingJoint.material = jointMaterial;
+
+  const gripperParts: Mesh[] = [];
+  const gripperBar = MeshBuilder.CreateBox('robotic-arm-gripper-bar', { width: 0.16, height: 0.09, depth: 0.46 }, scene);
+  gripperParts.push(gripperBar);
+  for (const z of [-0.18, 0.18]) {
+    const finger = MeshBuilder.CreateBox('robotic-arm-gripper-finger', { width: 0.08, height: 0.3, depth: 0.07 }, scene);
+    finger.position.set(-0.01, -0.14, z);
+    gripperParts.push(finger);
+  }
+  const gripper = Mesh.MergeMeshes(gripperParts, true, true, undefined, false, true)!;
+  gripper.name = 'robotic-arm-gripper';
+  gripper.material = gripperMaterial;
+
+  const baseTransforms: number[] = [];
+  const pedestalTransforms: number[] = [];
+  const shoulderTransforms: number[] = [];
+  for (let z = UNLOAD_MIN_Z; z <= UNLOAD_MAX_Z; z++) {
+    const armPosition = worldAt(MAP_WIDTH - 2, z, 0);
+    Matrix.Translation(armPosition.x, 0.08, armPosition.z).copyToArray(baseTransforms, baseTransforms.length);
+    Matrix.Translation(armPosition.x, 0.43, armPosition.z).copyToArray(pedestalTransforms, pedestalTransforms.length);
+    Matrix.Translation(armPosition.x, 0.78, armPosition.z).copyToArray(shoulderTransforms, shoulderTransforms.length);
+  }
+  base.thinInstanceSetBuffer('matrix', new Float32Array(baseTransforms), 16, true);
+  pedestal.thinInstanceSetBuffer('matrix', new Float32Array(pedestalTransforms), 16, true);
+  shoulder.thinInstanceSetBuffer('matrix', new Float32Array(shoulderTransforms), 16, true);
+
+  const upperMatrices = new Float32Array(UNLOAD_STATION_COUNT * 16);
+  const forearmMatrices = new Float32Array(UNLOAD_STATION_COUNT * 16);
+  const jointMatrices = new Float32Array(UNLOAD_STATION_COUNT * 2 * 16);
+  const gripperMatrices = new Float32Array(UNLOAD_STATION_COUNT * 16);
+  upper.thinInstanceSetBuffer('matrix', upperMatrices, 16, false);
+  forearm.thinInstanceSetBuffer('matrix', forearmMatrices, 16, false);
+  movingJoint.thinInstanceSetBuffer('matrix', jointMatrices, 16, false);
+  gripper.thinInstanceSetBuffer('matrix', gripperMatrices, 16, false);
+  upper.thinInstanceCount = UNLOAD_STATION_COUNT;
+  forearm.thinInstanceCount = UNLOAD_STATION_COUNT;
+  movingJoint.thinInstanceCount = UNLOAD_STATION_COUNT * 2;
+  gripper.thinInstanceCount = UNLOAD_STATION_COUNT;
+  for (const mesh of [base, pedestal, shoulder, upper, forearm, movingJoint, gripper]) {
+    mesh.alwaysSelectAsActiveMesh = true;
+  }
+
+  type ArmEvent = { startedAt: number; cargoType: number };
+  type Point = { x: number; y: number };
+  type Pose = { elbow: Point; grip: Point };
+  const events = new Map<number, ArmEvent>();
+  const durationMs = 2000;
+
+  const mix = (a: number, b: number, t: number): number => a + (b - a) * smoothstep(t);
+  const mixPoint = (a: Point, b: Point, t: number): Point => ({ x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) });
+  const mixPose = (a: Pose, b: Pose, t: number): Pose => ({
+    elbow: mixPoint(a.elbow, b.elbow, t),
+    grip: mixPoint(a.grip, b.grip, t),
+  });
+  const segmentMatrix = (from: Point, to: Point, z: number): Matrix => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    return Matrix.Compose(
+      new Vector3(Math.hypot(dx, dy), 1, 1),
+      Quaternion.RotationAxis(Vector3.Forward(), Math.atan2(dy, dx)),
+      new Vector3((from.x + to.x) / 2, (from.y + to.y) / 2, z),
+    );
+  };
+
+  const update = (now: number): CargoTransfer[] => {
+    const transfers: CargoTransfer[] = [];
+    for (let index = 0; index < UNLOAD_STATION_COUNT; index++) {
+      const stationZ = UNLOAD_MIN_Z + index;
+      const stationWorld = worldAt(UNLOAD_X, stationZ, 0);
+      const armWorld = worldAt(MAP_WIDTH - 2, stationZ, 0);
+      const shoulderPoint = { x: armWorld.x, y: 0.78 };
+      const parked: Pose = {
+        elbow: { x: armWorld.x - 0.05, y: 1.38 },
+        grip: { x: armWorld.x + 0.11, y: 1.88 },
+      };
+      const reached: Pose = {
+        elbow: { x: armWorld.x - 0.43, y: 1.4 },
+        grip: { x: stationWorld.x, y: 1.68 },
+      };
+      const lifted: Pose = {
+        elbow: { x: armWorld.x - 0.19, y: 1.5 },
+        grip: { x: armWorld.x - 0.35, y: 2.0 },
+      };
+      const dropped: Pose = {
+        elbow: { x: armWorld.x + 0.12, y: 1.42 },
+        grip: { x: armWorld.x + 0.31, y: 1.67 },
+      };
+      const event = events.get(stationZ);
+      const progress = event ? Math.max(0, (now - event.startedAt) / durationMs) : 0;
+      let pose = parked;
+      if (event) {
+        if (progress < 0.32) pose = mixPose(parked, reached, progress / 0.32);
+        else if (progress < 0.42) pose = reached;
+        else if (progress < 0.66) pose = mixPose(reached, lifted, (progress - 0.42) / 0.24);
+        else if (progress < 0.84) pose = mixPose(lifted, dropped, (progress - 0.66) / 0.18);
+        else if (progress < 0.91) pose = dropped;
+        else pose = mixPose(dropped, parked, (progress - 0.91) / 0.09);
+
+        if (progress < 0.9) {
+          let cargoGridX = UNLOAD_X;
+          let cargoY = 0.1;
+          if (progress >= 0.38 && progress < 0.68) {
+            const phase = smoothstep((progress - 0.38) / 0.3);
+            cargoGridX = mix(UNLOAD_X, UNLOAD_X + 0.61, phase);
+            cargoY = mix(0.1, 0.53, phase);
+          } else if (progress >= 0.68) {
+            const phase = smoothstep((progress - 0.68) / 0.22);
+            cargoGridX = mix(UNLOAD_X + 0.61, UNLOAD_X + 1.3, phase);
+            cargoY = mix(0.53, 0.22, phase);
+          }
+          transfers.push({ gridX: cargoGridX, gridZ: stationZ, worldY: cargoY, cargoType: event.cargoType });
+        }
+        if (progress >= 1) events.delete(stationZ);
+      }
+
+      segmentMatrix(shoulderPoint, pose.elbow, armWorld.z).copyToArray(upperMatrices, index * 16);
+      segmentMatrix(pose.elbow, pose.grip, armWorld.z).copyToArray(forearmMatrices, index * 16);
+      Matrix.Translation(pose.elbow.x, pose.elbow.y, armWorld.z).copyToArray(jointMatrices, index * 32);
+      Matrix.Translation(pose.grip.x, pose.grip.y, armWorld.z).copyToArray(jointMatrices, index * 32 + 16);
+      Matrix.Translation(pose.grip.x, pose.grip.y - 0.03, armWorld.z).copyToArray(gripperMatrices, index * 16);
+    }
+    upper.thinInstanceBufferUpdated('matrix');
+    forearm.thinInstanceBufferUpdated('matrix');
+    movingJoint.thinInstanceBufferUpdated('matrix');
+    gripper.thinInstanceBufferUpdated('matrix');
+    return transfers;
+  };
+
+  update(0);
+  return {
+    trigger: (stationZ, cargoType, startedAt) => {
+      if (stationZ < UNLOAD_MIN_Z || stationZ > UNLOAD_MAX_Z) return;
+      events.set(stationZ, { startedAt, cargoType });
+    },
+    update,
+    reset: () => events.clear(),
+  };
+}
+
+function worldAt(gridX: number, gridZ: number, worldY: number): Vector3 {
+  return new Vector3(
+    (gridX + 0.5) * CELL_SIZE - MAP_WIDTH * CELL_SIZE / 2,
+    worldY,
+    (gridZ + 0.5) * CELL_SIZE - MAP_DEPTH * CELL_SIZE / 2,
+  );
 }
 
 function gridTransform(x: number, z: number): Matrix {
@@ -519,7 +701,7 @@ function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
   const result: Array<{ x: number; z: number; direction: number }> = [];
   for (let x = 1; x < MAP_WIDTH - 1; x++) {
     for (let z = 1; z < MAP_DEPTH - 1; z++) {
-      if (z >= 5 && z < MAP_DEPTH - 5 && x >= MAP_WIDTH - 3) continue;
+      if (z >= UNLOAD_MIN_Z && z <= UNLOAD_MAX_Z && x >= UNLOAD_X) continue;
       result.push({ x, z, direction: x % 2 === 0 ? 1 : -1 });
     }
   }
@@ -555,6 +737,7 @@ function writeTransform(
 }
 
 function updateFallback(time: number): void {
+  unloadingScene.update(performance.now());
   const step = time / FALLBACK_STEP_SECONDS;
   const wholeStep = Math.floor(step);
   const phase = smoothstep(step - wholeStep);
@@ -572,6 +755,7 @@ function updateFallback(time: number): void {
 
 function updateLive(now: number): void {
   if (!liveCurrent) return;
+  const transfers = unloadingScene.update(now);
   const from = livePrevious ?? liveCurrent;
   const frameDurationMs = 1000 / Math.max(0.1, liveTickRate * speed);
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
@@ -593,6 +777,15 @@ function updateLive(now: number): void {
         writeTransform(cargoMatrices[cargoType], cargoCounts[cargoType]++, x, z, 0.1);
       }
     }
+  }
+  for (const transfer of transfers) {
+    writeTransform(
+      cargoMatrices[transfer.cargoType],
+      cargoCounts[transfer.cargoType]++,
+      transfer.gridX,
+      transfer.gridZ,
+      transfer.worldY,
+    );
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
   robotLoad.frame.thinInstanceCount = loadedCount;
@@ -625,6 +818,8 @@ function parseFrame(buffer: ArrayBuffer): void {
   const view = new DataView(buffer);
   if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC || view.getUint16(4, true) !== 1) return;
   const step = view.getUint32(8, true);
+  const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
+  if (liveCurrent && step < liveCurrent.step) unloadingScene.reset();
   const completedTasks = view.getUint16(6, true);
   const count = Math.min(MAX_AGENTS, view.getUint32(12, true));
   if (view.byteLength < 16 + count * 16) return;
@@ -651,8 +846,20 @@ function parseFrame(buffer: ArrayBuffer): void {
     hiddenPalletKey = nextHiddenKey;
   }
   if (count !== agentCount) setAgentCount(count);
-  livePrevious = liveCurrent;
-  liveCurrent = { positions, statuses, stages, palletIds, completedTasks, step, receivedAt: performance.now() };
+  const receivedAt = performance.now();
+  if (priorFrame) {
+    for (let id = 0; id < count && id < priorFrame.stages.length; id++) {
+      if (priorFrame.stages[id] !== 1 || stages[id] !== 2) continue;
+      const palletId = palletIds[id];
+      const x = Math.round(positions[id * 2]);
+      const stationZ = Math.round(positions[id * 2 + 1]);
+      if (x === UNLOAD_X && palletId < palletCells.length) {
+        unloadingScene.trigger(stationZ, palletCells[palletId].cargoType, receivedAt);
+      }
+    }
+  }
+  livePrevious = priorFrame;
+  liveCurrent = { positions, statuses, stages, palletIds, completedTasks, step, receivedAt };
   robotMesh.thinInstanceBufferUpdated('color');
 }
 
@@ -699,6 +906,7 @@ function connect(): void {
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
+      unloadingScene.reset();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
     } else if (message.type === 'status' && message.state === 'complete') {
       paused = true;
@@ -714,6 +922,7 @@ function connect(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
+    unloadingScene.reset();
     palletScene.update(new Set());
     hiddenPalletKey = '';
     setConnection('fallback', 'DEMO // RECONNECTING');

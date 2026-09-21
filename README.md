@@ -11,7 +11,9 @@ unloading station, and return it to its original cell. Empty robots can pass
 under parked pallets. Loaded robots receive a pallet-aware cost-to-go map and
 cannot enter cells occupied by parked pallets. Unloading cells are dead-end
 bays: an agent may enter only its assigned bay and must leave through the same
-aisle-side edge.
+aisle-side edge. A robotic arm behind every bay lifts the cargo from an arriving
+pallet and carries it into the service area while the robot returns the empty
+pallet.
 
 ## Run the live demo
 
@@ -43,16 +45,17 @@ clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run
 
-The included 44×32 warehouse has 160 pallet cells and 22 unloading cells. A
-deterministic FastDMM 0.8M + PIBT run on the current machine completed this
+The included 44×32 warehouse has 160 pallet cells and 30 unloading cells along
+the full inner length of the map. A deterministic FastDMM 0.8M + PIBT run on
+the current machine completed this
 600-step horizon as follows:
 
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed three-goal tasks | 717 |
-| native runtime | 6.07 s |
-| mean AOTI inference | 5.49 ms |
+| completed three-goal tasks | 700 |
+| native runtime | 5.97 s |
+| mean AOTI inference | 5.46 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |
