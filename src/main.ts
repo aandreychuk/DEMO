@@ -175,6 +175,12 @@ const palletMotions: Array<PalletMotion | null> = Array.from(
 );
 const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
 const cameraKeys = new Set<string>();
+const cameraKeyByCode: Readonly<Record<string, string>> = {
+  KeyW: 'w',
+  KeyA: 'a',
+  KeyS: 's',
+  KeyD: 'd',
+};
 
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
@@ -1805,15 +1811,15 @@ document.querySelector('#reset-camera')!.addEventListener('click', () => {
 window.addEventListener('keydown', (event) => {
   const target = event.target as HTMLElement | null;
   if (target?.matches('input:not([type="range"]), select, textarea, [contenteditable="true"]')) return;
-  const key = event.key.toLowerCase();
-  if (!['w', 'a', 's', 'd'].includes(key)) return;
+  const key = cameraKeyByCode[event.code];
+  if (!key) return;
   cameraKeys.add(key);
   event.preventDefault();
 });
 
 window.addEventListener('keyup', (event) => {
-  const key = event.key.toLowerCase();
-  if (!['w', 'a', 's', 'd'].includes(key)) return;
+  const key = cameraKeyByCode[event.code];
+  if (!key) return;
   cameraKeys.delete(key);
   event.preventDefault();
 });

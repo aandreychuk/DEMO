@@ -65,7 +65,8 @@ Open `http://127.0.0.1:4173/`. The agent selector starts a local simulator for
 25, 50, or 100 agents. Every visible tick is computed on demand by the native
 FastDMM + PIBT process. Pause suspends native stepping; Stop terminates the
 current process, creates a fresh simulation, and holds it at step zero. Playback
-speed, WASD movement, mouse orbit, and wheel zoom remain browser-side. If the bridge is unavailable, the page uses
+speed, layout-independent WASD movement, mouse orbit, and wheel zoom remain
+browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run
