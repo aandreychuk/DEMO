@@ -20,14 +20,17 @@ The first server message is JSON so integrations are easy to inspect:
   "planningSeconds": 6.1,
   "inferenceMs": 5.5,
   "lifelong": true,
+  "looping": true,
   "layout": { "pallets": [], "stations": [] },
   "summary": { "status": "lifelong_horizon", "completed_tasks": 630 }
 }
 ```
 
-The bridge also emits JSON status messages while it is planning and when a
-replay reaches its last frame. Native summary metrics are included in `hello`;
-model paths and environment details are omitted.
+The bridge emits JSON status messages while it is planning and at replay cycle
+boundaries. Once the cached native horizon reaches its last frame, the bridge
+starts it again and keeps streaming until the browser sends `stop`. Native
+summary metrics are included in `hello`; model paths and environment details
+are omitted.
 
 ## State frame
 
@@ -60,10 +63,14 @@ Commands are infrequent JSON messages:
 ```json
 { "type": "control", "action": "pause" }
 { "type": "control", "action": "run" }
+{ "type": "control", "action": "stop" }
 { "type": "control", "action": "step" }
 { "type": "control", "action": "speed", "value": 2.0 }
 { "type": "control", "action": "load", "agents": 100 }
 ```
+
+`pause` preserves the current frame. `stop` resets the replay to frame zero and
+holds it there; `run` resumes streaming from that frame.
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.

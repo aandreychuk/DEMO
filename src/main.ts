@@ -94,6 +94,7 @@ const robotMesh = createRobotMesh();
 const robotLoad = createCarriedPalletMeshes();
 const agentPicker = createAgentPicker();
 const selectionHalo = createSelectionHalo();
+const taskMarkers = createTaskMarkers();
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
 const cargoMatrices = [
@@ -249,6 +250,78 @@ function createSelectionHalo(): Mesh {
   halo.isVisible = false;
   halo.alwaysSelectAsActiveMesh = true;
   return halo;
+}
+
+function createTaskMarkers(): { pallet: Mesh; station: Mesh } {
+  const pallet = MeshBuilder.CreateTorus('selected-task-pallet', {
+    diameter: CELL_SIZE * 1.08,
+    thickness: 0.055,
+    tessellation: 40,
+  }, scene);
+  const palletMaterial = new StandardMaterial('selected-task-pallet-material', scene);
+  palletMaterial.diffuseColor = Color3.FromHexString('#ffc247');
+  palletMaterial.emissiveColor = Color3.FromHexString('#ff9f1c');
+  palletMaterial.disableLighting = true;
+  pallet.material = palletMaterial;
+  pallet.isPickable = false;
+  pallet.isVisible = false;
+  pallet.alwaysSelectAsActiveMesh = true;
+
+  const station = MeshBuilder.CreateBox('selected-task-station', {
+    width: CELL_SIZE * 0.88,
+    height: 0.045,
+    depth: CELL_SIZE * 0.88,
+  }, scene);
+  const stationMaterial = new StandardMaterial('selected-task-station-material', scene);
+  stationMaterial.diffuseColor = Color3.FromHexString('#b572ff');
+  stationMaterial.emissiveColor = Color3.FromHexString('#7e35df');
+  stationMaterial.alpha = 0.58;
+  stationMaterial.disableLighting = true;
+  station.material = stationMaterial;
+  station.isPickable = false;
+  station.isVisible = false;
+  station.alwaysSelectAsActiveMesh = true;
+
+  const markerGlow = new GlowLayer('task-marker-glow', scene, { blurKernelSize: 22 });
+  markerGlow.intensity = 0.72;
+  markerGlow.addIncludedOnlyMesh(pallet);
+  markerGlow.addIncludedOnlyMesh(station);
+  return { pallet, station };
+}
+
+function hideTaskMarkers(): void {
+  taskMarkers.pallet.isVisible = false;
+  taskMarkers.station.isVisible = false;
+}
+
+function updateTaskMarkers(now: number): void {
+  const frame = liveCurrent;
+  const id = selectedAgentId;
+  if (!frame || id < 0 || id >= frame.statuses.length) {
+    hideTaskMarkers();
+    return;
+  }
+  const palletId = frame.palletIds[id];
+  const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
+  const stationX = frame.stationPositions[id * 2];
+  const stationZ = frame.stationPositions[id * 2 + 1];
+  if (!pallet || stationX < 0 || stationZ < 0) {
+    hideTaskMarkers();
+    return;
+  }
+
+  if ((frame.statuses[id] & 2) !== 0) {
+    taskMarkers.pallet.position.set(matrices[id * 16 + 12], 1.02, matrices[id * 16 + 14]);
+  } else {
+    taskMarkers.pallet.position.copyFrom(worldAt(pallet.x, pallet.z, 1.02));
+  }
+  taskMarkers.station.position.copyFrom(worldAt(stationX, stationZ, 0.065));
+  const palletPulse = 1 + Math.sin(now * 0.009) * 0.07;
+  const stationPulse = 1 + Math.sin(now * 0.007 + Math.PI / 2) * 0.055;
+  taskMarkers.pallet.scaling.set(palletPulse, palletPulse, palletPulse);
+  taskMarkers.station.scaling.set(stationPulse, 1, stationPulse);
+  taskMarkers.pallet.isVisible = true;
+  taskMarkers.station.isVisible = true;
 }
 
 function createAgentPicker(): Mesh {
@@ -831,6 +904,7 @@ function writeTransform(
 function updateFallback(time: number): void {
   unloadingScene.update(performance.now());
   selectionHalo.isVisible = false;
+  hideTaskMarkers();
   const step = time / FALLBACK_STEP_SECONDS;
   const wholeStep = Math.floor(step);
   const phase = smoothstep(step - wholeStep);
@@ -1055,6 +1129,7 @@ function clearAgentSelection(): void {
   const previous = selectedAgentId;
   selectedAgentId = -1;
   selectionHalo.isVisible = false;
+  hideTaskMarkers();
   if (previous >= 0) {
     setAgentColor(previous, liveCurrent?.statuses[previous] ?? 0);
     robotMesh.thinInstanceBufferUpdated('color');
@@ -1190,6 +1265,17 @@ function connect(): void {
       resetAgentStats();
       clearAgentSelection();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
+    } else if (message.type === 'status' && message.state === 'loop') {
+      livePrevious = null;
+      liveCurrent = null;
+      unloadingScene.reset();
+      resetAgentStats();
+      hideTaskMarkers();
+      setConnection('live', 'FASTDMM // NEXT CYCLE');
+    } else if (message.type === 'status' && message.state === 'stopped') {
+      paused = true;
+      syncPauseButton();
+      setConnection('stopped', 'SIMULATION // STOPPED');
     } else if (message.type === 'status' && message.state === 'complete') {
       paused = true;
       syncPauseButton();
@@ -1262,6 +1348,7 @@ engine.runRenderLoop(() => {
   if (!paused && !live) simTime += dt * speed;
   if (live) updateLive(performance.now());
   else updateFallback(simTime);
+  updateTaskMarkers(performance.now());
   scene.render();
   telemetryElapsed += dt;
   if (telemetryElapsed > 0.25) {
@@ -1269,7 +1356,9 @@ engine.runRenderLoop(() => {
     fpsValue.textContent = String(Math.round(engine.getFps()));
     const step = liveCurrent?.step ?? Math.floor(simTime / FALLBACK_STEP_SECONDS);
     stepValue.textContent = String(step).padStart(4, '0');
-    throughputValue.textContent = Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
+    throughputValue.textContent = paused
+      ? '0'
+      : Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
     latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
     tasksValue.textContent = String(liveCurrent?.completedTasks ?? 0);
@@ -1277,6 +1366,7 @@ engine.runRenderLoop(() => {
 });
 
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
+const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
@@ -1286,6 +1376,16 @@ pauseButton.addEventListener('click', () => {
   paused = !paused;
   syncPauseButton();
   sendControl(paused ? 'pause' : 'run');
+});
+
+stopButton.addEventListener('click', () => {
+  paused = true;
+  simTime = 0;
+  syncPauseButton();
+  unloadingScene.reset();
+  resetAgentStats();
+  sendControl('stop');
+  setConnection('stopped', 'SIMULATION // STOPPED');
 });
 
 document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('change', (event) => {

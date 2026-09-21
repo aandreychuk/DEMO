@@ -19,7 +19,8 @@ the handoff so the transfer stays visually readable.
 Click a robot or its carried pallet to open the right-side inspector. It shows
 the assigned task and pallet, all three route goals, the active task stage, and
 per-agent distance, waiting, unloading, and completion counters. Global live
-telemetry is grouped in the same panel.
+telemetry is grouped in the same panel. Selecting an agent also highlights its
+physical pallet and assigned unloading bay directly on the map.
 
 ## Run the live demo
 
@@ -45,8 +46,9 @@ npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
 Open `http://127.0.0.1:4173/`. The agent selector starts or reuses a local run
-for 25, 50, or 100 agents. Pause, replay, playback speed, WASD movement, mouse
-orbit, and wheel zoom remain browser-side. If the bridge is unavailable, the page uses
+for 25, 50, or 100 agents. The cached native horizon replays continuously;
+Pause preserves the current frame and Stop resets to the initial frame. Playback
+speed, WASD movement, mouse orbit, and wheel zoom remain browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run

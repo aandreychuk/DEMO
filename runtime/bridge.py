@@ -195,6 +195,7 @@ class Bridge:
                 },
                 "layout": self.args.layout_data,
                 "lifelong": True,
+                "looping": True,
                 "agents": count,
                 "tickRate": self.args.tick_rate,
                 "frames": len(episode.frames),
@@ -208,14 +209,12 @@ class Bridge:
             speed = 1.0
             reload_count: int | None = None
             previous: list[AgentState] | None = None
-            complete_sent = False
             while reload_count is None:
                 if not paused:
                     if index >= len(episode.frames):
-                        paused = True
-                        if not complete_sent:
-                            await socket.send(json.dumps({"type": "status", "state": "complete"}))
-                            complete_sent = True
+                        await socket.send(json.dumps({"type": "status", "state": "loop"}))
+                        index = 0
+                        previous = None
                         continue
                     frame = episode.frames[index]
                     final = index == len(episode.frames) - 1 and bool(summary.get("solved"))
@@ -237,17 +236,24 @@ class Bridge:
                 action = message.get("action")
                 if action == "pause":
                     paused = True
+                elif action == "stop":
+                    index = 0
+                    previous = None
+                    paused = True
+                    frame = episode.frames[index]
+                    await socket.send(encode_frame(index, frame, previous, False))
+                    previous = frame
+                    index += 1
+                    await socket.send(json.dumps({"type": "status", "state": "stopped"}))
                 elif action == "run":
                     if index >= len(episode.frames):
                         index = 0
                         previous = None
-                        complete_sent = False
                     paused = False
                 elif action == "step" and paused:
                     if index >= len(episode.frames):
                         index = 0
                         previous = None
-                        complete_sent = False
                     frame = episode.frames[index]
                     final = index == len(episode.frames) - 1 and bool(summary.get("solved"))
                     await socket.send(encode_frame(index, frame, previous, final))
