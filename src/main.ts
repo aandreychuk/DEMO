@@ -85,7 +85,7 @@ let speed = 1;
 let simTime = 0;
 let socket: WebSocket | null = null;
 let live = false;
-let liveTickRate = 20;
+let liveTickRate = 10;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let lastInferenceMs = 0;
@@ -462,7 +462,8 @@ function updateFallback(time: number): void {
 function updateLive(now: number): void {
   if (!liveCurrent) return;
   const from = livePrevious ?? liveCurrent;
-  const alpha = Math.min(1, (now - liveCurrent.receivedAt) / (1000 / liveTickRate));
+  const frameDurationMs = 1000 / Math.max(0.1, liveTickRate * speed);
+  const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
   let loadedCount = 0;
   let cargoCount = 0;
   for (let i = 0; i < agentCount; i++) {
@@ -570,7 +571,7 @@ function connect(): void {
       live = true;
       paused = false;
       syncPauseButton();
-      liveTickRate = Number(message.tickRate) || 20;
+      liveTickRate = Number(message.tickRate) || 10;
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
       setConnection('live', 'FASTDMM // LIFELONG');

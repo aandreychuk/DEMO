@@ -56,7 +56,7 @@ runtime/run_demo.sh artifacts/fastdmm-stage2-step12800-bf16-sm86-dynamic-N2-2580
 ```
 
 The bridge listens on `ws://127.0.0.1:18765`, runs the selected scenario in the
-native process, and replays its collision-free trajectory at 20 Hz. Browser
+native process, and replays its collision-free trajectory at 10 Hz. Browser
 requests for a previously computed agent count use the in-memory episode cache.
 Runs and decision traces are written below ignored `runtime/runs/`.
 

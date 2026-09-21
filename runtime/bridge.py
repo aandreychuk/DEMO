@@ -264,7 +264,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-dir", type=Path, default=root / "runs")
     parser.add_argument("--agents", type=int, choices=(25, 50, 100), default=100)
     parser.add_argument("--max-steps", type=int, default=600)
-    parser.add_argument("--tick-rate", type=float, default=20)
+    parser.add_argument("--tick-rate", type=float, default=10)
     parser.add_argument("--threads", type=int, default=6)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18765)

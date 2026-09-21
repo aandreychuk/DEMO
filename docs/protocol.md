@@ -15,7 +15,7 @@ The first server message is JSON so integrations are easy to inspect:
   "protocol": 1,
   "map": { "width": 44, "height": 32, "cellSize": 1 },
   "agents": 100,
-  "tickRate": 20,
+  "tickRate": 10,
   "frames": 601,
   "planningSeconds": 5.7,
   "inferenceMs": 4.9,
