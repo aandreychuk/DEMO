@@ -25,3 +25,10 @@ and 5,000 agents.
   `HF_TOKEN`; it must not be exposed through Vite or a browser message.
 
 The wire format is documented in [docs/protocol.md](docs/protocol.md).
+
+## FastDMM 0.8M export
+
+The local AOTI exporter in [runtime/README.md](runtime/README.md) converts the
+stage-2 FastDMM checkpoint into an `obs-chat-v1` package compiled for the CUDA
+GPU in the current machine. Generated checkpoints and `.pt2` packages stay in
+the ignored `artifacts/` directory.

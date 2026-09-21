@@ -1,12 +1,16 @@
 node_modules/
 dist/
+__pycache__/
+*.py[cod]
 .env
 .env.*
 !.env.example
 .cache/
 *.pt
+*.pt2
+*.pt2.json
 *.pth
 *.bin
 *.so
 *.dll
-
+artifacts/
