@@ -41,3 +41,24 @@ python /mnt/d/GitHub/DEMO/runtime/export_fastdmm_aoti.py \
 ```
 
 The generated package is machine-specific and intentionally ignored by Git.
+
+## Native demo pipeline
+
+The repository includes the standalone C++ runtime in `native-runner/`, a
+deterministic warehouse scenario, and a loopback WebSocket bridge. From an
+activated Linux/WSL environment with PyTorch 2.13:
+
+```bash
+python -m ensurepip --upgrade
+python -m pip install -r runtime/requirements.txt
+runtime/build_native.sh
+runtime/run_demo.sh artifacts/fastdmm-stage2-step12800-bf16-sm86-dynamic-N2-2580.pt2
+```
+
+The bridge listens on `ws://127.0.0.1:18765`, runs the selected scenario in the
+native process, and replays its collision-free trajectory at 20 Hz. Browser
+requests for a previously computed agent count use the in-memory episode cache.
+Runs and decision traces are written below ignored `runtime/runs/`.
+
+Supported demo sizes are 64, 256, 1,000, and 2,500 agents. The default native
+horizon is 256 steps; change it with `--max-steps` when invoking `run_demo.sh`.

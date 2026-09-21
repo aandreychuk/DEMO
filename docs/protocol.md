@@ -1,6 +1,7 @@
 # MAPF live protocol
 
-The renderer and the algorithm process communicate over a local WebSocket. The
+The renderer and the algorithm process communicate over a local WebSocket
+(`ws://127.0.0.1:18765` by default). The
 browser is a passive consumer: planning, inference, collision checks, and metrics
 remain in the native process.
 
@@ -14,9 +15,17 @@ The first server message is JSON so integrations are easy to inspect:
   "protocol": 1,
   "map": { "width": 90, "height": 70, "cellSize": 1 },
   "agents": 1000,
-  "tickRate": 20
+  "tickRate": 20,
+  "frames": 140,
+  "planningSeconds": 4.1,
+  "inferenceMs": 22.6,
+  "summary": { "status": "solved", "makespan": 139 }
 }
 ```
+
+The bridge also emits JSON status messages while it is planning and when a
+replay reaches its last frame. Native summary metrics are included in `hello`;
+model paths and environment details are omitted.
 
 ## State frame
 
@@ -47,8 +56,8 @@ Commands are infrequent JSON messages:
 { "type": "control", "action": "run" }
 { "type": "control", "action": "step" }
 { "type": "control", "action": "speed", "value": 2.0 }
+{ "type": "control", "action": "load", "agents": 2500 }
 ```
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.
-

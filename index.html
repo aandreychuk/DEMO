@@ -40,6 +40,7 @@
         <span><i class="cyan"></i>En route</span>
         <span><i class="violet"></i>Replanned</span>
         <span><i class="amber"></i>Waiting</span>
+        <span><i class="green"></i>Arrived</span>
       </aside>
 
       <section class="controls glass">
@@ -47,9 +48,10 @@
         <label>
           <span>AGENTS</span>
           <select id="agent-count">
+            <option value="64">64</option>
+            <option value="256">256</option>
             <option value="1000" selected>1,000</option>
             <option value="2500">2,500</option>
-            <option value="5000">5,000</option>
           </select>
         </label>
         <label class="speed-control">
@@ -65,4 +67,3 @@
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
-
