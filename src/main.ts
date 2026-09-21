@@ -35,6 +35,19 @@ const RELOAD_DWELL_TICKS = 5;
 const GOODS_BASE_Y = 1.04;
 const GOODS_SLOT_X = [-0.27, -0.09, 0.09, 0.27];
 const GOODS_SLOT_Z = [-0.22, 0, 0.22];
+const CONVEYOR_X = MAP_WIDTH - 1;
+const CONVEYOR_BOX_CAPACITY = 18;
+const CONVEYOR_BOX_COUNT = 28;
+const CONVEYOR_START_Z = 0.25;
+const CONVEYOR_END_Z = MAP_DEPTH - 1.25;
+const CONVEYOR_HORIZONTAL_TICKS = 305;
+const CONVEYOR_DESCENT_TICKS = 10;
+const CONVEYOR_CYCLE_TICKS = CONVEYOR_HORIZONTAL_TICKS + CONVEYOR_DESCENT_TICKS;
+const CONVEYOR_BOX_BASE_Y = 0.18;
+const MAX_RENDERED_GOODS = MAX_AGENTS * PALLET_CAPACITY
+  + CONVEYOR_BOX_COUNT * CONVEYOR_BOX_CAPACITY
+  + UNLOAD_STATION_COUNT
+  + RELOAD_STATION_COUNT;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
@@ -55,6 +68,13 @@ type LiveFrame = {
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
 type GoodsTransfer = { gridX: number; gridZ: number; worldY: number; cargoType: number };
+type ConveyorPlacement = { boxId: number; generation: number; slot: number };
+type ConveyorController = {
+  reserve: (stationZ: number, cargoType: number, startedStep: number) => ConveyorPlacement;
+  slotTarget: (placement: ConveyorPlacement, simulationStep: number) => Vector3;
+  update: (simulationStep: number) => GoodsTransfer[];
+  reset: () => void;
+};
 type PendingHandoff = {
   taskId: number;
   palletId: number;
@@ -120,7 +140,8 @@ const palletCells = buildPalletCells();
 const palletInventory = new Uint8Array(palletCells.length);
 palletInventory.fill(PALLET_CAPACITY);
 const palletScene = createWarehousePallets(palletCells);
-const unloadingScene = createUnloadingZone();
+const conveyorScene = createConveyor();
+const unloadingScene = createUnloadingZone(conveyorScene);
 const reloadingScene = createReloadingZone();
 createBoundaryLights();
 
@@ -132,15 +153,15 @@ const taskMarkers = createTaskMarkers();
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
 const cargoMatrices = [
-  new Float32Array((MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT) * 16),
-  new Float32Array((MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT) * 16),
-  new Float32Array((MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT) * 16),
+  new Float32Array(MAX_RENDERED_GOODS * 16),
+  new Float32Array(MAX_RENDERED_GOODS * 16),
+  new Float32Array(MAX_RENDERED_GOODS * 16),
 ];
 const loadAgentIds = new Int16Array(MAX_AGENTS);
 const cargoAgentIds = [
-  new Int16Array(MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT),
-  new Int16Array(MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT),
-  new Int16Array(MAX_AGENTS * PALLET_CAPACITY + UNLOAD_STATION_COUNT + RELOAD_STATION_COUNT),
+  new Int16Array(MAX_RENDERED_GOODS),
+  new Int16Array(MAX_RENDERED_GOODS),
+  new Int16Array(MAX_RENDERED_GOODS),
 ];
 const colors = new Float32Array(MAX_AGENTS * 4);
 const cells = buildFreeCells();
@@ -655,7 +676,248 @@ function createCarriedPalletMeshes(): {
   for (const mesh of [frame, deck, ...cargo]) mesh.alwaysSelectAsActiveMesh = true;
   return { frame, deck, cargo };
 }
-function createUnloadingZone(): {
+
+function createConveyor(): ConveyorController {
+  type ConveyorItem = { cargoType: number; visibleAtStep: number };
+  type ConveyorPose = {
+    generation: number;
+    phaseTick: number;
+    gridZ: number;
+    worldY: number;
+  };
+
+  const beltLength = (CONVEYOR_END_Z - CONVEYOR_START_Z) * CELL_SIZE + 0.9;
+  const beltCenterZ = (CONVEYOR_START_Z + CONVEYOR_END_Z) / 2;
+  const beltCenter = worldAt(CONVEYOR_X, beltCenterZ, 0.09);
+  const belt = MeshBuilder.CreateBox('outbound-conveyor-belt', {
+    width: 0.9,
+    height: 0.16,
+    depth: beltLength,
+  }, scene);
+  const beltMaterial = new StandardMaterial('outbound-conveyor-belt-material', scene);
+  beltMaterial.diffuseColor = Color3.FromHexString('#18272d');
+  beltMaterial.emissiveColor = Color3.FromHexString('#071217');
+  beltMaterial.specularColor = Color3.FromHexString('#66828a');
+  beltMaterial.specularPower = 56;
+  belt.material = beltMaterial;
+  belt.position.copyFrom(beltCenter);
+
+  const rail = MeshBuilder.CreateBox('outbound-conveyor-rail', {
+    width: 0.055,
+    height: 0.24,
+    depth: beltLength,
+  }, scene);
+  const railMaterial = new StandardMaterial('outbound-conveyor-rail-material', scene);
+  railMaterial.diffuseColor = Color3.FromHexString('#51636a');
+  railMaterial.emissiveColor = Color3.FromHexString('#17242a');
+  railMaterial.specularColor = Color3.FromHexString('#a8c0c6');
+  rail.material = railMaterial;
+  const railTransforms: number[] = [];
+  for (const offsetX of [-0.49, 0.49]) {
+    Matrix.Translation(beltCenter.x + offsetX, 0.18, beltCenter.z)
+      .copyToArray(railTransforms, railTransforms.length);
+  }
+  rail.thinInstanceSetBuffer('matrix', new Float32Array(railTransforms), 16, true);
+
+  const roller = MeshBuilder.CreateCylinder('outbound-conveyor-roller', {
+    height: 0.83,
+    diameter: 0.11,
+    tessellation: 12,
+  }, scene);
+  roller.material = railMaterial;
+  const rollerTransforms: number[] = [];
+  const rollerRotation = Quaternion.RotationAxis(Vector3.Forward(), Math.PI / 2);
+  for (let z = CONVEYOR_START_Z; z <= CONVEYOR_END_Z; z += 0.8) {
+    const rollerPosition = worldAt(CONVEYOR_X, z, 0.19);
+    Matrix.Compose(Vector3.One(), rollerRotation, rollerPosition)
+      .copyToArray(rollerTransforms, rollerTransforms.length);
+  }
+  roller.thinInstanceSetBuffer('matrix', new Float32Array(rollerTransforms), 16, true);
+
+  const shaft = MeshBuilder.CreateBox('outbound-conveyor-drop-shaft', {
+    width: 1.05,
+    height: 1.25,
+    depth: 1.05,
+  }, scene);
+  const shaftMaterial = new StandardMaterial('outbound-conveyor-drop-shaft-material', scene);
+  shaftMaterial.diffuseColor = Color3.FromHexString('#071116');
+  shaftMaterial.emissiveColor = Color3.FromHexString('#020709');
+  shaft.material = shaftMaterial;
+  shaft.position.copyFrom(worldAt(CONVEYOR_X, CONVEYOR_END_Z, -0.62));
+
+  const boxParts: Mesh[] = [];
+  const boxFloor = MeshBuilder.CreateBox('conveyor-box-floor', {
+    width: 0.84,
+    height: 0.06,
+    depth: 0.84,
+  }, scene);
+  boxFloor.position.y = 0.03;
+  boxParts.push(boxFloor);
+  for (const x of [-0.405, 0.405]) {
+    const wall = MeshBuilder.CreateBox('conveyor-box-wall-x', {
+      width: 0.055,
+      height: 0.5,
+      depth: 0.84,
+    }, scene);
+    wall.position.set(x, 0.28, 0);
+    boxParts.push(wall);
+  }
+  for (const z of [-0.405, 0.405]) {
+    const wall = MeshBuilder.CreateBox('conveyor-box-wall-z', {
+      width: 0.75,
+      height: 0.5,
+      depth: 0.055,
+    }, scene);
+    wall.position.set(0, 0.28, z);
+    boxParts.push(wall);
+  }
+  const box = Mesh.MergeMeshes(boxParts, true, true, undefined, false, true)!;
+  box.name = 'conveyor-box';
+  const boxMaterial = new StandardMaterial('conveyor-box-material', scene);
+  boxMaterial.diffuseColor = Color3.FromHexString('#bd7b3d');
+  boxMaterial.emissiveColor = Color3.FromHexString('#351b0a');
+  boxMaterial.specularColor = Color3.FromHexString('#d8a36d');
+  box.material = boxMaterial;
+  box.alwaysSelectAsActiveMesh = true;
+  belt.alwaysSelectAsActiveMesh = true;
+  rail.alwaysSelectAsActiveMesh = true;
+  roller.alwaysSelectAsActiveMesh = true;
+
+  const boxMatrices = new Float32Array(CONVEYOR_BOX_COUNT * 16);
+  box.thinInstanceSetBuffer('matrix', boxMatrices, 16, false);
+  box.thinInstanceCount = CONVEYOR_BOX_COUNT;
+  const contents = Array.from(
+    { length: CONVEYOR_BOX_COUNT },
+    () => new Map<number, Array<ConveyorItem | null>>(),
+  );
+
+  const poseAt = (boxId: number, simulationStep: number): ConveyorPose => {
+    const phaseOffset = boxId * CONVEYOR_CYCLE_TICKS / CONVEYOR_BOX_COUNT;
+    const cyclePosition = simulationStep + phaseOffset;
+    const generation = Math.floor(cyclePosition / CONVEYOR_CYCLE_TICKS);
+    const phaseTick = mod(cyclePosition, CONVEYOR_CYCLE_TICKS);
+    if (phaseTick < CONVEYOR_HORIZONTAL_TICKS) {
+      return {
+        generation,
+        phaseTick,
+        gridZ: CONVEYOR_START_Z
+          + (CONVEYOR_END_Z - CONVEYOR_START_Z) * phaseTick / CONVEYOR_HORIZONTAL_TICKS,
+        worldY: CONVEYOR_BOX_BASE_Y,
+      };
+    }
+    const descent = smoothstep(
+      (phaseTick - CONVEYOR_HORIZONTAL_TICKS) / CONVEYOR_DESCENT_TICKS,
+    );
+    return {
+      generation,
+      phaseTick,
+      gridZ: CONVEYOR_END_Z,
+      worldY: CONVEYOR_BOX_BASE_Y - descent * 1.5,
+    };
+  };
+
+  const contentsFor = (boxId: number, generation: number): Array<ConveyorItem | null> => {
+    const generations = contents[boxId];
+    let items = generations.get(generation);
+    if (!items) {
+      items = Array.from({ length: CONVEYOR_BOX_CAPACITY }, () => null);
+      generations.set(generation, items);
+    }
+    return items;
+  };
+
+  const itemOffset = (slot: number): Vector3 => {
+    const column = slot % 3;
+    const row = Math.floor(slot / 3) % 3;
+    const layer = Math.floor(slot / 9);
+    return new Vector3(
+      (column - 1) * 0.225,
+      0.17 + layer * 0.2,
+      (row - 1) * 0.225,
+    );
+  };
+
+  const slotTarget = (placement: ConveyorPlacement, simulationStep: number): Vector3 => {
+    const pose = poseAt(placement.boxId, simulationStep);
+    const center = worldAt(CONVEYOR_X, pose.gridZ, pose.worldY);
+    return center.add(itemOffset(placement.slot));
+  };
+
+  const reserve = (
+    stationZ: number,
+    cargoType: number,
+    startedStep: number,
+  ): ConveyorPlacement => {
+    const depositStep = startedStep + UNLOAD_DWELL_TICKS * 0.9;
+    let best: { boxId: number; generation: number; slot: number; distance: number } | null = null;
+    for (let boxId = 0; boxId < CONVEYOR_BOX_COUNT; boxId++) {
+      const startPose = poseAt(boxId, startedStep);
+      const depositPose = poseAt(boxId, depositStep);
+      if (startPose.generation !== depositPose.generation
+          || depositPose.phaseTick >= CONVEYOR_HORIZONTAL_TICKS) continue;
+      const items = contentsFor(boxId, depositPose.generation);
+      const slot = items.findIndex((item) => item === null);
+      if (slot < 0) continue;
+      const distance = Math.abs(depositPose.gridZ - stationZ);
+      if (!best || distance < best.distance) {
+        best = { boxId, generation: depositPose.generation, slot, distance };
+      }
+    }
+    if (!best) {
+      const boxId = 0;
+      const generation = poseAt(boxId, depositStep).generation;
+      const items = contentsFor(boxId, generation);
+      const slot = Math.max(0, items.findIndex((item) => item === null));
+      best = { boxId, generation, slot, distance: 0 };
+    }
+    contentsFor(best.boxId, best.generation)[best.slot] = {
+      cargoType,
+      visibleAtStep: depositStep,
+    };
+    return { boxId: best.boxId, generation: best.generation, slot: best.slot };
+  };
+
+  const update = (simulationStep: number): GoodsTransfer[] => {
+    const transfers: GoodsTransfer[] = [];
+    for (let boxId = 0; boxId < CONVEYOR_BOX_COUNT; boxId++) {
+      const pose = poseAt(boxId, simulationStep);
+      const center = worldAt(CONVEYOR_X, pose.gridZ, pose.worldY);
+      Matrix.Translation(center.x, center.y, center.z)
+        .copyToArray(boxMatrices, boxId * 16);
+      const generations = contents[boxId];
+      for (const generation of generations.keys()) {
+        if (generation < pose.generation) generations.delete(generation);
+      }
+      const items = generations.get(pose.generation);
+      if (!items) continue;
+      for (let slot = 0; slot < items.length; slot++) {
+        const item = items[slot];
+        if (!item || simulationStep < item.visibleAtStep) continue;
+        const target = center.add(itemOffset(slot));
+        transfers.push({
+          gridX: (target.x + MAP_WIDTH * CELL_SIZE / 2) / CELL_SIZE - 0.5,
+          gridZ: (target.z + MAP_DEPTH * CELL_SIZE / 2) / CELL_SIZE - 0.5,
+          worldY: target.y,
+          cargoType: item.cargoType,
+        });
+      }
+    }
+    box.thinInstanceBufferUpdated('matrix');
+    return transfers;
+  };
+
+  update(0);
+  return {
+    reserve,
+    slotTarget,
+    update,
+    reset: () => {
+      for (const generations of contents) generations.clear();
+    },
+  };
+}
+
+function createUnloadingZone(conveyor: ConveyorController): {
   trigger: (stationZ: number, cargoType: number, slot: number, startedStep: number) => void;
   update: (simulationStep: number) => GoodsTransfer[];
   reset: () => void;
@@ -791,7 +1053,12 @@ function createUnloadingZone(): {
     mesh.alwaysSelectAsActiveMesh = true;
   }
 
-  type ArmEvent = { startedStep: number; cargoType: number; slot: number };
+  type ArmEvent = {
+    startedStep: number;
+    cargoType: number;
+    slot: number;
+    placement: ConveyorPlacement;
+  };
   type Point = { x: number; y: number; z: number };
   type Pose = { elbow: Point; grip: Point };
   const events = new Map<number, ArmEvent>();
@@ -832,6 +1099,9 @@ function createUnloadingZone(): {
       const armWorld = worldAt(MAP_WIDTH - 2, stationZ, 0);
       const event = events.get(stationZ);
       const slotOffset = event ? goodsSlotOffset(event.slot) : { x: 0, z: 0 };
+      const conveyorTarget = event
+        ? conveyor.slotTarget(event.placement, simulationStep)
+        : worldAt(CONVEYOR_X, stationZ, CONVEYOR_BOX_BASE_Y + 0.17);
       const shoulderPoint = { x: armWorld.x, y: 0.78, z: armWorld.z };
       const parked: Pose = {
         elbow: { x: armWorld.x - 0.05, y: 1.38, z: armWorld.z },
@@ -854,8 +1124,16 @@ function createUnloadingZone(): {
         grip: { x: armWorld.x - 0.35, y: 2.0, z: armWorld.z + slotOffset.z * 0.4 },
       };
       const dropped: Pose = {
-        elbow: { x: armWorld.x + 0.12, y: 1.42, z: armWorld.z },
-        grip: { x: armWorld.x + 0.31, y: 1.28, z: armWorld.z },
+        elbow: {
+          x: armWorld.x + 0.48,
+          y: 1.28,
+          z: armWorld.z + (conveyorTarget.z - armWorld.z) * 0.45,
+        },
+        grip: {
+          x: conveyorTarget.x,
+          y: conveyorTarget.y + 0.16,
+          z: conveyorTarget.z,
+        },
       };
       const progress = event
         ? Math.max(0, (simulationStep - event.startedStep) / UNLOAD_DWELL_TICKS)
@@ -911,7 +1189,12 @@ function createUnloadingZone(): {
   return {
     trigger: (stationZ, cargoType, slot, startedStep) => {
       if (stationZ < UNLOAD_MIN_Z || stationZ > UNLOAD_MAX_Z) return;
-      events.set(stationZ, { startedStep, cargoType, slot });
+      events.set(stationZ, {
+        startedStep,
+        cargoType,
+        slot,
+        placement: conveyor.reserve(stationZ, cargoType, startedStep),
+      });
     },
     update,
     reset: () => events.clear(),
@@ -1121,11 +1404,12 @@ function writeTransform(
 }
 
 function updateFallback(time: number): void {
-  unloadingScene.update(time / FALLBACK_STEP_SECONDS);
-  reloadingScene.update(time / FALLBACK_STEP_SECONDS);
+  const step = time / FALLBACK_STEP_SECONDS;
+  unloadingScene.update(step);
+  reloadingScene.update(step);
+  conveyorScene.update(step);
   selectionHalo.isVisible = false;
   hideTaskMarkers();
-  const step = time / FALLBACK_STEP_SECONDS;
   const wholeStep = Math.floor(step);
   const phase = smoothstep(step - wholeStep);
   for (let i = 0; i < agentCount; i++) {
@@ -1148,6 +1432,7 @@ function resetServiceAnimations(): void {
   palletMotions.fill(null);
   unloadingScene.reset();
   reloadingScene.reset();
+  conveyorScene.reset();
 }
 
 function resetPalletInventory(): void {
@@ -1166,6 +1451,7 @@ function updateLive(now: number): void {
   const transfers = [
     ...unloadingScene.update(simulationStep),
     ...reloadingScene.update(simulationStep),
+    ...conveyorScene.update(simulationStep),
   ];
   const hiddenPallets = new Set<number>();
   let loadedCount = 0;

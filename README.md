@@ -21,7 +21,11 @@ under parked pallets. Loaded robots receive a pallet-aware cost-to-go map and
 cannot enter cells occupied by parked pallets. Unloading cells are dead-end
 bays: an agent may enter only its assigned bay and must leave through the same
 aisle-side edge. A robotic arm behind every bay lifts one item from an arriving
-pallet and carries it into the service area. Its 3D reach targets the occupied
+pallet and places it into an open box on the outbound conveyor. Boxes travel in
+a continuous line, hold 18 goods in a 3×3×2 stack, descend at the end of the
+belt, and disappear below the floor. The arm reserves an exact empty box slot
+when unloading begins and follows that moving target through the release. Its
+3D reach targets the occupied
 slot selected from the current inventory, giving all 12 pallet positions a
 distinct pickup path. The gripper closes around the item before it moves. The
 robot remains in the bay for five additional simulation steps during the
