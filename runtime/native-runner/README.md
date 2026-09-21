@@ -67,6 +67,11 @@ The trajectory is the solution. Action ids are `0=wait`, `1=up`, `2=down`,
 `3=left`, `4=right`. A solved run has `status=solved`; for an unsolved run SoC
 and makespan are reported as `-1`.
 
+For an interactive lifelong simulation, add `--stream` and set
+`--max-steps 0`. The process emits its initial `MAPF_FRAME` line, then reads one
+`step` command from stdin before each policy inference and state transition.
+`quit` ends the session. This mode keeps no trajectory history in memory.
+
 For a build-and-run integration check from the repository root:
 
 ```bash

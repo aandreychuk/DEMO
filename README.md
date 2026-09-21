@@ -45,9 +45,10 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-Open `http://127.0.0.1:4173/`. The agent selector starts or reuses a local run
-for 25, 50, or 100 agents. The cached native horizon replays continuously;
-Pause preserves the current frame and Stop resets to the initial frame. Playback
+Open `http://127.0.0.1:4173/`. The agent selector starts a local simulator for
+25, 50, or 100 agents. Every visible tick is computed on demand by the native
+FastDMM + PIBT process. Pause suspends native stepping; Stop terminates the
+current process, creates a fresh simulation, and holds it at step zero. Playback
 speed, WASD movement, mouse orbit, and wheel zoom remain browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 

@@ -35,6 +35,7 @@ struct Arguments {
   std::string mode = "soft";
   int num_agents = 1;
   int max_steps = 1;
+  bool stream = false;
   int seed = 0;
   std::string sampling = "deterministic";
   float tau = 1.0f;
@@ -74,6 +75,7 @@ Arguments parse_arguments(int argc, char** argv)
     else if (key == "--mode") args.mode = value(i);
     else if (key == "--num-agents") args.num_agents = std::stoi(value(i));
     else if (key == "--max-steps") args.max_steps = std::stoi(value(i));
+    else if (key == "--stream") args.stream = true;
     else if (key == "--seed") args.seed = std::stoi(value(i));
     else if (key == "--sampling") args.sampling = value(i);
     else if (key == "--tau") args.tau = std::stof(value(i));
@@ -115,7 +117,8 @@ Arguments parse_arguments(int argc, char** argv)
     else throw std::runtime_error("unknown argument: " + key);
   }
   if (args.map.empty() || args.scen.empty() || args.model.empty() ||
-      args.num_agents <= 0 || args.max_steps <= 0 ||
+      args.num_agents <= 0 || args.max_steps < 0 ||
+      (!args.stream && args.max_steps == 0) ||
       args.trace_window <= 0 ||
       args.dump_training_stride <= 0 ||
       args.max_repeat_retries <= 0 ||
@@ -137,6 +140,7 @@ Arguments parse_arguments(int argc, char** argv)
     throw std::runtime_error(
         "usage: dmm_rollout --map MAP --scen SCEN --model MODEL "
         "--policy dmm|magat|lc_mapf --num-agents N --max-steps T "
+        "[--stream (0 max steps means unbounded)] "
         "--mode soft|pibt [--seed S] "
         "[--sampling deterministic|probabilistic] [--tau T] "
         "[--escape-repeated-states] [--max-repeat-retries N] "
@@ -358,11 +362,13 @@ int main(int argc, char** argv)
     std::vector<Vertex*> station_vertices;
     std::vector<char> station_mask(ins.G->size(), false);
     std::vector<int> agent_task(ins.N, -1);
+    std::vector<long long> agent_task_id(ins.N, -1);
     std::vector<int> task_stage(ins.N, 0);
     std::vector<char> loaded(ins.N, false);
     std::vector<int> unloading_dwell_remaining(ins.N, 0);
     long long completed_tasks = 0;
     long long goal_updates = 0;
+    long long next_task_id = 0;
     std::function<bool(int, Vertex*)> assign_task;
     if (lifelong) {
       lifelong_tasks = load_lifelong_tasks(args.lifelong_tasks);
@@ -406,6 +412,7 @@ int main(int argc, char** argv)
           }
           pallet_reserved[task.pallet_id] = true;
           agent_task[agent] = task_index;
+          agent_task_id[agent] = next_task_id++;
           task_stage[agent] = 0;
           loaded[agent] = false;
           unloading_dwell_remaining[agent] = 0;
@@ -493,6 +500,31 @@ int main(int argc, char** argv)
     };
     refresh_navigation(current);
 
+    auto emit_stream_frame = [&](int step, const Config& positions) {
+      if (!args.stream) return;
+      const double inference_ms =
+          Common::STATS.policy_forward_calls > 0
+              ? Common::STATS.policy_forward_ms /
+                    Common::STATS.policy_forward_calls
+              : 0.0;
+      std::cout << "MAPF_FRAME\t" << step << '\t' << completed_tasks << '\t'
+                << inference_ms << '\t' << ins.N;
+      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        const LifelongTask* task =
+            lifelong && agent_task[i] >= 0
+                ? &lifelong_tasks[agent_task[i]]
+                : nullptr;
+        std::cout << '\t' << positions[i]->x << ',' << positions[i]->y << ','
+                  << (loaded[i] ? 1 : 0) << ','
+                  << (task ? task_stage[i] : -1) << ','
+                  << (task ? agent_task_id[i] : -1) << ','
+                  << (task ? task->pallet_id : -1) << ','
+                  << (task ? task->station_x : -1) << ','
+                  << (task ? task->station_y : -1);
+      }
+      std::cout << '\n' << std::flush;
+    };
+
     std::ofstream trajectory;
     std::ofstream decisions;
     std::ofstream training_dump;
@@ -515,7 +547,7 @@ int main(int argc, char** argv)
         trajectory << 0 << '\t' << i << '\t' << current[i]->x << '\t'
                    << current[i]->y << '\t' << (loaded[i] ? 1 : 0) << '\t'
                    << (task ? task_stage[i] : -1) << '\t'
-                   << (task ? task->id : -1) << '\t'
+                   << (task ? agent_task_id[i] : -1) << '\t'
                    << (task ? task->pallet_id : -1) << '\t'
                    << (task ? task->station_x : -1) << '\t'
                    << (task ? task->station_y : -1) << '\t'
@@ -581,7 +613,7 @@ int main(int argc, char** argv)
       }
       return recent_config_counts.find(key) != recent_config_counts.end();
     };
-    remember_config(current);
+    if (!lifelong) remember_config(current);
     long long repeated_candidates = 0;
     long long repeat_retry_attempts = 0;
     long long repeat_constraints = 0;
@@ -624,7 +656,17 @@ int main(int argc, char** argv)
     long long fallback_steps = 0;
     int fallback_burst_steps = 0;
 
-    for (int step = 0; step < args.max_steps && (lifelong || !solved); ++step) {
+    emit_stream_frame(0, current);
+    for (int step = 0;
+         (args.max_steps == 0 || step < args.max_steps) &&
+         (lifelong || !solved);
+         ++step) {
+      if (args.stream) {
+        std::string command;
+        while (std::getline(std::cin, command) &&
+               command != "step" && command != "quit") {}
+        if (!std::cin || command == "quit") break;
+      }
       std::vector<int> actions(ins.N, 0);
       Config next(ins.N, nullptr);
       if (args.mode == "soft") {
@@ -953,10 +995,13 @@ int main(int argc, char** argv)
             ins.goals[i] = pallet_vertices[task.pallet_id];
             ++goal_updates;
           } else {
+            const int completed_task = agent_task[i];
             loaded[i] = false;
             pallet_present[task.pallet_id] = true;
             pallet_reserved[task.pallet_id] = false;
+            pending_tasks.push_back(completed_task);
             agent_task[i] = -1;
+            agent_task_id[i] = -1;
             unloading_dwell_remaining[i] = 0;
             ++completed_tasks;
             if (!assign_task(i, current[i])) {
@@ -970,7 +1015,7 @@ int main(int argc, char** argv)
           refresh_navigation(current);
         }
       }
-      remember_config(current);
+      if (!lifelong) remember_config(current);
       episode_steps = step + 1;
       if (trajectory) {
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
@@ -982,13 +1027,14 @@ int main(int argc, char** argv)
                      << current[i]->x << '\t' << current[i]->y << '\t'
                      << (loaded[i] ? 1 : 0) << '\t'
                      << (task ? task_stage[i] : -1) << '\t'
-                     << (task ? task->id : -1) << '\t'
+                     << (task ? agent_task_id[i] : -1) << '\t'
                      << (task ? task->pallet_id : -1) << '\t'
                      << (task ? task->station_x : -1) << '\t'
                      << (task ? task->station_y : -1) << '\t'
                      << completed_tasks << '\n';
         }
       }
+      emit_stream_frame(episode_steps, current);
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
         if (actions[i] != 0) last_move_step[i] = episode_steps;
         if (current[i] == ins.goals[i]) {

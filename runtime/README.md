@@ -56,13 +56,13 @@ runtime/run_demo.sh artifacts/fastdmm-stage2-step12800-bf16-sm86-dynamic-N2-2580
 ```
 
 The bridge listens on `ws://127.0.0.1:18765`, runs the selected scenario in the
-native process, and replays its collision-free trajectory continuously at 10 Hz.
-Pause preserves the current frame, while Stop returns to frame zero and waits.
-Browser requests for a previously computed agent count use the in-memory episode cache.
-Runs and decision traces are written below ignored `runtime/runs/`.
+native process, and requests one new FastDMM + PIBT step for every simulation
+tick. Pause stops issuing native step commands. Stop terminates the current
+process, starts a fresh simulator, and holds its initial state. No trajectory is
+precomputed or replayed by the browser bridge.
 
-Supported demo sizes are 25, 50, and 100 agents. The default native horizon is
-600 steps; change it with `--max-steps` when invoking `run_demo.sh`.
+Supported demo sizes are 25, 50, and 100 agents. The bridge uses an unbounded
+native horizon by default. Pass a positive `--max-steps` only for diagnostics.
 
 `generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
@@ -75,3 +75,5 @@ entrance per bay. The browser renders a robotic arm in each guarded cell and
 animates the cargo transfer when an agent advances from unloading to return.
 After that transition, the native runtime holds the agent in its bay for five
 additional simulation steps before allowing it to leave.
+Completed task templates return to the randomized queue with a new assignment
+ID, so task generation continues for the lifetime of the simulator.

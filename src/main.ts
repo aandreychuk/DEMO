@@ -1245,7 +1245,7 @@ function connect(): void {
     if (event.data instanceof ArrayBuffer) {
       live = true;
       parseFrame(event.data);
-      setConnection('live', 'FASTDMM // LIFELONG');
+      setConnection('live', 'FASTDMM // SIMULATOR');
       return;
     }
     const message = JSON.parse(String(event.data));
@@ -1257,7 +1257,7 @@ function connect(): void {
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
-      setConnection('live', 'FASTDMM // LIFELONG');
+      setConnection('live', 'FASTDMM // SIMULATOR');
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
@@ -1265,21 +1265,12 @@ function connect(): void {
       resetAgentStats();
       clearAgentSelection();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
-    } else if (message.type === 'status' && message.state === 'loop') {
-      livePrevious = null;
-      liveCurrent = null;
-      unloadingScene.reset();
-      resetAgentStats();
-      hideTaskMarkers();
-      setConnection('live', 'FASTDMM // NEXT CYCLE');
     } else if (message.type === 'status' && message.state === 'stopped') {
       paused = true;
       syncPauseButton();
       setConnection('stopped', 'SIMULATION // STOPPED');
-    } else if (message.type === 'status' && message.state === 'complete') {
-      paused = true;
-      syncPauseButton();
-      setConnection('complete', 'HORIZON // COMPLETE');
+    } else if (message.type === 'metrics') {
+      lastInferenceMs = Number(message.inferenceMs) || 0;
     } else if (message.type === 'error') {
       setConnection('error', 'RUNTIME // ERROR');
       console.error(message.message);

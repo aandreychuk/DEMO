@@ -63,7 +63,6 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .connection[data-state='planning'] .pulse { background: #ffbd58; box-shadow: 0 0 14px #ffbd58; }
 .connection[data-state='fallback'] .pulse,
 .connection[data-state='error'] .pulse { background: #ff6d7f; box-shadow: 0 0 14px #ff6d7f; }
-.connection[data-state='complete'] .pulse { background: #a678ff; box-shadow: 0 0 14px #a678ff; }
 .connection[data-state='stopped'] .pulse { background: #ff805f; box-shadow: 0 0 14px #ff805f; animation: none; }
 @keyframes pulse { 50% { box-shadow: 0 0 5px #58f2ad; opacity: 0.7; } }
 
