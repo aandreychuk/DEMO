@@ -16,6 +16,8 @@ import './style.css';
 const MAP_WIDTH = 90;
 const MAP_DEPTH = 70;
 const CELL_SIZE = 0.82;
+const RACK_WIDTH_CELLS = 2;
+const RACK_DEPTH_CELLS = 6;
 const MAX_AGENTS = 2500;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
@@ -118,21 +120,25 @@ function createGrid(): void {
   const points: Vector3[][] = [];
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
-  for (let x = 0; x <= MAP_WIDTH; x += 2) {
+  for (let x = 0; x <= MAP_WIDTH; x++) {
     const px = x * CELL_SIZE - halfW;
     points.push([new Vector3(px, 0.004, -halfD), new Vector3(px, 0.004, halfD)]);
   }
-  for (let z = 0; z <= MAP_DEPTH; z += 2) {
+  for (let z = 0; z <= MAP_DEPTH; z++) {
     const pz = z * CELL_SIZE - halfD;
     points.push([new Vector3(-halfW, 0.004, pz), new Vector3(halfW, 0.004, pz)]);
   }
   const grid = MeshBuilder.CreateLineSystem('navigation-grid', { lines: points }, scene);
   grid.color = Color3.FromHexString('#14506b');
-  grid.alpha = 0.38;
+  grid.alpha = 0.24;
 }
 
 function createWarehouseRacks(): void {
-  const rack = MeshBuilder.CreateBox('rack-template', { width: 1.6, height: 1.65, depth: 4.8 }, scene);
+  const rack = MeshBuilder.CreateBox('rack-template', {
+    width: RACK_WIDTH_CELLS * CELL_SIZE,
+    height: 1.65,
+    depth: RACK_DEPTH_CELLS * CELL_SIZE,
+  }, scene);
   const rackMaterial = new StandardMaterial('rack-material', scene);
   rackMaterial.diffuseColor = Color3.FromHexString('#18303d');
   rackMaterial.emissiveColor = Color3.FromHexString('#07151e');
@@ -143,12 +149,16 @@ function createWarehouseRacks(): void {
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
   for (let gx = 6; gx < MAP_WIDTH - 5; gx += 9) {
     for (let gz = 5; gz < MAP_DEPTH - 4; gz += 8) {
-      Matrix.Translation((gx + 0.5) * CELL_SIZE - halfW, 0.8, (gz + 0.5) * CELL_SIZE - halfD)
+      Matrix.Translation((gx + RACK_WIDTH_CELLS / 2) * CELL_SIZE - halfW, 0.8, (gz + 1) * CELL_SIZE - halfD)
         .copyToArray(transforms, transforms.length);
     }
   }
   rack.thinInstanceSetBuffer('matrix', new Float32Array(transforms), 16, true);
-  const cap = MeshBuilder.CreateBox('rack-cap-template', { width: 1.68, height: 0.07, depth: 4.88 }, scene);
+  const cap = MeshBuilder.CreateBox('rack-cap-template', {
+    width: RACK_WIDTH_CELLS * CELL_SIZE - 0.04,
+    height: 0.07,
+    depth: RACK_DEPTH_CELLS * CELL_SIZE - 0.04,
+  }, scene);
   const capMaterial = new StandardMaterial('rack-cap-material', scene);
   capMaterial.emissiveColor = Color3.FromHexString('#24708d');
   capMaterial.diffuseColor = Color3.FromHexString('#2c7995');
