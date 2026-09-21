@@ -521,10 +521,12 @@ int main(int argc, char** argv)
         }
         distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
-      if (raw_policy) raw_policy->set_dynamic_obstacles(blocked_vertices);
-      if (pibt) pibt->policy.set_dynamic_obstacles(blocked_vertices);
+      if (raw_policy) {
+        raw_policy->set_dynamic_obstacles(blocked_vertices, failed);
+      }
+      if (pibt) pibt->policy.set_dynamic_obstacles(blocked_vertices, failed);
       if (fallback_pibt) {
-        fallback_pibt->policy.set_dynamic_obstacles(blocked_vertices);
+        fallback_pibt->policy.set_dynamic_obstacles(blocked_vertices, failed);
       }
     };
     refresh_navigation(current);

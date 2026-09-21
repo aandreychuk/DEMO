@@ -95,7 +95,9 @@ terminates that native process, starts a fresh simulation at frame zero, and
 holds it there; `run` resumes live computation from that state.
 `fail` irreversibly disables one agent for the current simulation. The native
 planner pins it in place and rebuilds cost-to-go and observation obstacle maps
-for the remaining agents. Starting a fresh simulation clears all failures.
+for the remaining agents. The failed agent is omitted from relational agent
+records and `agent_chat_ids`, so it participates only as an obstacle. Starting
+a fresh simulation clears all failures.
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.

@@ -1214,7 +1214,8 @@ void AgentPolicy::get_dmm_encoded_inputs(
 }
 
 void AgentPolicy::set_dynamic_obstacles(
-    const std::vector<std::vector<int>>& blocked_vertex_ids)
+    const std::vector<std::vector<int>>& blocked_vertex_ids,
+    const std::vector<char>& communication_disabled)
 {
   if (!lc_obs_gen) return;
   if (blocked_vertex_ids.size() != static_cast<size_t>(N)) {
@@ -1231,6 +1232,7 @@ void AgentPolicy::set_dynamic_obstacles(
     }
   }
   lc_obs_gen->set_dynamic_obstacles(cells);
+  lc_obs_gen->set_communication_disabled(communication_disabled);
   known_config_table.clear();
   lc_mapf_action_logits_cache.clear();
   ensemble_cache.clear();

@@ -117,6 +117,9 @@ public:
     // Optional per-agent dynamic obstacles. Lifelong warehouse agents without
     // a pallet leave this empty; loaded agents mark currently parked pallets.
     std::vector<std::vector<std::vector<uint8_t>>> dynamic_obstacles;
+    // Disabled agents remain physical obstacles but do not participate in the
+    // relational observation or DMM communication graph.
+    std::vector<uint8_t> communication_disabled;
     ObservationGenerator(const std::vector<std::vector<int>> &grid, const InputParameters &cfg)
         : grid(grid), cfg(cfg), encoder(cfg), vector_observation(cfg)
     {
@@ -128,6 +131,7 @@ public:
     int get_distance(int agent_idx, const std::pair<int, int> &pos);
     void create_agents(const std::vector<std::pair<int, int>> &positions, const std::vector<std::pair<int, int>> &goals);
     void set_dynamic_obstacles(const std::vector<std::vector<std::pair<int, int>>> &cells);
+    void set_communication_disabled(const std::vector<char> &disabled);
     void update_next_action(int agent_idx);
     void update_agents(const std::vector<std::pair<int, int>> &positions, const std::vector<std::pair<int, int>> &goals, const std::vector<int> &actions);
     // Set positions, goals, and full 5-action history (POGEMA: 0=wait, 1=up, 2=down, 3=left, 4=right, -1=no action). Used when restoring state from LaCAM HNode.
@@ -464,6 +468,7 @@ void ObservationGenerator::create_agents(const std::vector<std::pair<int, int>> 
     cost2go_obs_buffer.resize(total_agents, std::vector<std::vector<int>>(2 * cfg.obs_radius + 1, std::vector<int>(2 * cfg.obs_radius + 1)));
     agent_cost2go.resize(total_agents, std::vector<std::vector<uint16_t>>(grid.size(), std::vector<uint16_t>(grid[0].size(), std::numeric_limits<uint16_t>::max())));
     dynamic_obstacles.resize(total_agents, std::vector<std::vector<uint8_t>>(grid.size(), std::vector<uint8_t>(grid[0].size(), 0)));
+    communication_disabled.assign(total_agents, 0);
     for (int i = 0; i < total_agents; i++)
     {
         agents[i].pos = positions[i];
@@ -473,6 +478,13 @@ void ObservationGenerator::create_agents(const std::vector<std::pair<int, int>> 
         compute_agent_cost2go(i);
         update_next_action(i);
     }
+}
+
+void ObservationGenerator::set_communication_disabled(const std::vector<char> &disabled)
+{
+    if (disabled.size() != agents.size())
+        throw std::runtime_error("disabled communication mask must match agent count");
+    communication_disabled.assign(disabled.begin(), disabled.end());
 }
 
 void ObservationGenerator::set_dynamic_obstacles(const std::vector<std::vector<std::pair<int, int>>> &cells)
@@ -585,6 +597,11 @@ std::vector<AgentsInfo> ObservationGenerator::get_agents_info(int agent_idx)
 {
     std::vector<AgentsInfo> agents_info;
     std::vector<int> considered_agents;
+    std::vector<int> agents_ids(cfg.num_agents, -1);
+    if (!communication_disabled.empty() && communication_disabled[agent_idx]) {
+        agents_in_obs[agent_idx] = agents_ids;
+        return agents_info;
+    }
     const auto &cur_agent = agents[agent_idx];
     const int rows = static_cast<int>(agents_locations.size());
     const int cols = rows > 0 ? static_cast<int>(agents_locations[0].size()) : 0;
@@ -594,8 +611,10 @@ std::vector<AgentsInfo> ObservationGenerator::get_agents_info(int agent_idx)
             int nj = cur_agent.pos.second + j;
             if (ni < 0 || nj < 0 || ni >= rows || nj >= cols)
                 continue;
-            if (agents_locations[static_cast<size_t>(ni)][static_cast<size_t>(nj)] >= 0)
-                considered_agents.push_back(agents_locations[static_cast<size_t>(ni)][static_cast<size_t>(nj)]);
+            const int candidate = agents_locations[static_cast<size_t>(ni)][static_cast<size_t>(nj)];
+            if (candidate >= 0 &&
+                (communication_disabled.empty() || !communication_disabled[candidate]))
+                considered_agents.push_back(candidate);
         }
     }
     std::vector<int> distances(considered_agents.size(), -1);
@@ -608,7 +627,6 @@ std::vector<AgentsInfo> ObservationGenerator::get_agents_info(int agent_idx)
         distance_agent_pairs.push_back({distances[i], considered_agents[i]});
     }
     std::sort(distance_agent_pairs.begin(), distance_agent_pairs.end());
-    std::vector<int> agents_ids(cfg.num_agents, -1);
     for (int i = 0; i < std::min(int(distance_agent_pairs.size()), cfg.num_agents); i++)
     {
         const auto &agent = agents[distance_agent_pairs[i].second];
