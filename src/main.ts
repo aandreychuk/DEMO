@@ -13,6 +13,7 @@ import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import './style.css';
 
 const MAP_WIDTH = 44;
@@ -28,6 +29,10 @@ const RELOAD_X = 2;
 const RELOAD_MIN_Z = 1;
 const RELOAD_MAX_Z = MAP_DEPTH - 2;
 const RELOAD_STATION_COUNT = RELOAD_MAX_Z - RELOAD_MIN_Z + 1;
+const REPAIR_X = 22;
+const REPAIR_Z = MAP_DEPTH - 2;
+const TOW_DEPOT_X = REPAIR_X - 1;
+const TOW_DEPOT_Z = REPAIR_Z;
 const PALLET_CAPACITY = 12;
 const PALLET_DWELL_TICKS = 2;
 const UNLOAD_DWELL_TICKS = 5;
@@ -61,9 +66,20 @@ type LiveFrame = {
   stationPositions: Int16Array;
   reloadPositions: Int16Array;
   palletItems: Uint8Array;
+  recoveryStates: Uint8Array;
+  palletPositions: Int16Array;
+  tow: TowFrame;
   completedTasks: number;
   step: number;
   receivedAt: number;
+};
+
+type TowFrame = {
+  x: number;
+  z: number;
+  state: number;
+  targetAgent: number;
+  queuedRescues: number;
 };
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
@@ -143,6 +159,8 @@ const palletScene = createWarehousePallets(palletCells);
 const conveyorScene = createConveyor();
 const unloadingScene = createUnloadingZone(conveyorScene);
 const reloadingScene = createReloadingZone();
+createRepairStation();
+const towTruckScene = createTowTruck();
 createBoundaryLights();
 
 const robotMesh = createRobotMesh();
@@ -398,6 +416,8 @@ function updateTaskMarkers(now: number): void {
   }
   const palletId = frame.palletIds[id];
   const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
+  const palletX = frame.palletPositions[id * 2];
+  const palletZ = frame.palletPositions[id * 2 + 1];
   const stationX = frame.stationPositions[id * 2];
   const stationZ = frame.stationPositions[id * 2 + 1];
   const reloadX = frame.reloadPositions[id * 2];
@@ -410,7 +430,11 @@ function updateTaskMarkers(now: number): void {
   if ((frame.statuses[id] & 2) !== 0) {
     taskMarkers.pallet.position.set(matrices[id * 16 + 12], 1.02, matrices[id * 16 + 14]);
   } else {
-    taskMarkers.pallet.position.copyFrom(worldAt(pallet.x, pallet.z, 1.02));
+    taskMarkers.pallet.position.copyFrom(worldAt(
+      palletX >= 0 ? palletX : pallet.x,
+      palletZ >= 0 ? palletZ : pallet.z,
+      1.02,
+    ));
   }
   taskMarkers.station.position.copyFrom(worldAt(stationX, stationZ, 0.065));
   if (reloadX >= 0 && reloadZ >= 0) {
@@ -633,22 +657,31 @@ function createGoodsMeshes(prefix: string): [Mesh, Mesh, Mesh] {
 }
 
 function createWarehousePallets(pallets: PalletCell[]): {
-  update: (hidden: Set<number>, inventory: Uint8Array) => void;
+  update: (
+    hidden: Set<number>,
+    inventory: Uint8Array,
+    overrides?: Map<number, { x: number; z: number }>,
+  ) => void;
 } {
   const { frame, deck } = createPalletVisual('warehouse');
   const cargo = createGoodsMeshes('warehouse');
   for (const mesh of [frame, deck, ...cargo]) mesh.alwaysSelectAsActiveMesh = true;
 
-  const update = (hidden: Set<number>, inventory: Uint8Array) => {
+  const update = (
+    hidden: Set<number>,
+    inventory: Uint8Array,
+    overrides = new Map<number, { x: number; z: number }>(),
+  ) => {
     const palletTransforms: number[] = [];
     const goodsTransforms: number[][] = [[], [], []];
     for (const pallet of pallets) {
       if (hidden.has(pallet.id)) continue;
-      const transform = gridTransform(pallet.x, pallet.z);
+      const position = overrides.get(pallet.id) ?? pallet;
+      const transform = gridTransform(position.x, position.z);
       transform.copyToArray(palletTransforms, palletTransforms.length);
       const quantity = Math.min(PALLET_CAPACITY, inventory[pallet.id] ?? PALLET_CAPACITY);
       for (let slot = 0; slot < quantity; slot++) {
-        goodsTransform(pallet.x, pallet.z, 0, slot)
+        goodsTransform(position.x, position.z, 0, slot)
           .copyToArray(goodsTransforms[pallet.cargoType], goodsTransforms[pallet.cargoType].length);
       }
     }
@@ -1328,6 +1361,170 @@ function createReloadingZone(): {
   };
 }
 
+function createRepairStation(): void {
+  const padMaterial = new StandardMaterial('repair-pad-material', scene);
+  padMaterial.diffuseColor = Color3.FromHexString('#173a43');
+  padMaterial.emissiveColor = Color3.FromHexString('#0b4b55');
+  padMaterial.specularColor = Color3.FromHexString('#67e8f1');
+
+  const repairPad = MeshBuilder.CreateBox('repair-pad', {
+    width: CELL_SIZE * 0.9,
+    height: 0.055,
+    depth: CELL_SIZE * 0.9,
+  }, scene);
+  repairPad.position.copyFrom(worldAt(REPAIR_X, REPAIR_Z, 0.012));
+  repairPad.material = padMaterial;
+
+  const depotPad = repairPad.clone('tow-depot-pad')!;
+  depotPad.position.copyFrom(worldAt(TOW_DEPOT_X, TOW_DEPOT_Z, 0.012));
+
+  const structureMaterial = new StandardMaterial('repair-structure-material', scene);
+  structureMaterial.diffuseColor = Color3.FromHexString('#263a46');
+  structureMaterial.emissiveColor = Color3.FromHexString('#0b1820');
+  structureMaterial.specularColor = Color3.FromHexString('#91b7c4');
+  const accentMaterial = new StandardMaterial('repair-accent-material', scene);
+  accentMaterial.diffuseColor = Color3.FromHexString('#55f0d2');
+  accentMaterial.emissiveColor = Color3.FromHexString('#18a995');
+  accentMaterial.disableLighting = true;
+
+  const center = worldAt((REPAIR_X + TOW_DEPOT_X) / 2, MAP_DEPTH - 0.35, 0);
+  const back = MeshBuilder.CreateBox('repair-shop-back', {
+    width: CELL_SIZE * 2.2,
+    height: 1.45,
+    depth: 0.28,
+  }, scene);
+  back.position.set(center.x, 0.72, center.z);
+  back.material = structureMaterial;
+  const roof = MeshBuilder.CreateBox('repair-shop-roof', {
+    width: CELL_SIZE * 2.35,
+    height: 0.16,
+    depth: CELL_SIZE * 1.35,
+  }, scene);
+  roof.position.set(center.x, 1.48, center.z - CELL_SIZE * 0.4);
+  roof.material = structureMaterial;
+  for (const x of [TOW_DEPOT_X - 0.42, REPAIR_X + 0.42]) {
+    const post = MeshBuilder.CreateBox('repair-shop-post', {
+      width: 0.14,
+      height: 1.45,
+      depth: 0.14,
+    }, scene);
+    const position = worldAt(x, REPAIR_Z + 0.44, 0.72);
+    post.position.copyFrom(position);
+    post.material = structureMaterial;
+  }
+  const sign = MeshBuilder.CreateBox('repair-shop-sign', {
+    width: CELL_SIZE * 1.25,
+    height: 0.18,
+    depth: 0.08,
+  }, scene);
+  sign.position.set(center.x, 1.18, center.z - 0.18);
+  sign.material = accentMaterial;
+  const beacon = MeshBuilder.CreateCylinder('repair-shop-beacon', {
+    height: 0.14,
+    diameter: 0.22,
+    tessellation: 14,
+  }, scene);
+  beacon.position.set(center.x, 1.65, center.z - 0.25);
+  beacon.material = accentMaterial;
+  const glow = new GlowLayer('repair-shop-glow', scene, { blurKernelSize: 18 });
+  glow.intensity = 0.55;
+  glow.addIncludedOnlyMesh(sign);
+  glow.addIncludedOnlyMesh(beacon);
+}
+
+function createTowTruck(): {
+  update: (x: number, z: number, state: number, carrying: boolean, now: number) => void;
+} {
+  const root = new TransformNode('tow-truck-root', scene);
+  const bodyMaterial = new StandardMaterial('tow-truck-body-material', scene);
+  bodyMaterial.diffuseColor = Color3.FromHexString('#e8a028');
+  bodyMaterial.emissiveColor = Color3.FromHexString('#4b2604');
+  bodyMaterial.specularColor = Color3.FromHexString('#ffd989');
+  const darkMaterial = new StandardMaterial('tow-truck-dark-material', scene);
+  darkMaterial.diffuseColor = Color3.FromHexString('#1b2a32');
+  darkMaterial.emissiveColor = Color3.FromHexString('#071017');
+  const lightMaterial = new StandardMaterial('tow-truck-light-material', scene);
+  lightMaterial.diffuseColor = Color3.FromHexString('#70f6ff');
+  lightMaterial.emissiveColor = Color3.FromHexString('#20c9dd');
+  lightMaterial.disableLighting = true;
+
+  const chassis = MeshBuilder.CreateBox('tow-truck-chassis', {
+    width: 0.72,
+    height: 0.16,
+    depth: 0.86,
+  }, scene);
+  chassis.position.y = 0.24;
+  chassis.material = darkMaterial;
+  chassis.parent = root;
+  const bed = MeshBuilder.CreateBox('tow-truck-flatbed', {
+    width: 0.7,
+    height: 0.1,
+    depth: 0.72,
+  }, scene);
+  bed.position.set(0, 0.39, -0.08);
+  bed.material = bodyMaterial;
+  bed.parent = root;
+  const cab = MeshBuilder.CreateBox('tow-truck-cab', {
+    width: 0.62,
+    height: 0.4,
+    depth: 0.34,
+  }, scene);
+  cab.position.set(0, 0.55, 0.3);
+  cab.material = bodyMaterial;
+  cab.parent = root;
+  const window = MeshBuilder.CreateBox('tow-truck-window', {
+    width: 0.48,
+    height: 0.17,
+    depth: 0.025,
+  }, scene);
+  window.position.set(0, 0.61, 0.48);
+  window.material = lightMaterial;
+  window.parent = root;
+  for (const x of [-0.37, 0.37]) {
+    for (const z of [-0.28, 0.28]) {
+      const wheel = MeshBuilder.CreateCylinder('tow-truck-wheel', {
+        height: 0.12,
+        diameter: 0.25,
+        tessellation: 14,
+      }, scene);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.19, z);
+      wheel.material = darkMaterial;
+      wheel.parent = root;
+    }
+  }
+  const beacon = MeshBuilder.CreateCylinder('tow-truck-beacon', {
+    height: 0.11,
+    diameter: 0.14,
+    tessellation: 12,
+  }, scene);
+  beacon.position.set(0, 0.81, 0.29);
+  beacon.material = lightMaterial;
+  beacon.parent = root;
+  const glow = new GlowLayer('tow-truck-glow', scene, { blurKernelSize: 14 });
+  glow.intensity = 0.7;
+  glow.addIncludedOnlyMesh(window);
+  glow.addIncludedOnlyMesh(beacon);
+  root.position.copyFrom(worldAt(TOW_DEPOT_X, TOW_DEPOT_Z, 0.015));
+
+  let previousX = TOW_DEPOT_X;
+  let previousZ = TOW_DEPOT_Z;
+  return {
+    update: (x, z, state, carrying, now) => {
+      const position = worldAt(x, z, state === 0 ? 0.015 : 0.025);
+      root.position.copyFrom(position);
+      const dx = x - previousX;
+      const dz = z - previousZ;
+      if (Math.abs(dx) + Math.abs(dz) > 0.01) root.rotation.y = Math.atan2(dx, dz);
+      previousX = x;
+      previousZ = z;
+      const pulse = state === 0 ? 0.45 : 0.75 + Math.sin(now * 0.018) * 0.25;
+      lightMaterial.emissiveColor.set(0.12 * pulse, 0.75 * pulse, pulse);
+      bed.scaling.y = carrying ? 1.16 : 1;
+    },
+  };
+}
+
 function worldAt(gridX: number, gridZ: number, worldY: number): Vector3 {
   return new Vector3(
     (gridX + 0.5) * CELL_SIZE - MAP_WIDTH * CELL_SIZE / 2,
@@ -1454,6 +1651,7 @@ function updateLive(now: number): void {
     ...conveyorScene.update(simulationStep),
   ];
   const hiddenPallets = new Set<number>();
+  const palletOverrides = new Map<number, { x: number; z: number }>();
   let loadedCount = 0;
   const cargoCounts = [0, 0, 0];
   loadAgentIds.fill(-1);
@@ -1465,7 +1663,10 @@ function updateLive(now: number): void {
     const z1 = liveCurrent.positions[i * 2 + 1];
     const x = x0 + (x1 - x0) * alpha;
     const z = z0 + (z1 - z0) * alpha;
-    writeTransform(matrices, i, x, z);
+    const fromTransported = from.recoveryStates[i] === 2 ? 1 : 0;
+    const toTransported = liveCurrent.recoveryStates[i] === 2 ? 1 : 0;
+    const transportLift = fromTransported + (toTransported - fromTransported) * alpha;
+    writeTransform(matrices, i, x, z, 0.02 + transportLift * 0.55);
     if (i === selectedAgentId) {
       const position = worldAt(x, z, 0.045);
       selectionHalo.position.copyFrom(position);
@@ -1474,9 +1675,15 @@ function updateLive(now: number): void {
       selectionHalo.isVisible = true;
     }
     const palletId = liveCurrent.palletIds[i];
+    const palletX = liveCurrent.palletPositions[i * 2];
+    const palletZ = liveCurrent.palletPositions[i * 2 + 1];
+    if ((liveCurrent.statuses[i] & 2) === 0
+        && palletId < palletCells.length && palletX >= 0 && palletZ >= 0) {
+      palletOverrides.set(palletId, { x: palletX, z: palletZ });
+    }
     const enteringPickup = from.taskIds[i] === liveCurrent.taskIds[i]
-      && from.stages[i] === 0
-      && liveCurrent.stages[i] === 1
+      && ((from.stages[i] === 0 && liveCurrent.stages[i] === 1)
+        || (from.recoveryStates[i] === 4 && liveCurrent.recoveryStates[i] === 0))
       && (from.statuses[i] & 2) === 0;
     const motion = palletMotions[i];
     const motionProgress = motion
@@ -1523,9 +1730,13 @@ function updateLive(now: number): void {
       }
     }
   }
-  const nextHiddenKey = `${palletInventoryRevision}|${[...hiddenPallets].sort((a, b) => a - b).join(',')}`;
+  const overrideKey = [...palletOverrides.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([id, position]) => `${id}:${position.x}:${position.z}`)
+    .join(',');
+  const nextHiddenKey = `${palletInventoryRevision}|${[...hiddenPallets].sort((a, b) => a - b).join(',')}|${overrideKey}`;
   if (nextHiddenKey !== hiddenPalletKey) {
-    palletScene.update(hiddenPallets, palletInventory);
+    palletScene.update(hiddenPallets, palletInventory, palletOverrides);
     hiddenPalletKey = nextHiddenKey;
   }
   for (const transfer of transfers) {
@@ -1551,15 +1762,26 @@ function updateLive(now: number): void {
     robotLoad.cargo[type].thinInstanceCount = cargoCounts[type];
     if (cargoCounts[type]) robotLoad.cargo[type].thinInstanceBufferUpdated('matrix');
   }
+  const towX = from.tow.x + (liveCurrent.tow.x - from.tow.x) * alpha;
+  const towZ = from.tow.z + (liveCurrent.tow.z - from.tow.z) * alpha;
+  towTruckScene.update(
+    towX,
+    towZ,
+    liveCurrent.tow.state,
+    liveCurrent.tow.state === 2,
+    now,
+  );
 }
 
-function setAgentColor(index: number, status: number): void {
+function setAgentColor(index: number, status: number, recoveryState = 0): void {
   const loaded = (status & 2) !== 0;
   const waiting = (status & 1) !== 0;
   const transitioned = (status & 4) !== 0;
   const failed = (status & 16) !== 0;
   const color = failed
     ? [1, 0.12, 0.07, 1]
+    : recoveryState === 4
+    ? [0.35, 1, 0.62, 1]
     : index === selectedAgentId
     ? [1, 0.93, 0.32, 1]
     : transitioned
@@ -1576,8 +1798,8 @@ function parseFrame(buffer: ArrayBuffer): void {
   const view = new DataView(buffer);
   if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC) return;
   const protocol = view.getUint16(4, true);
-  if (protocol !== 1 && protocol !== 2 && protocol !== 3) return;
-  const recordSize = protocol === 3 ? 32 : protocol === 2 ? 24 : 16;
+  if (protocol !== 1 && protocol !== 2 && protocol !== 3 && protocol !== 4) return;
+  const recordSize = protocol === 4 ? 36 : protocol === 3 ? 32 : protocol === 2 ? 24 : 16;
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
   if (liveCurrent && step < liveCurrent.step) {
@@ -1586,7 +1808,8 @@ function parseFrame(buffer: ArrayBuffer): void {
   }
   const completedTasks = view.getUint16(6, true);
   const count = Math.min(MAX_AGENTS, view.getUint32(12, true));
-  if (view.byteLength < 16 + count * recordSize) return;
+  const towRecordSize = protocol >= 4 ? 16 : 0;
+  if (view.byteLength < 16 + count * recordSize + towRecordSize) return;
   const positions = new Float32Array(count * 2);
   const statuses = new Uint8Array(count);
   const stages = new Uint8Array(count);
@@ -1595,10 +1818,13 @@ function parseFrame(buffer: ArrayBuffer): void {
   const stationPositions = new Int16Array(count * 2);
   const reloadPositions = new Int16Array(count * 2);
   const palletItems = new Uint8Array(count);
+  const recoveryStates = new Uint8Array(count);
+  const palletPositions = new Int16Array(count * 2);
   taskIds.fill(0xffffffff);
   stationPositions.fill(-1);
   reloadPositions.fill(-1);
   palletItems.fill(PALLET_CAPACITY);
+  palletPositions.fill(-1);
   for (let i = 0; i < count; i++) {
     const offset = 16 + i * recordSize;
     const id = view.getUint32(offset, true);
@@ -1624,11 +1850,37 @@ function parseFrame(buffer: ArrayBuffer): void {
         palletInventoryRevision += 1;
       }
     }
+    if (protocol >= 4) {
+      recoveryStates[id] = view.getUint8(offset + 30);
+      palletPositions[id * 2] = view.getInt16(offset + 32, true);
+      palletPositions[id * 2 + 1] = view.getInt16(offset + 34, true);
+    }
     const enteringUnloadingBay = stages[id] >= 2
       && Math.round(positions[id * 2]) === UNLOAD_X
       && (statuses[id] & 4) !== 0
       && (statuses[id] & 1) === 0;
-    setAgentColor(id, enteringUnloadingBay ? statuses[id] & ~4 : statuses[id]);
+    setAgentColor(
+      id,
+      enteringUnloadingBay ? statuses[id] & ~4 : statuses[id],
+      recoveryStates[id],
+    );
+  }
+  let tow: TowFrame = {
+    x: TOW_DEPOT_X,
+    z: TOW_DEPOT_Z,
+    state: 0,
+    targetAgent: 0xffff,
+    queuedRescues: 0,
+  };
+  if (protocol >= 4) {
+    const towOffset = 16 + count * recordSize;
+    tow = {
+      x: view.getFloat32(towOffset, true),
+      z: view.getFloat32(towOffset + 4, true),
+      state: view.getUint8(towOffset + 8),
+      targetAgent: view.getUint16(towOffset + 10, true),
+      queuedRescues: view.getUint16(towOffset + 12, true),
+    };
   }
   if (count !== agentCount) setAgentCount(count);
   const receivedAt = performance.now();
@@ -1647,6 +1899,9 @@ function parseFrame(buffer: ArrayBuffer): void {
       const enteredPostUnloadStage = priorFrame.stages[id] === 1 && stages[id] >= 2;
       const enteredPickupStage = priorFrame.stages[id] === 0 && stages[id] === 1
         && priorFrame.taskIds[id] === taskIds[id];
+      const recoveredPallet = priorFrame.recoveryStates[id] === 4
+        && recoveryStates[id] === 0
+        && (statuses[id] & 2) !== 0;
       if (taskIds[id] !== priorFrame.taskIds[id]) {
         if (priorFrame.taskIds[id] !== 0xffffffff) stats.completedTasks += 1;
         stats.taskStartedAt = step;
@@ -1655,7 +1910,7 @@ function parseFrame(buffer: ArrayBuffer): void {
       const palletId = palletIds[id];
       const x = Math.round(positions[id * 2]);
       const stationZ = Math.round(positions[id * 2 + 1]);
-      if (enteredPickupStage && palletId < palletCells.length) {
+      if ((enteredPickupStage || recoveredPallet) && palletId < palletCells.length) {
         pendingPalletMotions[id] = { kind: 'pickup', taskId: taskIds[id], palletId };
       }
       const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
@@ -1726,8 +1981,10 @@ function parseFrame(buffer: ArrayBuffer): void {
       const pendingPallet = pendingPalletMotions[id];
       const waitingAtPallet = (statuses[id] & 1) !== 0
         && pallet !== null
-        && x === pallet.x
-        && stationZ === pallet.z;
+        && x === (palletPositions[id * 2] >= 0 ? palletPositions[id * 2] : pallet.x)
+        && stationZ === (palletPositions[id * 2 + 1] >= 0
+          ? palletPositions[id * 2 + 1]
+          : pallet.z);
       if (pendingPallet && pendingPallet.taskId === taskIds[id] && waitingAtPallet) {
         palletMotions[id] = { ...pendingPallet, startedStep: priorFrame.step };
         pendingPalletMotions[id] = null;
@@ -1738,7 +1995,7 @@ function parseFrame(buffer: ArrayBuffer): void {
       if (palletMotion && step - palletMotion.startedStep > PALLET_DWELL_TICKS) {
         palletMotions[id] = null;
       } else if (palletMotion?.kind === 'pickup'
-          && (taskIds[id] !== palletMotion.taskId || stages[id] !== 1)) {
+          && taskIds[id] !== palletMotion.taskId) {
         palletMotions[id] = null;
       }
     }
@@ -1760,6 +2017,9 @@ function parseFrame(buffer: ArrayBuffer): void {
     stationPositions,
     reloadPositions,
     palletItems,
+    recoveryStates,
+    palletPositions,
+    tow,
     completedTasks,
     step,
     receivedAt,
@@ -1788,8 +2048,16 @@ function resetAgentStats(): void {
 function selectAgent(agent: number): void {
   const previous = selectedAgentId;
   selectedAgentId = agent;
-  if (previous >= 0) setAgentColor(previous, liveCurrent?.statuses[previous] ?? 0);
-  setAgentColor(agent, liveCurrent?.statuses[agent] ?? 0);
+  if (previous >= 0) setAgentColor(
+    previous,
+    liveCurrent?.statuses[previous] ?? 0,
+    liveCurrent?.recoveryStates[previous] ?? 0,
+  );
+  setAgentColor(
+    agent,
+    liveCurrent?.statuses[agent] ?? 0,
+    liveCurrent?.recoveryStates[agent] ?? 0,
+  );
   robotMesh.thinInstanceBufferUpdated('color');
   selectionHalo.isVisible = true;
   renderAgentPanel();
@@ -1801,7 +2069,11 @@ function clearAgentSelection(): void {
   selectionHalo.isVisible = false;
   hideTaskMarkers();
   if (previous >= 0) {
-    setAgentColor(previous, liveCurrent?.statuses[previous] ?? 0);
+    setAgentColor(
+      previous,
+      liveCurrent?.statuses[previous] ?? 0,
+      liveCurrent?.recoveryStates[previous] ?? 0,
+    );
     robotMesh.thinInstanceBufferUpdated('color');
   }
   renderAgentPanel();
@@ -1837,14 +2109,21 @@ function renderAgentPanel(): void {
   const loaded = (status & 2) !== 0;
   const transitioned = (status & 4) !== 0;
   const failed = (status & 16) !== 0;
+  const recoveryState = frame.recoveryStates[id];
   const agentX = Math.round(frame.positions[id * 2]);
   const agentZ = Math.round(frame.positions[id * 2 + 1]);
   const atUnloadingBay = nativeStage >= 2 && agentX === UNLOAD_X && agentZ === stationZ;
   const atReloadingBay = nativeStage >= 2 && agentX === reloadX && agentZ === reloadZ;
   const stage = atUnloadingBay ? 1 : atReloadingBay ? 2 : nativeStage;
   const palletMotion = palletMotions[id];
-  const stateLabel = failed
-    ? 'FAILED'
+  const stateLabel = recoveryState === 1
+    ? 'WAITING FOR TOW'
+    : recoveryState === 2
+      ? 'EVACUATING'
+      : recoveryState === 3
+        ? 'UNDER REPAIR'
+        : recoveryState === 4
+          ? 'RECOVERING PALLET'
     : palletMotion?.kind === 'pickup' && waiting
     ? 'LOADING PALLET'
     : palletMotion?.kind === 'drop' && waiting
@@ -1862,18 +2141,28 @@ function renderAgentPanel(): void {
           : 'EMPTY';
   const statePill = document.querySelector<HTMLElement>('#selected-agent-state')!;
   statePill.textContent = stateLabel;
-  statePill.className = `state-pill${failed ? ' failed' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
+  statePill.className = `state-pill${failed ? ' failed' : recoveryState === 4 ? ' recovery' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
   const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
-  failButton.disabled = failed || socket?.readyState !== WebSocket.OPEN;
-  document.querySelector('#fail-agent-label')!.textContent = failed ? 'AGENT FAILED' : 'BREAK AGENT';
+  failButton.disabled = recoveryState !== 0 || socket?.readyState !== WebSocket.OPEN;
+  document.querySelector('#fail-agent-label')!.textContent = recoveryState !== 0
+    ? 'RECOVERY IN PROGRESS'
+    : 'BREAK AGENT';
 
   document.querySelector('#selected-agent')!.textContent = `AGENT ${String(id).padStart(3, '0')}`;
   document.querySelector('#agent-position')!.textContent =
     `${Math.round(frame.positions[id * 2])}, ${Math.round(frame.positions[id * 2 + 1])}`;
   document.querySelector('#agent-task')!.textContent = taskId === 0xffffffff ? '—' : `#${taskId}`;
   const cargoNames = ['CRATE', 'CARTONS', 'DRUMS'];
+  const physicalPalletX = frame.palletPositions[id * 2];
+  const physicalPalletZ = frame.palletPositions[id * 2 + 1];
+  const droppedLabel = recoveryState !== 0 && !loaded
+      && physicalPalletX >= 0 && physicalPalletZ >= 0
+      && pallet !== null
+      && (physicalPalletX !== pallet.x || physicalPalletZ !== pallet.z)
+    ? ` · @ ${physicalPalletX},${physicalPalletZ}`
+    : '';
   document.querySelector('#agent-pallet')!.textContent = pallet
-    ? `P${String(palletId).padStart(3, '0')} · ${cargoNames[pallet.cargoType]} · ${frame.palletItems[id]}/${PALLET_CAPACITY}`
+    ? `P${String(palletId).padStart(3, '0')} · ${cargoNames[pallet.cargoType]} · ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
     : '—';
   document.querySelector('#agent-task-age')!.textContent = `${Math.max(0, frame.step - stats.taskStartedAt)} TICKS`;
 
@@ -2030,6 +2319,8 @@ const throughputValue = document.querySelector('#throughput-value')!;
 const latencyValue = document.querySelector('#latency-value')!;
 const loadedValue = document.querySelector('#loaded-value')!;
 const failedValue = document.querySelector('#failed-value')!;
+const recoveryValue = document.querySelector('#recovery-value')!;
+const towStatusValue = document.querySelector('#tow-status-value')!;
 const tasksValue = document.querySelector('#tasks-value')!;
 let telemetryElapsed = 0;
 
@@ -2053,6 +2344,21 @@ engine.runRenderLoop(() => {
     latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
     failedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) : 0);
+    recoveryValue.textContent = String(liveCurrent
+      ? liveCurrent.recoveryStates.reduce((sum, state) => sum + (state !== 0 ? 1 : 0), 0)
+      : 0);
+    if (liveCurrent) {
+      const towLabels = ['IDLE', 'TO AGENT', 'TRANSPORT', 'RETURNING'];
+      const target = liveCurrent.tow.targetAgent === 0xffff
+        ? ''
+        : ` · A${String(liveCurrent.tow.targetAgent).padStart(3, '0')}`;
+      const queued = liveCurrent.tow.queuedRescues > 0
+        ? ` · Q${liveCurrent.tow.queuedRescues}`
+        : '';
+      towStatusValue.textContent = `${towLabels[liveCurrent.tow.state] ?? 'ACTIVE'}${target}${queued}`;
+    } else {
+      towStatusValue.textContent = 'IDLE';
+    }
     tasksValue.textContent = String(liveCurrent?.completedTasks ?? 0);
   }
 });
@@ -2083,7 +2389,7 @@ stopButton.addEventListener('click', () => {
 
 failAgentButton.addEventListener('click', () => {
   if (selectedAgentId < 0 || !liveCurrent) return;
-  if ((liveCurrent.statuses[selectedAgentId] & 16) !== 0) return;
+  if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
   failAgentButton.disabled = true;
   document.querySelector('#fail-agent-label')!.textContent = 'BREAKING…';
   sendControl('fail', { agent: selectedAgentId });

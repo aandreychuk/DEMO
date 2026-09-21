@@ -20,6 +20,8 @@ RELOAD_X = 2
 RELOAD_Y = range(1, HEIGHT - 1)
 RELOAD_BACK_X = RELOAD_X - 1
 PALLET_CAPACITY = 12
+REPAIR_STATION = (WIDTH // 2, HEIGHT - 2)
+TOW_DEPOT = (WIDTH // 2 - 1, HEIGHT - 2)
 
 
 def pallet_cells() -> list[tuple[int, int]]:
@@ -67,7 +69,12 @@ def main() -> None:
         "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)
     ]
-    excluded = set(pallets) | set(stations) | set(reload_stations)
+    excluded = (
+        set(pallets)
+        | set(stations)
+        | set(reload_stations)
+        | {REPAIR_STATION, TOW_DEPOT}
+    )
     starts_pool = [
         (x, y)
         for y in range(1, HEIGHT - 1)
@@ -97,7 +104,7 @@ def main() -> None:
     layout_path.write_text(
         json.dumps(
             {
-                "schema": "mapf-lifelong-layout/v2",
+                "schema": "mapf-lifelong-layout/v3",
                 "width": WIDTH,
                 "height": HEIGHT,
                 "palletCapacity": PALLET_CAPACITY,
@@ -110,6 +117,16 @@ def main() -> None:
                     {"id": index, "x": x, "y": y, "accessSide": "east"}
                     for index, (x, y) in enumerate(reload_stations)
                 ],
+                "repairStation": {
+                    "x": REPAIR_STATION[0],
+                    "y": REPAIR_STATION[1],
+                    "accessSide": "north",
+                },
+                "towDepot": {
+                    "x": TOW_DEPOT[0],
+                    "y": TOW_DEPOT[1],
+                    "accessSide": "north",
+                },
             },
             indent=2,
         ) + "\n",

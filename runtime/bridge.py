@@ -19,7 +19,7 @@ from websockets.exceptions import ConnectionClosed
 
 
 MAGIC = 0x4D415046
-PROTOCOL = 3
+PROTOCOL = 4
 MAX_AGENTS = 100
 
 
@@ -38,7 +38,19 @@ class AgentState:
     pallet_items: int
     reload_required: bool
     failed: bool
+    recovery_state: int
+    pallet_x: int
+    pallet_y: int
     completed_tasks: int
+
+
+@dataclass(frozen=True)
+class TowState:
+    x: int
+    y: int
+    state: int
+    target_agent: int
+    queued_rescues: int
 
 
 @dataclass(frozen=True)
@@ -46,6 +58,7 @@ class NativeFrame:
     step: int
     states: list[AgentState]
     inference_ms: float
+    tow: TowState
 
 
 def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
@@ -58,14 +71,14 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
     completed_tasks = int(fields[2])
     inference_ms = float(fields[3])
     agent_count = int(fields[4])
-    if agent_count != expected_agents or len(fields) != 5 + agent_count:
+    if agent_count != expected_agents or len(fields) != 6 + agent_count:
         raise RuntimeError(
             f"native simulator frame has {agent_count} agents, expected {expected_agents}"
         )
     states: list[AgentState] = []
-    for record in fields[5:]:
+    for record in fields[5 : 5 + agent_count]:
         values = [int(value) for value in record.split(",")]
-        if len(values) not in (12, 13):
+        if len(values) != 16:
             raise RuntimeError("native simulator emitted a malformed agent record")
         states.append(
             AgentState(
@@ -81,16 +94,35 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
                 reload_y=values[9],
                 pallet_items=values[10],
                 reload_required=bool(values[11]),
-                failed=bool(values[12]) if len(values) >= 13 else False,
+                failed=bool(values[12]),
+                recovery_state=values[13],
+                pallet_x=values[14],
+                pallet_y=values[15],
                 completed_tasks=completed_tasks,
             )
         )
-    return NativeFrame(step=step, states=states, inference_ms=inference_ms)
+    tow_values = [int(value) for value in fields[-1].split(",")]
+    if len(tow_values) != 5:
+        raise RuntimeError("native simulator emitted a malformed tow record")
+    tow = TowState(
+        x=tow_values[0],
+        y=tow_values[1],
+        state=tow_values[2],
+        target_agent=tow_values[3],
+        queued_rescues=tow_values[4],
+    )
+    return NativeFrame(
+        step=step,
+        states=states,
+        inference_ms=inference_ms,
+        tow=tow,
+    )
 
 
 def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes:
-    record_size = 32
-    payload = bytearray(16 + record_size * len(frame.states))
+    record_size = 36
+    tow_record_size = 16
+    payload = bytearray(16 + record_size * len(frame.states) + tow_record_size)
     completed_tasks = min(
         65535, frame.states[0].completed_tasks if frame.states else 0
     )
@@ -119,13 +151,14 @@ def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes
             | (4 if transitioned else 0)
             | (8 if state.reload_required else 0)
             | (16 if state.failed else 0)
+            | (32 if state.recovery_state == 4 else 0)
         )
         pallet_id = 65535 if state.pallet_id < 0 else min(65534, state.pallet_id)
         task_id = (
             0xFFFFFFFF if state.task_id < 0 else min(0xFFFFFFFE, state.task_id)
         )
         struct.pack_into(
-            "<IffBBHIhhhhBBH",
+            "<IffBBHIhhhhBBBBhh",
             payload,
             16 + agent * record_size,
             agent,
@@ -141,8 +174,29 @@ def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes
             state.reload_y,
             min(12, max(0, state.pallet_items)),
             12,
+            state.recovery_state,
             0,
+            state.pallet_x,
+            state.pallet_y,
         )
+    tow_offset = 16 + record_size * len(frame.states)
+    tow_target = (
+        65535
+        if frame.tow.target_agent < 0
+        else min(65534, frame.tow.target_agent)
+    )
+    struct.pack_into(
+        "<ffBBHHH",
+        payload,
+        tow_offset,
+        float(frame.tow.x),
+        float(frame.tow.y),
+        frame.tow.state,
+        0,
+        tow_target,
+        min(65535, frame.tow.queued_rescues),
+        0,
+    )
     return bytes(payload)
 
 
@@ -233,6 +287,14 @@ class Bridge:
             "deterministic",
             "--lifelong-tasks",
             str(self.args.tasks.resolve()),
+            "--repair-x",
+            str(self.args.layout_data["repairStation"]["x"]),
+            "--repair-y",
+            str(self.args.layout_data["repairStation"]["y"]),
+            "--tow-depot-x",
+            str(self.args.layout_data["towDepot"]["x"]),
+            "--tow-depot-y",
+            str(self.args.layout_data["towDepot"]["y"]),
             "--stream",
         ]
 

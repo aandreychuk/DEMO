@@ -64,10 +64,14 @@ precomputed or replayed by the browser bridge.
 Supported demo sizes are 25, 50, and 100 agents. The bridge uses an unbounded
 native horizon by default. Pass a positive `--max-steps` only for diagnostics.
 The browser can also send `fail <agent>` through the bridge. The native runner
-then pins that agent to its current vertex and includes the vertex in every
-other agent's dynamic obstacle mask and cost-to-go recomputation. It also
-removes the failed agent from relational observation records and
-`agent_chat_ids`; no live agent communicates with it.
+queues the failure for a single external recovery vehicle, which replans a
+shortest BFS route around current agents, pallets, and service cells on every
+tick. Its current cell and the failed robot are included in every live agent's
+dynamic obstacle mask, cost-to-go recomputation, and PIBT constraints, while
+both remain outside relational observation records and `agent_chat_ids`.
+After eight repair ticks, the robot resumes the same assignment and stage. A
+carried pallet is left at the failure cell and becomes the repaired robot's
+temporary recovery goal before its saved task goal is restored.
 
 `generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,

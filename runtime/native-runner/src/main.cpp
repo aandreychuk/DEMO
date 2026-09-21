@@ -57,6 +57,10 @@ struct Arguments {
   int fallback_budget_reserve = 0;
   int fallback_urgent_remaining = 0;
   std::string lifelong_tasks;
+  int repair_x = -1;
+  int repair_y = -1;
+  int tow_depot_x = -1;
+  int tow_depot_y = -1;
 };
 
 Arguments parse_arguments(int argc, char** argv)
@@ -114,6 +118,14 @@ Arguments parse_arguments(int argc, char** argv)
       args.fallback_urgent_remaining = std::stoi(value(i));
     else if (key == "--lifelong-tasks")
       args.lifelong_tasks = value(i);
+    else if (key == "--repair-x")
+      args.repair_x = std::stoi(value(i));
+    else if (key == "--repair-y")
+      args.repair_y = std::stoi(value(i));
+    else if (key == "--tow-depot-x")
+      args.tow_depot_x = std::stoi(value(i));
+    else if (key == "--tow-depot-y")
+      args.tow_depot_y = std::stoi(value(i));
     else throw std::runtime_error("unknown argument: " + key);
   }
   if (args.map.empty() || args.scen.empty() || args.model.empty() ||
@@ -152,7 +164,8 @@ Arguments parse_arguments(int argc, char** argv)
         "--fallback-max-remaining N] [--fallback-release-on-progress] "
         "[--fallback-min-burst N] [--fallback-budget-reserve N] "
         "[--fallback-urgent-remaining N] "
-        "[--lifelong-tasks TASKS.tsv]");
+        "[--lifelong-tasks TASKS.tsv] "
+        "[--repair-x X --repair-y Y --tow-depot-x X --tow-depot-y Y]");
   }
   return args;
 }
@@ -172,6 +185,60 @@ constexpr int kPalletCapacity = 12;
 constexpr int kPalletHandlingDwellSteps = 2;
 constexpr int kUnloadingDwellSteps = 5;
 constexpr int kReloadingDwellSteps = 5;
+constexpr int kRepairDwellSteps = 8;
+
+enum class RecoveryState : uint8_t {
+  Normal = 0,
+  WaitingForTow = 1,
+  InTransit = 2,
+  Repairing = 3,
+  RecoveringPallet = 4,
+};
+
+enum class TowState : uint8_t {
+  Idle = 0,
+  ToAgent = 1,
+  ToRepair = 2,
+  ToDepot = 3,
+};
+
+Vertex* bfs_next_vertex(Vertex* start, const std::vector<Vertex*>& goals,
+                        const std::vector<char>& blocked)
+{
+  if (start == nullptr || goals.empty()) return start;
+  std::vector<char> is_goal(blocked.size(), false);
+  for (auto* goal : goals) {
+    if (goal != nullptr) is_goal[goal->id] = true;
+  }
+  if (is_goal[start->id]) return start;
+
+  std::vector<Vertex*> by_id(blocked.size(), nullptr);
+  std::vector<int> parent(blocked.size(), -1);
+  std::deque<Vertex*> queue;
+  by_id[start->id] = start;
+  parent[start->id] = start->id;
+  queue.push_back(start);
+  Vertex* reached = nullptr;
+  while (!queue.empty() && reached == nullptr) {
+    auto* current = queue.front();
+    queue.pop_front();
+    for (auto* neighbor : current->neighbor) {
+      if (parent[neighbor->id] >= 0 || blocked[neighbor->id]) continue;
+      by_id[neighbor->id] = neighbor;
+      parent[neighbor->id] = current->id;
+      if (is_goal[neighbor->id]) {
+        reached = neighbor;
+        break;
+      }
+      queue.push_back(neighbor);
+    }
+  }
+  if (reached == nullptr) return start;
+  while (parent[reached->id] != start->id) {
+    reached = by_id[parent[reached->id]];
+  }
+  return reached;
+}
 
 std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
 {
@@ -363,6 +430,7 @@ int main(int argc, char** argv)
     std::vector<LifelongTask> lifelong_tasks;
     std::deque<int> pending_tasks;
     std::vector<Vertex*> pallet_vertices;
+    std::vector<Vertex*> pallet_positions;
     std::vector<char> pallet_reserved;
     std::vector<char> pallet_present;
     std::vector<int> pallet_items;
@@ -377,6 +445,18 @@ int main(int argc, char** argv)
     std::vector<char> return_dwell_started(ins.N, false);
     std::vector<char> task_requires_reload(ins.N, false);
     std::vector<char> failed(ins.N, false);
+    std::vector<RecoveryState> recovery_state(
+        ins.N, RecoveryState::Normal);
+    std::vector<Vertex*> resume_goals(ins.N, nullptr);
+    std::vector<char> recovering_pallet(ins.N, false);
+    std::vector<char> recovery_dwell_started(ins.N, false);
+    std::vector<int> repair_dwell_remaining(ins.N, 0);
+    std::deque<int> rescue_queue;
+    Vertex* repair_station = nullptr;
+    Vertex* tow_depot = nullptr;
+    Vertex* tow_position = nullptr;
+    TowState tow_state = TowState::Idle;
+    int tow_target = -1;
     long long completed_tasks = 0;
     long long goal_updates = 0;
     long long next_task_id = 0;
@@ -417,6 +497,40 @@ int main(int argc, char** argv)
         }
         pending_tasks.push_back(index);
       }
+      pallet_positions = pallet_vertices;
+
+      const int repair_x = args.repair_x >= 0
+          ? args.repair_x
+          : ins.G->width / 2;
+      const int repair_y = args.repair_y >= 0
+          ? args.repair_y
+          : ins.G->height - 2;
+      const int tow_depot_x = args.tow_depot_x >= 0
+          ? args.tow_depot_x
+          : repair_x - 1;
+      const int tow_depot_y = args.tow_depot_y >= 0
+          ? args.tow_depot_y
+          : repair_y;
+      const auto vertex_at = [&](int x, int y) -> Vertex* {
+        if (x < 0 || x >= ins.G->width || y < 0 || y >= ins.G->height) {
+          return nullptr;
+        }
+        return ins.G->U[ins.G->width * y + x];
+      };
+      repair_station = vertex_at(repair_x, repair_y);
+      tow_depot = vertex_at(tow_depot_x, tow_depot_y);
+      if (repair_station == nullptr || tow_depot == nullptr ||
+          repair_station == tow_depot) {
+        throw std::runtime_error("invalid repair station or tow depot cell");
+      }
+      for (auto* service_cell : {repair_station, tow_depot}) {
+        if (!station_mask[service_cell->id]) {
+          station_mask[service_cell->id] = true;
+          station_vertices.push_back(service_cell);
+        }
+      }
+      tow_position = tow_depot;
+
       assign_task = [&](int agent, Vertex* current_position) {
         const size_t candidates = pending_tasks.size();
         for (size_t attempt = 0; attempt < candidates; ++attempt) {
@@ -437,7 +551,12 @@ int main(int argc, char** argv)
           reload_dwell_started[agent] = false;
           return_dwell_started[agent] = false;
           task_requires_reload[agent] = false;
-          ins.goals[agent] = pallet;
+          recovery_state[agent] = RecoveryState::Normal;
+          resume_goals[agent] = nullptr;
+          recovering_pallet[agent] = false;
+          recovery_dwell_started[agent] = false;
+          repair_dwell_remaining[agent] = 0;
+          ins.goals[agent] = pallet_positions[task.pallet_id];
           ++goal_updates;
           return true;
         }
@@ -486,6 +605,9 @@ int main(int argc, char** argv)
     }
 
     Config current = ins.starts;
+    std::vector<std::array<int, LC_MAPF_ACTION_HISTORY_LEN>> history(
+        ins.N);
+    for (auto& row : history) row.fill(-1);
     auto refresh_navigation = [&](const Config& positions) {
       if (!lifelong) return;
       std::vector<std::vector<int>> blocked_vertices(ins.N);
@@ -501,13 +623,13 @@ int main(int argc, char** argv)
         }
         if (loaded[i]) {
           for (int pallet_id = 0;
-               pallet_id < static_cast<int>(pallet_vertices.size());
+               pallet_id < static_cast<int>(pallet_positions.size());
                ++pallet_id) {
             if (!pallet_present[pallet_id] ||
-                pallet_vertices[pallet_id] == nullptr) {
+                pallet_positions[pallet_id] == nullptr) {
               continue;
             }
-            const int vertex_id = pallet_vertices[pallet_id]->id;
+            const int vertex_id = pallet_positions[pallet_id]->id;
             ids.push_back(vertex_id);
             blocked_mask[vertex_id] = true;
           }
@@ -518,6 +640,11 @@ int main(int argc, char** argv)
           if (blocked_mask[vertex_id]) continue;
           ids.push_back(vertex_id);
           blocked_mask[vertex_id] = true;
+        }
+        if (tow_position != nullptr && tow_position != positions[i] &&
+            !blocked_mask[tow_position->id]) {
+          ids.push_back(tow_position->id);
+          blocked_mask[tow_position->id] = true;
         }
         distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
@@ -530,6 +657,136 @@ int main(int argc, char** argv)
       }
     };
     refresh_navigation(current);
+
+    auto dispatch_tow = [&]() {
+      if (tow_state != TowState::Idle || rescue_queue.empty()) return false;
+      while (!rescue_queue.empty()) {
+        const int candidate = rescue_queue.front();
+        rescue_queue.pop_front();
+        if (candidate >= 0 && candidate < static_cast<int>(ins.N) &&
+            recovery_state[candidate] == RecoveryState::WaitingForTow) {
+          tow_target = candidate;
+          tow_state = TowState::ToAgent;
+          return true;
+        }
+      }
+      return false;
+    };
+
+    auto tow_next = [&](const std::vector<Vertex*>& goals,
+                        int ignored_agent) -> Vertex* {
+      std::vector<char> blocked(ins.G->size(), false);
+      for (auto* station : station_vertices) blocked[station->id] = true;
+      for (int pallet_id = 0;
+           pallet_id < static_cast<int>(pallet_positions.size());
+           ++pallet_id) {
+        if (pallet_present[pallet_id] && pallet_positions[pallet_id] != nullptr) {
+          blocked[pallet_positions[pallet_id]->id] = true;
+        }
+      }
+      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        if (i != ignored_agent) blocked[current[i]->id] = true;
+      }
+      blocked[tow_position->id] = false;
+      for (auto* goal : goals) {
+        if (goal == repair_station || goal == tow_depot) blocked[goal->id] = false;
+      }
+      return bfs_next_vertex(tow_position, goals, blocked);
+    };
+
+    auto advance_recovery = [&]() {
+      bool changed = false;
+      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        if (recovery_state[i] != RecoveryState::Repairing) continue;
+        if (repair_dwell_remaining[i] > 0) {
+          --repair_dwell_remaining[i];
+          continue;
+        }
+        failed[i] = false;
+        history[i].fill(0);
+        if (recovering_pallet[i] && agent_task[i] >= 0) {
+          const int pallet_id = lifelong_tasks[agent_task[i]].pallet_id;
+          recovery_state[i] = RecoveryState::RecoveringPallet;
+          recovery_dwell_started[i] = false;
+          ins.goals[i] = pallet_positions[pallet_id];
+        } else {
+          recovery_state[i] = RecoveryState::Normal;
+          ins.goals[i] = resume_goals[i] != nullptr ? resume_goals[i] : current[i];
+          resume_goals[i] = nullptr;
+        }
+        ++goal_updates;
+        changed = true;
+      }
+
+      changed = dispatch_tow() || changed;
+      if (tow_state == TowState::ToAgent && tow_target >= 0) {
+        std::vector<Vertex*> pickup_cells;
+        for (auto* neighbor : current[tow_target]->neighbor) {
+          bool occupied = false;
+          for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+            if (i != tow_target && current[i] == neighbor) {
+              occupied = true;
+              break;
+            }
+          }
+          if (!occupied && !station_mask[neighbor->id]) {
+            bool pallet_blocked = false;
+            for (int pallet_id = 0;
+                 pallet_id < static_cast<int>(pallet_positions.size());
+                 ++pallet_id) {
+              if (pallet_present[pallet_id] &&
+                  pallet_positions[pallet_id] == neighbor) {
+                pallet_blocked = true;
+                break;
+              }
+            }
+            if (!pallet_blocked) pickup_cells.push_back(neighbor);
+          }
+        }
+        auto* next_tow = tow_next(pickup_cells, -1);
+        if (next_tow != tow_position) {
+          tow_position = next_tow;
+          changed = true;
+        }
+        if (std::find(pickup_cells.begin(), pickup_cells.end(), tow_position) !=
+            pickup_cells.end()) {
+          current[tow_target] = tow_position;
+          ins.goals[tow_target] = tow_position;
+          recovery_state[tow_target] = RecoveryState::InTransit;
+          tow_state = TowState::ToRepair;
+          changed = true;
+        }
+      } else if (tow_state == TowState::ToRepair && tow_target >= 0) {
+        auto* next_tow = tow_next({repair_station}, tow_target);
+        if (next_tow != tow_position) {
+          tow_position = next_tow;
+          current[tow_target] = tow_position;
+          ins.goals[tow_target] = tow_position;
+          changed = true;
+        }
+        if (tow_position == repair_station) {
+          current[tow_target] = repair_station;
+          ins.goals[tow_target] = repair_station;
+          recovery_state[tow_target] = RecoveryState::Repairing;
+          repair_dwell_remaining[tow_target] = kRepairDwellSteps;
+          tow_target = -1;
+          tow_state = TowState::ToDepot;
+          changed = true;
+        }
+      } else if (tow_state == TowState::ToDepot) {
+        auto* next_tow = tow_next({tow_depot}, -1);
+        if (next_tow != tow_position) {
+          tow_position = next_tow;
+          changed = true;
+        }
+        if (tow_position == tow_depot) {
+          tow_state = TowState::Idle;
+          dispatch_tow();
+          changed = true;
+        }
+      }
+      return changed;
+    };
 
     auto emit_stream_frame = [&](int step, const Config& positions) {
       if (!args.stream) return;
@@ -556,8 +813,19 @@ int main(int argc, char** argv)
                   << (task ? task->reload_y : -1) << ','
                   << (task ? pallet_items[task->pallet_id] : 0) << ','
                   << (task_requires_reload[i] ? 1 : 0) << ','
-                  << (failed[i] ? 1 : 0);
+                  << (failed[i] ? 1 : 0) << ','
+                  << static_cast<int>(recovery_state[i]) << ','
+                  << (task && pallet_positions[task->pallet_id]
+                          ? pallet_positions[task->pallet_id]->x
+                          : -1) << ','
+                  << (task && pallet_positions[task->pallet_id]
+                          ? pallet_positions[task->pallet_id]->y
+                          : -1);
       }
+      std::cout << '\t' << (tow_position ? tow_position->x : -1) << ','
+                << (tow_position ? tow_position->y : -1) << ','
+                << static_cast<int>(tow_state) << ',' << tow_target << ','
+                << rescue_queue.size();
       std::cout << '\n' << std::flush;
     };
 
@@ -614,9 +882,6 @@ int main(int argc, char** argv)
       training_dump.write(
           reinterpret_cast<const char*>(&chat_slots), sizeof(chat_slots));
     }
-    std::vector<std::array<int, LC_MAPF_ACTION_HISTORY_LEN>> history(
-        ins.N);
-    for (auto& row : history) row.fill(-1);
     std::vector<float> priorities(ins.N);
     std::vector<int> order(ins.N);
     for (int i = 0; i < static_cast<int>(ins.N); ++i) {
@@ -710,17 +975,32 @@ int main(int argc, char** argv)
           std::string action;
           int agent = -1;
           if (input >> action >> agent && action == "fail" &&
-              agent >= 0 && agent < static_cast<int>(ins.N)) {
+              agent >= 0 && agent < static_cast<int>(ins.N) &&
+              recovery_state[agent] == RecoveryState::Normal) {
             failed[agent] = true;
+            recovery_state[agent] = RecoveryState::WaitingForTow;
+            resume_goals[agent] = ins.goals[agent];
+            recovering_pallet[agent] = loaded[agent];
+            recovery_dwell_started[agent] = false;
+            repair_dwell_remaining[agent] = 0;
+            if (loaded[agent] && agent_task[agent] >= 0) {
+              const int pallet_id = lifelong_tasks[agent_task[agent]].pallet_id;
+              loaded[agent] = false;
+              pallet_present[pallet_id] = true;
+              pallet_positions[pallet_id] = current[agent];
+            }
             service_dwell_remaining[agent] = 0;
             ins.goals[agent] = current[agent];
             history[agent].fill(0);
+            rescue_queue.push_back(agent);
+            dispatch_tow();
             refresh_navigation(current);
             emit_stream_frame(episode_steps, current);
           }
         }
         if (!std::cin || command == "quit") break;
       }
+      if (lifelong && advance_recovery()) refresh_navigation(current);
       std::vector<int> actions(ins.N, 0);
       Config next(ins.N, nullptr);
       if (args.mode == "soft") {
@@ -768,7 +1048,7 @@ int main(int argc, char** argv)
             auto& forbidden = forbidden_vertex_ids[i];
             forbidden.reserve(
                 station_vertices.size() +
-                (loaded[i] ? pallet_vertices.size() : 0) +
+                (loaded[i] ? pallet_positions.size() : 0) +
                 ins.N +
                 (service_dwell_remaining[i] > 0
                      ? current[i]->neighbor.size()
@@ -780,11 +1060,11 @@ int main(int argc, char** argv)
             }
             if (loaded[i]) {
               for (int pallet_id = 0;
-                   pallet_id < static_cast<int>(pallet_vertices.size());
+                   pallet_id < static_cast<int>(pallet_positions.size());
                    ++pallet_id) {
                 if (pallet_present[pallet_id] &&
-                    pallet_vertices[pallet_id] != nullptr) {
-                  forbidden.push_back(pallet_vertices[pallet_id]->id);
+                    pallet_positions[pallet_id] != nullptr) {
+                  forbidden.push_back(pallet_positions[pallet_id]->id);
                 }
               }
             }
@@ -795,6 +1075,11 @@ int main(int argc, char** argv)
                   forbidden.end()) {
                 forbidden.push_back(vertex_id);
               }
+            }
+            if (tow_position != nullptr && tow_position != current[i] &&
+                std::find(forbidden.begin(), forbidden.end(),
+                          tow_position->id) == forbidden.end()) {
+              forbidden.push_back(tow_position->id);
             }
             if (service_dwell_remaining[i] > 0) {
               for (auto* neighbor : current[i]->neighbor) {
@@ -1048,6 +1333,28 @@ int main(int argc, char** argv)
           if (failed[i]) continue;
           if (agent_task[i] < 0 || current[i] != ins.goals[i]) continue;
           const auto& task = lifelong_tasks[agent_task[i]];
+          if (recovery_state[i] == RecoveryState::RecoveringPallet) {
+            if (!recovery_dwell_started[i]) {
+              recovery_dwell_started[i] = true;
+              service_dwell_remaining[i] = kPalletHandlingDwellSteps;
+              navigation_changed = true;
+              continue;
+            }
+            if (service_dwell_remaining[i] > 0) continue;
+            loaded[i] = true;
+            pallet_present[task.pallet_id] = false;
+            recovery_state[i] = RecoveryState::Normal;
+            recovering_pallet[i] = false;
+            recovery_dwell_started[i] = false;
+            ins.goals[i] = resume_goals[i] != nullptr
+                ? resume_goals[i]
+                : pallet_vertices[task.pallet_id];
+            resume_goals[i] = nullptr;
+            ++goal_updates;
+            priorities[i] -= std::floor(priorities[i]);
+            navigation_changed = true;
+            continue;
+          }
           if (task_stage[i] == 0) {
             loaded[i] = true;
             pallet_present[task.pallet_id] = false;
@@ -1094,6 +1401,7 @@ int main(int argc, char** argv)
             const int completed_task = agent_task[i];
             loaded[i] = false;
             pallet_present[task.pallet_id] = true;
+            pallet_positions[task.pallet_id] = pallet_vertices[task.pallet_id];
             pallet_reserved[task.pallet_id] = false;
             pending_tasks.push_back(completed_task);
             agent_task[i] = -1;

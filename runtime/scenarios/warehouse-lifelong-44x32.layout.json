@@ -1,5 +1,5 @@
 {
-  "schema": "mapf-lifelong-layout/v2",
+  "schema": "mapf-lifelong-layout/v3",
   "width": 44,
   "height": 32,
   "palletCapacity": 12,
@@ -1328,5 +1328,15 @@
       "y": 30,
       "accessSide": "east"
     }
-  ]
+  ],
+  "repairStation": {
+    "x": 22,
+    "y": 30,
+    "accessSide": "north"
+  },
+  "towDepot": {
+    "x": 21,
+    "y": 30,
+    "accessSide": "north"
+  }
 }

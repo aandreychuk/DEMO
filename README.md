@@ -42,13 +42,14 @@ telemetry is grouped in the same panel. Selecting an agent also highlights its
 physical pallet, assigned unloading bay, and the loading bay when the pallet is
 about to become empty.
 
-The inspector can irreversibly break the selected robot for the current run.
-The native simulator pins that robot to its current cell, exposes the failure
-in live telemetry, and rebuilds every other agent's cost-to-go and observation
-maps with the failed robot represented as a static obstacle. Failed robots are
-excluded from relational agent observations and `agent_chat_ids`, so the model
-only sees their occupied cells as obstacles. Stop or changing the agent count
-starts a clean simulation with no failed robots.
+The inspector can break the selected robot. A separate recovery vehicle follows
+a shortest BFS route to the failure, carries the robot to the repair station,
+and returns to its depot. Both the failed robot and the moving recovery vehicle
+appear only as dynamic obstacles in FastDMM cost-to-go and PIBT constraints;
+neither participates in relational observations or `agent_chat_ids`. Repairs
+take eight ticks. The repaired robot keeps its assignment and task stage. If it
+failed while loaded, its pallet stays at the failure cell, and the robot returns
+to pick it up before resuming its original goal.
 
 ## Run the live demo
 

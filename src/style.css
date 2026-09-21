@@ -93,6 +93,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .state-pill.loaded { color: #ffbd68; border-color: rgba(255, 168, 51, .25); background: rgba(255, 168, 51, .08); }
 .state-pill.waiting { color: #d1d8df; border-color: rgba(180, 192, 202, .2); }
 .state-pill.failed { color: #ff806d; border-color: rgba(255, 91, 67, .35); background: rgba(255, 68, 45, .12); box-shadow: 0 0 12px rgba(255, 68, 45, .12); }
+.state-pill.recovery { color: #74ffd0; border-color: rgba(83, 245, 193, .35); background: rgba(39, 213, 157, .1); }
 
 .stage-track { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; align-items: center; gap: 4px; margin-top: 15px; }
 .stage-track span { color: #3f596b; font: 600 7px 'IBM Plex Mono', monospace; letter-spacing: .08em; }
@@ -130,6 +131,9 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .metric small { display: block; margin-top: 4px; color: #587388; font: 500 7px 'IBM Plex Mono', monospace; letter-spacing: .09em; }
 .tasks-total { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; padding: 9px 10px; border-radius: 7px; background: rgba(42, 177, 211, .08); }
 .tasks-total strong { color: #62e1ff; font: 500 17px 'IBM Plex Mono', monospace; }
+.tow-status { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 8px 10px; border: 1px solid rgba(83, 245, 193, .1); border-radius: 7px; background: rgba(31, 138, 112, .07); }
+.tow-status small { color: #567286; font: 600 7px 'IBM Plex Mono', monospace; letter-spacing: .1em; }
+.tow-status strong { color: #71efca; font: 600 8px 'IBM Plex Mono', monospace; letter-spacing: .08em; }
 
 .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(143, 214, 255, .1); pointer-events: none; }
 .legend > span { display: flex; align-items: center; gap: 7px; color: #718b9c; font-size: 8px; }
@@ -139,6 +143,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .legend .amber { background: #86909b; box-shadow: 0 0 8px #86909b; }
 .legend .green { background: #58f2ad; box-shadow: 0 0 8px #58f2ad; }
 .legend .red { background: #ff5848; box-shadow: 0 0 8px #ff5848; }
+.legend .mint { background: #55efbc; box-shadow: 0 0 8px #55efbc; }
 
 .controls {
   position: fixed;

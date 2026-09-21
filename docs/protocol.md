@@ -12,7 +12,7 @@ The first server message is JSON so integrations are easy to inspect:
 ```json
 {
   "type": "hello",
-  "protocol": 3,
+  "protocol": 4,
   "map": { "width": 44, "height": 32, "cellSize": 1 },
   "agents": 100,
   "tickRate": 10,
@@ -21,7 +21,13 @@ The first server message is JSON so integrations are easy to inspect:
   "lifelong": true,
   "simulator": true,
   "streaming": true,
-  "layout": { "pallets": [], "stations": [], "reloadStations": [] },
+  "layout": {
+    "pallets": [],
+    "stations": [],
+    "reloadStations": [],
+    "repairStation": { "x": 22, "y": 30 },
+    "towDepot": { "x": 21, "y": 30 }
+  },
   "summary": { "status": "running" }
 }
 ```
@@ -38,13 +44,13 @@ High-frequency state uses one little-endian binary message per simulation step:
 | Offset | Type | Meaning |
 | ---: | --- | --- |
 | 0 | `uint32` | Magic `0x4d415046` (`MAPF`) |
-| 4 | `uint16` | Protocol version (`3`) |
+| 4 | `uint16` | Protocol version (`4`) |
 | 6 | `uint16` | Completed task count, saturated at 65,535 |
 | 8 | `uint32` | Simulation step |
 | 12 | `uint32` | Number of agents |
-| 16 | repeated record | Agent records |
+| 16 | repeated record | Agent records, followed by one recovery-vehicle record |
 
-Each protocol 3 agent record is 32 bytes:
+Each protocol 4 agent record is 36 bytes:
 
 | Record offset | Type | Meaning |
 | ---: | --- | --- |
@@ -61,17 +67,34 @@ Each protocol 3 agent record is 32 bytes:
 | 26 | `int16` | Reloading station Y |
 | 28 | `uint8` | Items currently on the pallet |
 | 29 | `uint8` | Pallet capacity (`12`) |
-| 30 | `uint16` | Reserved |
+| 30 | `uint8` | Recovery state |
+| 31 | `uint8` | Reserved |
+| 32 | `int16` | Current physical pallet X |
+| 34 | `int16` | Current physical pallet Y |
+
+The 16-byte recovery-vehicle record follows all agent records:
+
+| Record offset | Type | Meaning |
+| ---: | --- | --- |
+| 0 | `float32` | Grid X |
+| 4 | `float32` | Grid Y |
+| 8 | `uint8` | Vehicle state |
+| 9 | `uint8` | Reserved |
+| 10 | `uint16` | Target agent, or 65,535 |
+| 12 | `uint16` | Queued failures |
+| 14 | `uint16` | Reserved |
 
 Coordinates are grid coordinates. Status is a bit field: bit 0 means waiting,
 bit 1 means that the robot carries a pallet, bit 2 marks a task-stage
-transition, bit 3 means the current task requires a reload visit, and bit 4
-marks a failed robot. A failed robot remains on its current cell and that cell
-is treated as a static obstacle by every other agent.
+transition, bit 3 means the current task requires a reload visit, bit 4 marks a
+failed robot, and bit 5 marks a repaired robot recovering its dropped pallet.
+Recovery state is 0 for normal operation, 1 for waiting for the vehicle, 2 for
+transport, 3 for repair, and 4 for pallet recovery. Vehicle state is 0 for idle,
+1 for driving to an agent, 2 for transport to repair, and 3 for returning to
+the depot. Protocol 1 through 3 frames remain readable by the browser.
 `task_stage` is 0 for pickup, 1 for unloading, 2 for batch reloading, and 3 for
 return. A pallet ID of 65,535 or task ID of 4,294,967,295 means that no
-corresponding assignment exists. Protocol 1 and 2 frames remain readable by
-the browser for compatibility.
+corresponding assignment exists.
 
 The UI interpolates between state frames. It never feeds interpolated positions
 back into MAPF logic.
@@ -93,11 +116,13 @@ Commands are infrequent JSON messages:
 `pause` preserves the native simulator state and stops requesting steps. `stop`
 terminates that native process, starts a fresh simulation at frame zero, and
 holds it there; `run` resumes live computation from that state.
-`fail` irreversibly disables one agent for the current simulation. The native
-planner pins it in place and rebuilds cost-to-go and observation obstacle maps
-for the remaining agents. The failed agent is omitted from relational agent
-records and `agent_chat_ids`, so it participates only as an obstacle. Starting
-a fresh simulation clears all failures.
+`fail` queues one agent for recovery. The native process preserves its task and
+stage, removes it from relational agent records and `agent_chat_ids`, and sends
+the external recovery vehicle along a shortest BFS route. The vehicle is a
+dynamic obstacle but never an algorithm-controlled agent. After transport and
+eight repair ticks, the robot resumes its saved goal. A pallet carried during
+failure remains at that cell and is recovered first. Starting a fresh simulation
+clears the recovery queue and all failures.
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.
