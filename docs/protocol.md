@@ -12,7 +12,7 @@ The first server message is JSON so integrations are easy to inspect:
 ```json
 {
   "type": "hello",
-  "protocol": 2,
+  "protocol": 3,
   "map": { "width": 44, "height": 32, "cellSize": 1 },
   "agents": 100,
   "tickRate": 10,
@@ -21,7 +21,7 @@ The first server message is JSON so integrations are easy to inspect:
   "lifelong": true,
   "simulator": true,
   "streaming": true,
-  "layout": { "pallets": [], "stations": [] },
+  "layout": { "pallets": [], "stations": [], "reloadStations": [] },
   "summary": { "status": "running" }
 }
 ```
@@ -38,19 +38,38 @@ High-frequency state uses one little-endian binary message per simulation step:
 | Offset | Type | Meaning |
 | ---: | --- | --- |
 | 0 | `uint32` | Magic `0x4d415046` (`MAPF`) |
-| 4 | `uint16` | Protocol version (`2`) |
+| 4 | `uint16` | Protocol version (`3`) |
 | 6 | `uint16` | Completed task count, saturated at 65,535 |
 | 8 | `uint32` | Simulation step |
 | 12 | `uint32` | Number of agents |
 | 16 | repeated record | Agent records |
 
-Each protocol 2 agent record is 24 bytes: `uint32 id`, `float32 x`, `float32 y`,
-`uint8 status`, `uint8 task_stage`, `uint16 pallet_id`, `uint32 task_id`,
-`int16 station_x`, and `int16 station_y`. Coordinates are grid coordinates.
-Status is a bit field: bit 0 means waiting, bit 1 means loaded, bit 2 marks a
-task-stage transition, and bit 3 is reserved. `task_stage` is
-0 for pickup, 1 for unloading, and 2 for return. A pallet ID of 65,535 or task
-ID of 4,294,967,295 means that no corresponding assignment exists.
+Each protocol 3 agent record is 32 bytes:
+
+| Record offset | Type | Meaning |
+| ---: | --- | --- |
+| 0 | `uint32` | Agent ID |
+| 4 | `float32` | Grid X |
+| 8 | `float32` | Grid Y |
+| 12 | `uint8` | Status bits |
+| 13 | `uint8` | Task stage |
+| 14 | `uint16` | Pallet ID |
+| 16 | `uint32` | Assignment ID |
+| 20 | `int16` | Unloading station X |
+| 22 | `int16` | Unloading station Y |
+| 24 | `int16` | Reloading station X |
+| 26 | `int16` | Reloading station Y |
+| 28 | `uint8` | Items currently on the pallet |
+| 29 | `uint8` | Pallet capacity (`12`) |
+| 30 | `uint16` | Reserved |
+
+Coordinates are grid coordinates. Status is a bit field: bit 0 means waiting,
+bit 1 means that the robot carries a pallet, bit 2 marks a task-stage
+transition, and bit 3 means the current task requires a reload visit.
+`task_stage` is 0 for pickup, 1 for unloading, 2 for batch reloading, and 3 for
+return. A pallet ID of 65,535 or task ID of 4,294,967,295 means that no
+corresponding assignment exists. Protocol 1 and 2 frames remain readable by
+the browser for compatibility.
 
 The UI interpolates between state frames. It never feeds interpolated positions
 back into MAPF logic.

@@ -66,17 +66,23 @@ native horizon by default. Pass a positive `--max-steps` only for diagnostics.
 
 `generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
-one unloading cell, and the original pallet cell. The native runner updates the
-goal and cost-to-go after every stage. Parked pallets are per-agent dynamic
-obstacles only while that agent is carrying a load. All unloading bays except
-the agent's assigned target are masked from both cost-to-go and PIBT. Guarded
-service cells behind the bays and boundary end caps leave one aisle-side
-entrance per bay. The browser renders a robotic arm in each guarded cell and
-animates the cargo transfer when an agent advances from unloading to return.
-After that transition, the native runtime holds the agent in its bay for five
-additional simulation steps before allowing it to leave. The renderer keeps the
-cargo on the moving pallet during entry and starts the arm on the first confirmed
-waiting step in the bay.
+one unloading cell, and the original pallet cell. Pallets start with 12 items,
+and the unloading arm removes one item on each visit. If the pallet becomes
+empty, the native runner inserts a batch-loading goal on the opposite edge of
+the warehouse before the return goal. After five stationary ticks its inventory
+changes atomically from 0 to 12. The native runner updates the goal and cost-to-go
+after every stage.
+
+Parked pallets are per-agent dynamic obstacles only while that agent is carrying
+a load. All unloading and loading bays except the agent's assigned target are
+masked from both cost-to-go and PIBT. Guarded service cells behind the bays and
+boundary end caps leave one aisle-side entrance per bay. The browser renders a
+robotic arm in each unloading cell and animates the single-item transfer when an
+agent advances to its next goal. Loading bays place all 12 items on an empty
+pallet as one animated batch. Both service operations hold the agent in its bay
+for five additional simulation steps. The renderer starts each operation only
+after the robot has completed its entry and produced a stationary bay tick.
+
 Pickup and return each hold the agent for two additional native steps. During
 those holds the browser lifts or lowers the pallet using interpolated simulation
 time, so the handling motion stays synchronized at every playback speed.

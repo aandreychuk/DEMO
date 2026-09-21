@@ -16,6 +16,10 @@ PALLET_Y = range(4, HEIGHT - 3, 7)
 UNLOAD_X = WIDTH - 3
 UNLOAD_Y = range(1, HEIGHT - 1)
 UNLOAD_BACK_X = UNLOAD_X + 1
+RELOAD_X = 2
+RELOAD_Y = range(1, HEIGHT - 1)
+RELOAD_BACK_X = RELOAD_X - 1
+PALLET_CAPACITY = 12
 
 
 def pallet_cells() -> list[tuple[int, int]]:
@@ -46,6 +50,7 @@ def main() -> None:
 
     pallets = pallet_cells()
     stations = [(UNLOAD_X, y) for y in UNLOAD_Y]
+    reload_stations = [(RELOAD_X, y) for y in RELOAD_Y]
     walls = {
         (x, y)
         for y in range(HEIGHT)
@@ -53,6 +58,7 @@ def main() -> None:
         if x in (0, WIDTH - 1) or y in (0, HEIGHT - 1)
     }
     walls.update((UNLOAD_BACK_X, y) for y in UNLOAD_Y)
+    walls.update((RELOAD_BACK_X, y) for y in RELOAD_Y)
     walls.update({
         (UNLOAD_X, min(UNLOAD_Y) - 1),
         (UNLOAD_X, max(UNLOAD_Y) + 1),
@@ -61,7 +67,7 @@ def main() -> None:
         "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)
     ]
-    excluded = set(pallets) | set(stations)
+    excluded = set(pallets) | set(stations) | set(reload_stations)
     starts_pool = [
         (x, y)
         for y in range(1, HEIGHT - 1)
@@ -91,13 +97,18 @@ def main() -> None:
     layout_path.write_text(
         json.dumps(
             {
-                "schema": "mapf-lifelong-layout/v1",
+                "schema": "mapf-lifelong-layout/v2",
                 "width": WIDTH,
                 "height": HEIGHT,
+                "palletCapacity": PALLET_CAPACITY,
                 "pallets": pallet_records,
                 "stations": [
                     {"id": index, "x": x, "y": y, "accessSide": "west"}
                     for index, (x, y) in enumerate(stations)
+                ],
+                "reloadStations": [
+                    {"id": index, "x": x, "y": y, "accessSide": "east"}
+                    for index, (x, y) in enumerate(reload_stations)
                 ],
             },
             indent=2,
@@ -107,7 +118,10 @@ def main() -> None:
 
     task_id = 0
     with tasks_path.open("w", encoding="ascii", newline="\n") as stream:
-        stream.write("task_id\tpallet_id\tpallet_x\tpallet_y\tstation_x\tstation_y\n")
+        stream.write(
+            "task_id\tpallet_id\tpallet_x\tpallet_y\tstation_x\tstation_y"
+            "\treload_x\treload_y\n"
+        )
         while task_id < args.tasks:
             cycle = list(enumerate(pallets))
             rng.shuffle(cycle)
@@ -115,12 +129,19 @@ def main() -> None:
                 if task_id >= args.tasks:
                     break
                 sx, sy = rng.choice(stations)
-                stream.write(f"{task_id}\t{pallet_id}\t{px}\t{py}\t{sx}\t{sy}\n")
+                rx, ry = rng.choice(reload_stations)
+                stream.write(
+                    f"{task_id}\t{pallet_id}\t{px}\t{py}\t{sx}\t{sy}"
+                    f"\t{rx}\t{ry}\n"
+                )
                 task_id += 1
 
     print(f"wrote {map_path} ({WIDTH}x{HEIGHT})")
     print(f"wrote {scen_path} ({args.agents} agents)")
-    print(f"wrote {layout_path} ({len(pallets)} pallets, {len(stations)} stations)")
+    print(
+        f"wrote {layout_path} ({len(pallets)} pallets, {len(stations)} unload, "
+        f"{len(reload_stations)} reload stations)"
+    )
     print(f"wrote {tasks_path} ({args.tasks} tasks)")
 
 

@@ -1,7 +1,8 @@
 {
-  "schema": "mapf-lifelong-layout/v1",
+  "schema": "mapf-lifelong-layout/v2",
   "width": 44,
   "height": 32,
+  "palletCapacity": 12,
   "pallets": [
     {
       "id": 0,
@@ -1144,6 +1145,188 @@
       "x": 41,
       "y": 30,
       "accessSide": "west"
+    }
+  ],
+  "reloadStations": [
+    {
+      "id": 0,
+      "x": 2,
+      "y": 1,
+      "accessSide": "east"
+    },
+    {
+      "id": 1,
+      "x": 2,
+      "y": 2,
+      "accessSide": "east"
+    },
+    {
+      "id": 2,
+      "x": 2,
+      "y": 3,
+      "accessSide": "east"
+    },
+    {
+      "id": 3,
+      "x": 2,
+      "y": 4,
+      "accessSide": "east"
+    },
+    {
+      "id": 4,
+      "x": 2,
+      "y": 5,
+      "accessSide": "east"
+    },
+    {
+      "id": 5,
+      "x": 2,
+      "y": 6,
+      "accessSide": "east"
+    },
+    {
+      "id": 6,
+      "x": 2,
+      "y": 7,
+      "accessSide": "east"
+    },
+    {
+      "id": 7,
+      "x": 2,
+      "y": 8,
+      "accessSide": "east"
+    },
+    {
+      "id": 8,
+      "x": 2,
+      "y": 9,
+      "accessSide": "east"
+    },
+    {
+      "id": 9,
+      "x": 2,
+      "y": 10,
+      "accessSide": "east"
+    },
+    {
+      "id": 10,
+      "x": 2,
+      "y": 11,
+      "accessSide": "east"
+    },
+    {
+      "id": 11,
+      "x": 2,
+      "y": 12,
+      "accessSide": "east"
+    },
+    {
+      "id": 12,
+      "x": 2,
+      "y": 13,
+      "accessSide": "east"
+    },
+    {
+      "id": 13,
+      "x": 2,
+      "y": 14,
+      "accessSide": "east"
+    },
+    {
+      "id": 14,
+      "x": 2,
+      "y": 15,
+      "accessSide": "east"
+    },
+    {
+      "id": 15,
+      "x": 2,
+      "y": 16,
+      "accessSide": "east"
+    },
+    {
+      "id": 16,
+      "x": 2,
+      "y": 17,
+      "accessSide": "east"
+    },
+    {
+      "id": 17,
+      "x": 2,
+      "y": 18,
+      "accessSide": "east"
+    },
+    {
+      "id": 18,
+      "x": 2,
+      "y": 19,
+      "accessSide": "east"
+    },
+    {
+      "id": 19,
+      "x": 2,
+      "y": 20,
+      "accessSide": "east"
+    },
+    {
+      "id": 20,
+      "x": 2,
+      "y": 21,
+      "accessSide": "east"
+    },
+    {
+      "id": 21,
+      "x": 2,
+      "y": 22,
+      "accessSide": "east"
+    },
+    {
+      "id": 22,
+      "x": 2,
+      "y": 23,
+      "accessSide": "east"
+    },
+    {
+      "id": 23,
+      "x": 2,
+      "y": 24,
+      "accessSide": "east"
+    },
+    {
+      "id": 24,
+      "x": 2,
+      "y": 25,
+      "accessSide": "east"
+    },
+    {
+      "id": 25,
+      "x": 2,
+      "y": 26,
+      "accessSide": "east"
+    },
+    {
+      "id": 26,
+      "x": 2,
+      "y": 27,
+      "accessSide": "east"
+    },
+    {
+      "id": 27,
+      "x": 2,
+      "y": 28,
+      "accessSide": "east"
+    },
+    {
+      "id": 28,
+      "x": 2,
+      "y": 29,
+      "accessSide": "east"
+    },
+    {
+      "id": 29,
+      "x": 2,
+      "y": 30,
+      "accessSide": "east"
     }
   ]
 }

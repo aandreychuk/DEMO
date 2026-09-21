@@ -6,25 +6,31 @@ locally in the native process. The browser receives compact state frames over a
 loopback WebSocket and renders the 100-agent lifelong warehouse with Babylon.js
 thin instances.
 
-Each generated task has three goals: pick up a pallet, deliver it to an
-unloading station, and return it to its original cell. Empty robots can pass
+Each generated task starts with three goals: pick up a pallet, deliver it to an
+unloading station, and return it to its original cell. Every pallet holds 12
+separate goods. The unloading arm removes one item per delivery. When that item
+was the last one, the simulator inserts a fourth goal at a loading bay on the
+opposite side of the warehouse. The empty pallet waits there for five ticks,
+receives a full batch of 12 goods in one operation, and only then returns to its
+original cell. Empty robots can pass
 under parked pallets. Loaded robots receive a pallet-aware cost-to-go map and
 cannot enter cells occupied by parked pallets. Unloading cells are dead-end
 bays: an agent may enter only its assigned bay and must leave through the same
-aisle-side edge. A robotic arm behind every bay lifts the cargo from an arriving
-pallet and carries it into the service area while the robot returns the empty
-pallet. The robot remains in the bay for five additional simulation steps during
-the handoff so the transfer stays visually readable. The arm starts only after
+aisle-side edge. A robotic arm behind every bay lifts one item from an arriving
+pallet and carries it into the service area. The robot remains in the bay for
+five additional simulation steps during the handoff so the transfer stays
+visually readable. The arm starts only after
 the robot has completed its entry and produced its first stationary bay tick.
 Picking up a loaded pallet and parking the empty pallet each take two additional
 simulation steps; the rendered pallet rises and lowers smoothly during those
 steps at every playback speed.
 
 Click a robot or its carried pallet to open the right-side inspector. It shows
-the assigned task and pallet, all three route goals, the active task stage, and
-per-agent distance, waiting, unloading, and completion counters. Global live
+the assigned task, pallet inventory, all four possible route goals, the active
+task stage, and per-agent distance, waiting, unloading, and completion counters. Global live
 telemetry is grouped in the same panel. Selecting an agent also highlights its
-physical pallet and assigned unloading bay directly on the map.
+physical pallet, assigned unloading bay, and the loading bay when the pallet is
+about to become empty.
 
 ## Run the live demo
 
@@ -58,17 +64,17 @@ clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run
 
-The included 44×32 warehouse has 160 pallet cells and 30 unloading cells along
-the full inner length of the map. A deterministic FastDMM 0.8M + PIBT run on
+The included 44×32 warehouse has 160 pallet cells, 30 unloading cells along
+one full inner edge, and 30 batch-loading cells along the opposite edge. A deterministic FastDMM 0.8M + PIBT run on
 the current machine completed this
 600-step horizon as follows:
 
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed three-goal tasks | 602 |
-| native runtime | 5.54 s |
-| mean AOTI inference | 5.12 ms |
+| completed tasks | 602 |
+| native runtime | 5.22 s |
+| mean AOTI inference | 4.95 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

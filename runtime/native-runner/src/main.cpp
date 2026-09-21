@@ -164,10 +164,14 @@ struct LifelongTask {
   int pallet_y;
   int station_x;
   int station_y;
+  int reload_x;
+  int reload_y;
 };
 
+constexpr int kPalletCapacity = 12;
 constexpr int kPalletHandlingDwellSteps = 2;
 constexpr int kUnloadingDwellSteps = 5;
+constexpr int kReloadingDwellSteps = 5;
 
 std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
 {
@@ -181,7 +185,8 @@ std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
     std::istringstream row(line);
     LifelongTask task{};
     if (row >> task.id >> task.pallet_id >> task.pallet_x >> task.pallet_y >>
-            task.station_x >> task.station_y) {
+            task.station_x >> task.station_y >> task.reload_x >>
+            task.reload_y) {
       tasks.push_back(task);
     }
   }
@@ -360,6 +365,7 @@ int main(int argc, char** argv)
     std::vector<Vertex*> pallet_vertices;
     std::vector<char> pallet_reserved;
     std::vector<char> pallet_present;
+    std::vector<int> pallet_items;
     std::vector<Vertex*> station_vertices;
     std::vector<char> station_mask(ins.G->size(), false);
     std::vector<int> agent_task(ins.N, -1);
@@ -367,7 +373,9 @@ int main(int argc, char** argv)
     std::vector<int> task_stage(ins.N, 0);
     std::vector<char> loaded(ins.N, false);
     std::vector<int> service_dwell_remaining(ins.N, 0);
+    std::vector<char> reload_dwell_started(ins.N, false);
     std::vector<char> return_dwell_started(ins.N, false);
+    std::vector<char> task_requires_reload(ins.N, false);
     long long completed_tasks = 0;
     long long goal_updates = 0;
     long long next_task_id = 0;
@@ -381,13 +389,16 @@ int main(int argc, char** argv)
       pallet_vertices.assign(max_pallet_id + 1, nullptr);
       pallet_reserved.assign(max_pallet_id + 1, false);
       pallet_present.assign(max_pallet_id + 1, true);
+      pallet_items.assign(max_pallet_id + 1, kPalletCapacity);
       for (int index = 0; index < static_cast<int>(lifelong_tasks.size());
            ++index) {
         const auto& task = lifelong_tasks[index];
         auto* pallet = ins.G->U[ins.G->width * task.pallet_y + task.pallet_x];
         auto* station =
             ins.G->U[ins.G->width * task.station_y + task.station_x];
-        if (pallet == nullptr || station == nullptr) {
+        auto* reload =
+            ins.G->U[ins.G->width * task.reload_y + task.reload_x];
+        if (pallet == nullptr || station == nullptr || reload == nullptr) {
           throw std::runtime_error("lifelong task references a blocked cell");
         }
         if (pallet_vertices[task.pallet_id] != nullptr &&
@@ -398,6 +409,10 @@ int main(int argc, char** argv)
         if (!station_mask[station->id]) {
           station_mask[station->id] = true;
           station_vertices.push_back(station);
+        }
+        if (!station_mask[reload->id]) {
+          station_mask[reload->id] = true;
+          station_vertices.push_back(reload);
         }
         pending_tasks.push_back(index);
       }
@@ -418,7 +433,9 @@ int main(int argc, char** argv)
           task_stage[agent] = 0;
           loaded[agent] = false;
           service_dwell_remaining[agent] = 0;
+          reload_dwell_started[agent] = false;
           return_dwell_started[agent] = false;
+          task_requires_reload[agent] = false;
           ins.goals[agent] = pallet;
           ++goal_updates;
           return true;
@@ -523,7 +540,11 @@ int main(int argc, char** argv)
                   << (task ? agent_task_id[i] : -1) << ','
                   << (task ? task->pallet_id : -1) << ','
                   << (task ? task->station_x : -1) << ','
-                  << (task ? task->station_y : -1);
+                  << (task ? task->station_y : -1) << ','
+                  << (task ? task->reload_x : -1) << ','
+                  << (task ? task->reload_y : -1) << ','
+                  << (task ? pallet_items[task->pallet_id] : 0) << ','
+                  << (task_requires_reload[i] ? 1 : 0);
       }
       std::cout << '\n' << std::flush;
     };
@@ -538,7 +559,8 @@ int main(int argc, char** argv)
         throw std::runtime_error("failed to open trajectory trace files");
       }
       trajectory << "step\tagent\tx\ty\tloaded\ttask_stage\ttask_id"
-                    "\tpallet_id\tstation_x\tstation_y\tcompleted_tasks\n";
+                    "\tpallet_id\tstation_x\tstation_y\treload_x\treload_y"
+                    "\tpallet_items\treload_required\tcompleted_tasks\n";
       decisions << "step\tagent\tpre_x\tpre_y\tpreferred0\tpreferred1"
                    "\tpreferred2\tpreferred3\tpreferred4\texecuted"
                    "\tchosen_rank\tpriority\torder_rank\n";
@@ -554,6 +576,10 @@ int main(int argc, char** argv)
                    << (task ? task->pallet_id : -1) << '\t'
                    << (task ? task->station_x : -1) << '\t'
                    << (task ? task->station_y : -1) << '\t'
+                   << (task ? task->reload_x : -1) << '\t'
+                   << (task ? task->reload_y : -1) << '\t'
+                   << (task ? pallet_items[task->pallet_id] : 0) << '\t'
+                   << (task_requires_reload[i] ? 1 : 0) << '\t'
                    << completed_tasks << '\n';
       }
     }
@@ -993,9 +1019,31 @@ int main(int argc, char** argv)
                 ins.G->U[ins.G->width * task.station_y + task.station_x];
             ++goal_updates;
           } else if (task_stage[i] == 1) {
-            task_stage[i] = 2;
+            pallet_items[task.pallet_id] =
+                std::max(0, pallet_items[task.pallet_id] - 1);
+            task_requires_reload[i] = pallet_items[task.pallet_id] == 0;
             service_dwell_remaining[i] = kUnloadingDwellSteps;
+            reload_dwell_started[i] = false;
             return_dwell_started[i] = false;
+            if (task_requires_reload[i]) {
+              task_stage[i] = 2;
+              ins.goals[i] =
+                  ins.G->U[ins.G->width * task.reload_y + task.reload_x];
+            } else {
+              task_stage[i] = 3;
+              ins.goals[i] = pallet_vertices[task.pallet_id];
+            }
+            ++goal_updates;
+          } else if (task_stage[i] == 2) {
+            if (!reload_dwell_started[i]) {
+              reload_dwell_started[i] = true;
+              service_dwell_remaining[i] = kReloadingDwellSteps;
+              continue;
+            }
+            if (service_dwell_remaining[i] > 0) continue;
+            pallet_items[task.pallet_id] = kPalletCapacity;
+            task_stage[i] = 3;
+            reload_dwell_started[i] = false;
             ins.goals[i] = pallet_vertices[task.pallet_id];
             ++goal_updates;
           } else {
@@ -1013,7 +1061,9 @@ int main(int argc, char** argv)
             agent_task[i] = -1;
             agent_task_id[i] = -1;
             service_dwell_remaining[i] = 0;
+            reload_dwell_started[i] = false;
             return_dwell_started[i] = false;
+            task_requires_reload[i] = false;
             ++completed_tasks;
             if (!assign_task(i, current[i])) {
               ins.goals[i] = current[i];
@@ -1042,6 +1092,10 @@ int main(int argc, char** argv)
                      << (task ? task->pallet_id : -1) << '\t'
                      << (task ? task->station_x : -1) << '\t'
                      << (task ? task->station_y : -1) << '\t'
+                     << (task ? task->reload_x : -1) << '\t'
+                     << (task ? task->reload_y : -1) << '\t'
+                     << (task ? pallet_items[task->pallet_id] : 0) << '\t'
+                     << (task_requires_reload[i] ? 1 : 0) << '\t'
                      << completed_tasks << '\n';
         }
       }

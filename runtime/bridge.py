@@ -19,7 +19,7 @@ from websockets.exceptions import ConnectionClosed
 
 
 MAGIC = 0x4D415046
-PROTOCOL = 2
+PROTOCOL = 3
 MAX_AGENTS = 100
 
 
@@ -33,6 +33,10 @@ class AgentState:
     pallet_id: int
     station_x: int
     station_y: int
+    reload_x: int
+    reload_y: int
+    pallet_items: int
+    reload_required: bool
     completed_tasks: int
 
 
@@ -60,7 +64,7 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
     states: list[AgentState] = []
     for record in fields[5:]:
         values = [int(value) for value in record.split(",")]
-        if len(values) != 8:
+        if len(values) != 12:
             raise RuntimeError("native simulator emitted a malformed agent record")
         states.append(
             AgentState(
@@ -72,6 +76,10 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
                 pallet_id=values[5],
                 station_x=values[6],
                 station_y=values[7],
+                reload_x=values[8],
+                reload_y=values[9],
+                pallet_items=values[10],
+                reload_required=bool(values[11]),
                 completed_tasks=completed_tasks,
             )
         )
@@ -79,7 +87,7 @@ def parse_native_frame(line: str, expected_agents: int) -> NativeFrame | None:
 
 
 def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes:
-    record_size = 24
+    record_size = 32
     payload = bytearray(16 + record_size * len(frame.states))
     completed_tasks = min(
         65535, frame.states[0].completed_tasks if frame.states else 0
@@ -103,15 +111,18 @@ def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes
             previous[agent].task_stage != state.task_stage
             or previous[agent].pallet_id != state.pallet_id
         )
-        status = (1 if waiting else 0) | (2 if state.loaded else 0) | (
-            4 if transitioned else 0
+        status = (
+            (1 if waiting else 0)
+            | (2 if state.loaded else 0)
+            | (4 if transitioned else 0)
+            | (8 if state.reload_required else 0)
         )
         pallet_id = 65535 if state.pallet_id < 0 else min(65534, state.pallet_id)
         task_id = (
             0xFFFFFFFF if state.task_id < 0 else min(0xFFFFFFFE, state.task_id)
         )
         struct.pack_into(
-            "<IffBBHIhh",
+            "<IffBBHIhhhhBBH",
             payload,
             16 + agent * record_size,
             agent,
@@ -123,6 +134,11 @@ def encode_frame(frame: NativeFrame, previous: list[AgentState] | None) -> bytes
             task_id,
             state.station_x,
             state.station_y,
+            state.reload_x,
+            state.reload_y,
+            min(12, max(0, state.pallet_items)),
+            12,
+            0,
         )
     return bytes(payload)
 
