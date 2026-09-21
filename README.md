@@ -13,7 +13,8 @@ cannot enter cells occupied by parked pallets. Unloading cells are dead-end
 bays: an agent may enter only its assigned bay and must leave through the same
 aisle-side edge. A robotic arm behind every bay lifts the cargo from an arriving
 pallet and carries it into the service area while the robot returns the empty
-pallet.
+pallet. The robot remains in the bay for two additional simulation steps during
+the handoff so the transfer stays visually readable.
 
 ## Run the live demo
 
@@ -53,9 +54,9 @@ the current machine completed this
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed three-goal tasks | 700 |
-| native runtime | 5.97 s |
-| mean AOTI inference | 5.46 ms |
+| completed three-goal tasks | 685 |
+| native runtime | 5.98 s |
+| mean AOTI inference | 5.47 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

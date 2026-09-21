@@ -162,6 +162,8 @@ struct LifelongTask {
   int station_y;
 };
 
+constexpr int kUnloadingDwellSteps = 2;
+
 std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
 {
   std::ifstream stream(path);
@@ -358,6 +360,7 @@ int main(int argc, char** argv)
     std::vector<int> agent_task(ins.N, -1);
     std::vector<int> task_stage(ins.N, 0);
     std::vector<char> loaded(ins.N, false);
+    std::vector<int> unloading_dwell_remaining(ins.N, 0);
     long long completed_tasks = 0;
     long long goal_updates = 0;
     std::function<bool(int, Vertex*)> assign_task;
@@ -405,6 +408,7 @@ int main(int argc, char** argv)
           agent_task[agent] = task_index;
           task_stage[agent] = 0;
           loaded[agent] = false;
+          unloading_dwell_remaining[agent] = 0;
           ins.goals[agent] = pallet;
           ++goal_updates;
           return true;
@@ -630,6 +634,7 @@ int main(int argc, char** argv)
           actions[i] = static_cast<int>(
               std::max_element(probs[i].begin(), probs[i].end()) -
               probs[i].begin());
+          if (unloading_dwell_remaining[i] > 0) actions[i] = 0;
         }
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
           std::rotate(history[i].begin(), history[i].begin() + 1,
@@ -667,7 +672,10 @@ int main(int argc, char** argv)
             auto& forbidden = forbidden_vertex_ids[i];
             forbidden.reserve(
                 station_vertices.size() +
-                (loaded[i] ? pallet_vertices.size() : 0));
+                (loaded[i] ? pallet_vertices.size() : 0) +
+                (unloading_dwell_remaining[i] > 0
+                     ? current[i]->neighbor.size()
+                     : 0));
             for (auto* station : station_vertices) {
               if (station != current[i] && station != ins.goals[i]) {
                 forbidden.push_back(station->id);
@@ -680,6 +688,14 @@ int main(int argc, char** argv)
                 if (pallet_present[pallet_id] &&
                     pallet_vertices[pallet_id] != nullptr) {
                   forbidden.push_back(pallet_vertices[pallet_id]->id);
+                }
+              }
+            }
+            if (unloading_dwell_remaining[i] > 0) {
+              for (auto* neighbor : current[i]->neighbor) {
+                if (std::find(forbidden.begin(), forbidden.end(),
+                              neighbor->id) == forbidden.end()) {
+                  forbidden.push_back(neighbor->id);
                 }
               }
             }
@@ -916,17 +932,24 @@ int main(int argc, char** argv)
       bool navigation_changed = false;
       if (lifelong) {
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+          if (unloading_dwell_remaining[i] > 0) {
+            --unloading_dwell_remaining[i];
+          }
+        }
+        for (int i = 0; i < static_cast<int>(ins.N); ++i) {
           if (agent_task[i] < 0 || current[i] != ins.goals[i]) continue;
           const auto& task = lifelong_tasks[agent_task[i]];
           if (task_stage[i] == 0) {
             loaded[i] = true;
             pallet_present[task.pallet_id] = false;
             task_stage[i] = 1;
+            unloading_dwell_remaining[i] = 0;
             ins.goals[i] =
                 ins.G->U[ins.G->width * task.station_y + task.station_x];
             ++goal_updates;
           } else if (task_stage[i] == 1) {
             task_stage[i] = 2;
+            unloading_dwell_remaining[i] = kUnloadingDwellSteps;
             ins.goals[i] = pallet_vertices[task.pallet_id];
             ++goal_updates;
           } else {
@@ -934,6 +957,7 @@ int main(int argc, char** argv)
             pallet_present[task.pallet_id] = true;
             pallet_reserved[task.pallet_id] = false;
             agent_task[i] = -1;
+            unloading_dwell_remaining[i] = 0;
             ++completed_tasks;
             if (!assign_task(i, current[i])) {
               ins.goals[i] = current[i];
