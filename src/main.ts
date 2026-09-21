@@ -13,10 +13,10 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import './style.css';
 
-const MAP_WIDTH = 90;
-const MAP_DEPTH = 70;
-const CELL_SIZE = 0.82;
-const MAX_AGENTS = 2500;
+const MAP_WIDTH = 44;
+const MAP_DEPTH = 32;
+const CELL_SIZE = 0.9;
+const MAX_AGENTS = 100;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
@@ -24,9 +24,14 @@ const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 type LiveFrame = {
   positions: Float32Array;
   statuses: Uint8Array;
+  stages: Uint8Array;
+  palletIds: Uint16Array;
+  completedTasks: number;
   step: number;
   receivedAt: number;
 };
+
+type PalletCell = { id: number; x: number; z: number; cargoType: number };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false }, true);
@@ -34,10 +39,10 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.018, 0.035, 0.055, 1);
 scene.ambientColor = new Color3(0.09, 0.15, 0.2);
 
-const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 58, new Vector3(0, 0, 0), scene);
+const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 32, new Vector3(0, 0, 0), scene);
 camera.attachControl(canvas, true);
-camera.lowerRadiusLimit = 18;
-camera.upperRadiusLimit = 95;
+camera.lowerRadiusLimit = 12;
+camera.upperRadiusLimit = 58;
 camera.lowerBetaLimit = 0.28;
 camera.upperBetaLimit = 1.38;
 camera.wheelPrecision = 28;
@@ -62,14 +67,19 @@ floor.material = floorMaterial;
 floor.position.y = -0.05;
 
 createGrid();
-createWarehousePallets();
+const palletCells = buildPalletCells();
+const palletScene = createWarehousePallets(palletCells);
+createUnloadingZone();
 createBoundaryLights();
 
 const robotMesh = createRobotMesh();
+const robotLoad = createRobotLoadMeshes();
 const matrices = new Float32Array(MAX_AGENTS * 16);
+const loadMatrices = new Float32Array(MAX_AGENTS * 16);
+const cargoMatrices = new Float32Array(MAX_AGENTS * 16);
 const colors = new Float32Array(MAX_AGENTS * 4);
 const cells = buildFreeCells();
-let agentCount = 1000;
+let agentCount = 100;
 let paused = false;
 let speed = 1;
 let simTime = 0;
@@ -79,11 +89,16 @@ let liveTickRate = 20;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let lastInferenceMs = 0;
+let hiddenPalletKey = '';
 
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
 robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
 robotMesh.thinInstanceCount = agentCount;
+robotLoad.pallet.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
+robotLoad.cargo.thinInstanceSetBuffer('matrix', cargoMatrices, 16, false);
+robotLoad.pallet.thinInstanceCount = 0;
+robotLoad.cargo.thinInstanceCount = 0;
 
 function createRobotMesh(): Mesh {
   const base = MeshBuilder.CreateCylinder('agent-base', {
@@ -146,6 +161,47 @@ function createRobotMesh(): Mesh {
   return merged;
 }
 
+function createRobotLoadMeshes(): { pallet: Mesh; cargo: Mesh } {
+  const lift = MeshBuilder.CreateBox('carried-pallet', {
+    width: CELL_SIZE * 0.72,
+    height: 0.08,
+    depth: CELL_SIZE * 0.72,
+  }, scene);
+  lift.position.y = 0.75;
+  const palletMaterial = new StandardMaterial('carried-pallet-material', scene);
+  palletMaterial.diffuseColor = Color3.FromHexString('#338ca3');
+  palletMaterial.emissiveColor = Color3.FromHexString('#0b3442');
+  lift.material = palletMaterial;
+  lift.alwaysSelectAsActiveMesh = true;
+  const parts: Mesh[] = [];
+  const cargo = MeshBuilder.CreateBox('carried-cargo', {
+    width: CELL_SIZE * 0.54,
+    height: 0.46,
+    depth: CELL_SIZE * 0.54,
+  }, scene);
+  cargo.position.y = 1.02;
+  parts.push(cargo);
+  for (const x of [-0.21, 0.21]) {
+    const strap = MeshBuilder.CreateBox('carried-cargo-strap', {
+      width: 0.035,
+      height: 0.49,
+      depth: CELL_SIZE * 0.57,
+    }, scene);
+    strap.position.set(x, 1.02, 0);
+    parts.push(strap);
+  }
+  const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
+  merged.name = 'carried-goods';
+  const material = new StandardMaterial('robot-load-material', scene);
+  material.diffuseColor = Color3.FromHexString('#e9a84c');
+  material.emissiveColor = Color3.FromHexString('#3d2008');
+  material.specularColor = Color3.FromHexString('#ffe0a0');
+  material.specularPower = 42;
+  merged.material = material;
+  merged.alwaysSelectAsActiveMesh = true;
+  return { pallet: lift, cargo: merged };
+}
+
 function createGrid(): void {
   const points: Vector3[][] = [];
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
@@ -163,15 +219,30 @@ function createGrid(): void {
   grid.alpha = 0.24;
 }
 
-function createWarehousePallets(): void {
+function buildPalletCells(): PalletCell[] {
+  const result: PalletCell[] = [];
+  let id = 0;
+  for (let gx = 5; gx < MAP_WIDTH - 4; gx += 8) {
+    for (let gz = 4; gz < MAP_DEPTH - 3; gz += 7) {
+      for (let x = gx; x < gx + 2; x++) {
+        for (let z = gz - 1; z < gz + 3; z++) {
+          result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
+        }
+      }
+    }
+  }
+  return result;
+}
+
+function createWarehousePallets(pallets: PalletCell[]): { update: (hidden: Set<number>) => void } {
   const footprint = CELL_SIZE * 0.88;
   const half = footprint / 2;
   const legOffset = half - 0.09;
   const frameParts: Mesh[] = [];
   for (const x of [-legOffset, legOffset]) {
     for (const z of [-legOffset, legOffset]) {
-      const leg = MeshBuilder.CreateBox('pallet-leg', { width: 0.1, height: 0.82, depth: 0.1 }, scene);
-      leg.position.set(x, 0.43, z);
+      const leg = MeshBuilder.CreateBox('pallet-leg', { width: 0.1, height: 0.7, depth: 0.1 }, scene);
+      leg.position.set(x, 0.38, z);
       frameParts.push(leg);
       const foot = MeshBuilder.CreateBox('pallet-foot', { width: 0.17, height: 0.08, depth: 0.17 }, scene);
       foot.position.set(x, 0.04, z);
@@ -180,16 +251,15 @@ function createWarehousePallets(): void {
   }
   for (const z of [-half + 0.055, half - 0.055]) {
     const rail = MeshBuilder.CreateBox('pallet-rail-x', { width: footprint, height: 0.1, depth: 0.1 }, scene);
-    rail.position.set(0, 0.84, z);
+    rail.position.set(0, 0.78, z);
     frameParts.push(rail);
   }
   for (const x of [-half + 0.055, half - 0.055]) {
     const rail = MeshBuilder.CreateBox('pallet-rail-z', { width: 0.1, height: 0.1, depth: footprint }, scene);
-    rail.position.set(x, 0.84, 0);
+    rail.position.set(x, 0.78, 0);
     frameParts.push(rail);
   }
   const frame = Mesh.MergeMeshes(frameParts, true, true, undefined, false, true)!;
-  frame.name = 'pallet-frames';
   const frameMaterial = new StandardMaterial('pallet-frame-material', scene);
   frameMaterial.diffuseColor = Color3.FromHexString('#17313e');
   frameMaterial.emissiveColor = Color3.FromHexString('#07151e');
@@ -197,17 +267,12 @@ function createWarehousePallets(): void {
   frame.material = frameMaterial;
 
   const deckParts: Mesh[] = [];
-  for (const z of [-0.27, -0.09, 0.09, 0.27]) {
-    const slat = MeshBuilder.CreateBox('pallet-slat', {
-      width: footprint,
-      height: 0.09,
-      depth: 0.12,
-    }, scene);
-    slat.position.set(0, 0.94, z);
+  for (const z of [-0.29, -0.1, 0.1, 0.29]) {
+    const slat = MeshBuilder.CreateBox('pallet-slat', { width: footprint, height: 0.09, depth: 0.13 }, scene);
+    slat.position.set(0, 0.88, z);
     deckParts.push(slat);
   }
   const deck = Mesh.MergeMeshes(deckParts, true, true, undefined, false, true)!;
-  deck.name = 'pallet-decks';
   const deckMaterial = new StandardMaterial('pallet-deck-material', scene);
   deckMaterial.diffuseColor = Color3.FromHexString('#2d8098');
   deckMaterial.emissiveColor = Color3.FromHexString('#0b3442');
@@ -216,110 +281,115 @@ function createWarehousePallets(): void {
   deck.material = deckMaterial;
 
   const crateParts: Mesh[] = [];
-  const crateBody = MeshBuilder.CreateBox('cargo-crate-body', { width: 0.56, height: 0.48, depth: 0.56 }, scene);
-  crateBody.position.y = 1.25;
+  const crateBody = MeshBuilder.CreateBox('cargo-crate-body', { width: 0.59, height: 0.48, depth: 0.59 }, scene);
+  crateBody.position.y = 1.19;
   crateParts.push(crateBody);
-  for (const x of [-0.255, 0.255]) {
-    for (const z of [-0.255, 0.255]) {
+  for (const x of [-0.275, 0.275]) {
+    for (const z of [-0.275, 0.275]) {
       const brace = MeshBuilder.CreateBox('cargo-crate-brace', { width: 0.045, height: 0.52, depth: 0.045 }, scene);
-      brace.position.set(x, 1.25, z);
+      brace.position.set(x, 1.19, z);
       crateParts.push(brace);
     }
   }
-  for (const z of [-0.23, 0.23]) {
-    const batten = MeshBuilder.CreateBox('cargo-crate-batten', { width: 0.6, height: 0.045, depth: 0.055 }, scene);
-    batten.position.set(0, 1.51, z);
-    crateParts.push(batten);
-  }
   const crate = Mesh.MergeMeshes(crateParts, true, true, undefined, false, true)!;
-  crate.name = 'cargo-crates';
   const crateMaterial = new StandardMaterial('cargo-crate-material', scene);
   crateMaterial.diffuseColor = Color3.FromHexString('#a96832');
   crateMaterial.emissiveColor = Color3.FromHexString('#261307');
-  crateMaterial.specularColor = Color3.FromHexString('#d7a064');
-  crateMaterial.specularPower = 28;
   crate.material = crateMaterial;
 
   const cartonParts: Mesh[] = [];
-  for (const x of [-0.165, 0.165]) {
-    const carton = MeshBuilder.CreateBox('cargo-carton-lower', { width: 0.3, height: 0.32, depth: 0.52 }, scene);
-    carton.position.set(x, 1.15, 0);
+  for (const x of [-0.17, 0.17]) {
+    const carton = MeshBuilder.CreateBox('cargo-carton-lower', { width: 0.31, height: 0.32, depth: 0.56 }, scene);
+    carton.position.set(x, 1.09, 0);
     cartonParts.push(carton);
   }
-  const upperCarton = MeshBuilder.CreateBox('cargo-carton-upper', { width: 0.5, height: 0.28, depth: 0.42 }, scene);
-  upperCarton.position.set(0, 1.46, 0);
+  const upperCarton = MeshBuilder.CreateBox('cargo-carton-upper', { width: 0.52, height: 0.28, depth: 0.44 }, scene);
+  upperCarton.position.set(0, 1.4, 0);
   cartonParts.push(upperCarton);
   const cartons = Mesh.MergeMeshes(cartonParts, true, true, undefined, false, true)!;
-  cartons.name = 'cargo-cartons';
   const cartonMaterial = new StandardMaterial('cargo-carton-material', scene);
   cartonMaterial.diffuseColor = Color3.FromHexString('#b98b5e');
   cartonMaterial.emissiveColor = Color3.FromHexString('#291b10');
-  cartonMaterial.specularColor = Color3.FromHexString('#d7bd97');
-  cartonMaterial.specularPower = 20;
   cartons.material = cartonMaterial;
 
   const drumParts: Mesh[] = [];
-  for (const x of [-0.15, 0.15]) {
-    for (const z of [-0.15, 0.15]) {
-      const drum = MeshBuilder.CreateCylinder('cargo-drum', {
-        height: 0.48,
-        diameter: 0.23,
-        tessellation: 12,
-      }, scene);
-      drum.position.set(x, 1.24, z);
+  for (const x of [-0.16, 0.16]) {
+    for (const z of [-0.16, 0.16]) {
+      const drum = MeshBuilder.CreateCylinder('cargo-drum', { height: 0.48, diameter: 0.24, tessellation: 12 }, scene);
+      drum.position.set(x, 1.18, z);
       drumParts.push(drum);
-      for (const y of [1.04, 1.44]) {
-        const band = MeshBuilder.CreateTorus('cargo-drum-band', {
-          diameter: 0.2,
-          thickness: 0.025,
-          tessellation: 12,
-        }, scene);
-        band.position.set(x, y, z);
-        drumParts.push(band);
-      }
     }
   }
   const drums = Mesh.MergeMeshes(drumParts, true, true, undefined, false, true)!;
-  drums.name = 'cargo-drums';
   const drumMaterial = new StandardMaterial('cargo-drum-material', scene);
   drumMaterial.diffuseColor = Color3.FromHexString('#296d78');
   drumMaterial.emissiveColor = Color3.FromHexString('#09252d');
-  drumMaterial.specularColor = Color3.FromHexString('#70c8d8');
-  drumMaterial.specularPower = 52;
   drums.material = drumMaterial;
 
-  const palletTransforms: number[] = [];
-  const crateTransforms: number[] = [];
-  const cartonTransforms: number[] = [];
-  const drumTransforms: number[] = [];
-  const halfW = MAP_WIDTH * CELL_SIZE / 2;
-  const halfD = MAP_DEPTH * CELL_SIZE / 2;
-  for (let gx = 6; gx < MAP_WIDTH - 5; gx += 9) {
-    for (let gz = 5; gz < MAP_DEPTH - 4; gz += 8) {
-      for (let x = gx; x <= gx + 1; x++) {
-        for (let z = gz - 2; z <= gz + 3; z++) {
-          const transform = Matrix.Translation(
-            (x + 0.5) * CELL_SIZE - halfW,
-            0,
-            (z + 0.5) * CELL_SIZE - halfD,
-          );
-          transform.copyToArray(palletTransforms, palletTransforms.length);
-          const cargoTransforms = (x * 31 + z * 17) % 3 === 0
-            ? crateTransforms
-            : (x * 31 + z * 17) % 3 === 1
-              ? cartonTransforms
-              : drumTransforms;
-          transform.copyToArray(cargoTransforms, cargoTransforms.length);
-        }
-      }
+  const allMeshes = [frame, deck, crate, cartons, drums];
+  for (const mesh of allMeshes) mesh.alwaysSelectAsActiveMesh = true;
+
+  const update = (hidden: Set<number>) => {
+    const palletTransforms: number[] = [];
+    const cargoTransforms: number[][] = [[], [], []];
+    for (const pallet of pallets) {
+      if (hidden.has(pallet.id)) continue;
+      const transform = gridTransform(pallet.x, pallet.z);
+      transform.copyToArray(palletTransforms, palletTransforms.length);
+      transform.copyToArray(cargoTransforms[pallet.cargoType], cargoTransforms[pallet.cargoType].length);
     }
+    const setInstances = (mesh: Mesh, values: number[]) => {
+      mesh.thinInstanceSetBuffer('matrix', new Float32Array(values), 16, false);
+      mesh.thinInstanceCount = values.length / 16;
+    };
+    setInstances(frame, palletTransforms);
+    setInstances(deck, palletTransforms);
+    setInstances(crate, cargoTransforms[0]);
+    setInstances(cartons, cargoTransforms[1]);
+    setInstances(drums, cargoTransforms[2]);
+  };
+  update(new Set());
+  return { update };
+}
+
+function createUnloadingZone(): void {
+  const pad = MeshBuilder.CreateBox('unloading-pad', {
+    width: CELL_SIZE * 0.82,
+    height: 0.035,
+    depth: CELL_SIZE * 0.82,
+  }, scene);
+  const padMaterial = new StandardMaterial('unloading-pad-material', scene);
+  padMaterial.diffuseColor = Color3.FromHexString('#244d59');
+  padMaterial.emissiveColor = Color3.FromHexString('#0e5365');
+  pad.material = padMaterial;
+  const padTransforms: number[] = [];
+  for (let z = 5; z < MAP_DEPTH - 5; z++) {
+    const transform = gridTransform(MAP_WIDTH - 3, z);
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.02, 0)));
+    transform.copyToArray(padTransforms, padTransforms.length);
   }
-  const palletMatrices = new Float32Array(palletTransforms);
-  frame.thinInstanceSetBuffer('matrix', palletMatrices, 16, true);
-  deck.thinInstanceSetBuffer('matrix', palletMatrices, 16, true);
-  crate.thinInstanceSetBuffer('matrix', new Float32Array(crateTransforms), 16, true);
-  cartons.thinInstanceSetBuffer('matrix', new Float32Array(cartonTransforms), 16, true);
-  drums.thinInstanceSetBuffer('matrix', new Float32Array(drumTransforms), 16, true);
+  pad.thinInstanceSetBuffer('matrix', new Float32Array(padTransforms), 16, true);
+
+  const beacon = MeshBuilder.CreateCylinder('unloading-beacon', { height: 0.09, diameter: 0.18, tessellation: 12 }, scene);
+  const beaconMaterial = new StandardMaterial('unloading-beacon-material', scene);
+  beaconMaterial.emissiveColor = Color3.FromHexString('#ffbd3e');
+  beaconMaterial.disableLighting = true;
+  beacon.material = beaconMaterial;
+  const beaconTransforms: number[] = [];
+  for (const z of [5, MAP_DEPTH - 6]) {
+    const transform = gridTransform(MAP_WIDTH - 2, z);
+    transform.setTranslation(transform.getTranslation().add(new Vector3(0, 0.08, 0)));
+    transform.copyToArray(beaconTransforms, beaconTransforms.length);
+  }
+  beacon.thinInstanceSetBuffer('matrix', new Float32Array(beaconTransforms), 16, true);
+}
+
+function gridTransform(x: number, z: number): Matrix {
+  return Matrix.Translation(
+    (x + 0.5) * CELL_SIZE - MAP_WIDTH * CELL_SIZE / 2,
+    0,
+    (z + 0.5) * CELL_SIZE - MAP_DEPTH * CELL_SIZE / 2,
+  );
 }
 
 function createBoundaryLights(): void {
@@ -342,45 +412,36 @@ function createBoundaryLights(): void {
   glow.addIncludedOnlyMesh(marker);
 }
 
-function isRackCell(x: number, z: number): boolean {
-  for (let gx = 6; gx < MAP_WIDTH - 5; gx += 9) {
-    for (let gz = 5; gz < MAP_DEPTH - 4; gz += 8) {
-      if (x >= gx && x <= gx + 1 && z >= gz - 2 && z <= gz + 3) return true;
-    }
-  }
-  return false;
-}
-
 function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
   const result: Array<{ x: number; z: number; direction: number }> = [];
   for (let x = 1; x < MAP_WIDTH - 1; x++) {
     for (let z = 1; z < MAP_DEPTH - 1; z++) {
-      if (!isRackCell(x, z)) result.push({ x, z, direction: x % 2 === 0 ? 1 : -1 });
+      result.push({ x, z, direction: x % 2 === 0 ? 1 : -1 });
     }
   }
   return result;
 }
 
-function writeMatrix(index: number, gridX: number, gridZ: number): void {
+function writeTransform(target: Float32Array, index: number, gridX: number, gridZ: number): void {
   const halfW = MAP_WIDTH * CELL_SIZE / 2;
   const halfD = MAP_DEPTH * CELL_SIZE / 2;
   const offset = index * 16;
-  matrices[offset] = 1;
-  matrices[offset + 1] = 0;
-  matrices[offset + 2] = 0;
-  matrices[offset + 3] = 0;
-  matrices[offset + 4] = 0;
-  matrices[offset + 5] = 1;
-  matrices[offset + 6] = 0;
-  matrices[offset + 7] = 0;
-  matrices[offset + 8] = 0;
-  matrices[offset + 9] = 0;
-  matrices[offset + 10] = 1;
-  matrices[offset + 11] = 0;
-  matrices[offset + 12] = (gridX + 0.5) * CELL_SIZE - halfW;
-  matrices[offset + 13] = 0.02;
-  matrices[offset + 14] = (gridZ + 0.5) * CELL_SIZE - halfD;
-  matrices[offset + 15] = 1;
+  target[offset] = 1;
+  target[offset + 1] = 0;
+  target[offset + 2] = 0;
+  target[offset + 3] = 0;
+  target[offset + 4] = 0;
+  target[offset + 5] = 1;
+  target[offset + 6] = 0;
+  target[offset + 7] = 0;
+  target[offset + 8] = 0;
+  target[offset + 9] = 0;
+  target[offset + 10] = 1;
+  target[offset + 11] = 0;
+  target[offset + 12] = (gridX + 0.5) * CELL_SIZE - halfW;
+  target[offset + 13] = 0.02;
+  target[offset + 14] = (gridZ + 0.5) * CELL_SIZE - halfD;
+  target[offset + 15] = 1;
 }
 
 function updateFallback(time: number): void {
@@ -391,15 +452,19 @@ function updateFallback(time: number): void {
     const cell = cells[(i * 47) % cells.length];
     const range = MAP_DEPTH - 2;
     const z = 1 + mod(cell.z - 1 + cell.direction * (wholeStep + phase), range);
-    writeMatrix(i, cell.x, z);
+    writeTransform(matrices, i, cell.x, z);
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
+  robotLoad.pallet.thinInstanceCount = 0;
+  robotLoad.cargo.thinInstanceCount = 0;
 }
 
 function updateLive(now: number): void {
   if (!liveCurrent) return;
   const from = livePrevious ?? liveCurrent;
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / (1000 / liveTickRate));
+  let loadedCount = 0;
+  let cargoCount = 0;
   for (let i = 0; i < agentCount; i++) {
     const x0 = from.positions[i * 2];
     const z0 = from.positions[i * 2 + 1];
@@ -407,18 +472,29 @@ function updateLive(now: number): void {
     const z1 = liveCurrent.positions[i * 2 + 1];
     const x = x0 + (x1 - x0) * alpha;
     const z = z0 + (z1 - z0) * alpha;
-    writeMatrix(i, x, z);
+    writeTransform(matrices, i, x, z);
+    if ((liveCurrent.statuses[i] & 2) !== 0) {
+      writeTransform(loadMatrices, loadedCount++, x, z);
+      if (liveCurrent.stages[i] === 1) writeTransform(cargoMatrices, cargoCount++, x, z);
+    }
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
+  robotLoad.pallet.thinInstanceCount = loadedCount;
+  robotLoad.cargo.thinInstanceCount = cargoCount;
+  if (loadedCount) robotLoad.pallet.thinInstanceBufferUpdated('matrix');
+  if (cargoCount) robotLoad.cargo.thinInstanceBufferUpdated('matrix');
 }
 
 function setAgentColor(index: number, status: number): void {
-  const color = status === 2
-    ? [0.65, 0.38, 1, 1]
-    : status === 3
-      ? [0.35, 0.95, 0.68, 1]
-      : status === 1
-        ? [1, 0.62, 0.2, 1]
+  const loaded = (status & 2) !== 0;
+  const waiting = (status & 1) !== 0;
+  const transitioned = (status & 4) !== 0;
+  const color = transitioned
+    ? [0.5, 1, 0.68, 1]
+    : loaded
+      ? (waiting ? [0.82, 0.44, 0.16, 1] : [1, 0.66, 0.2, 1])
+      : waiting
+        ? [0.5, 0.56, 0.62, 1]
         : [0.12, 0.78 + (index % 7) * 0.025, 1, 1];
   colors.set(color, index * 4);
 }
@@ -427,10 +503,14 @@ function parseFrame(buffer: ArrayBuffer): void {
   const view = new DataView(buffer);
   if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC || view.getUint16(4, true) !== 1) return;
   const step = view.getUint32(8, true);
+  const completedTasks = view.getUint16(6, true);
   const count = Math.min(MAX_AGENTS, view.getUint32(12, true));
   if (view.byteLength < 16 + count * 16) return;
   const positions = new Float32Array(count * 2);
   const statuses = new Uint8Array(count);
+  const stages = new Uint8Array(count);
+  const palletIds = new Uint16Array(count);
+  const hiddenPallets = new Set<number>();
   for (let i = 0; i < count; i++) {
     const offset = 16 + i * 16;
     const id = view.getUint32(offset, true);
@@ -438,11 +518,19 @@ function parseFrame(buffer: ArrayBuffer): void {
     positions[id * 2] = view.getFloat32(offset + 4, true);
     positions[id * 2 + 1] = view.getFloat32(offset + 8, true);
     statuses[id] = view.getUint8(offset + 12);
+    stages[id] = view.getUint8(offset + 13);
+    palletIds[id] = view.getUint16(offset + 14, true);
+    if ((statuses[id] & 2) !== 0 && palletIds[id] !== 65535) hiddenPallets.add(palletIds[id]);
     setAgentColor(id, statuses[id]);
+  }
+  const nextHiddenKey = [...hiddenPallets].sort((a, b) => a - b).join(',');
+  if (nextHiddenKey !== hiddenPalletKey) {
+    palletScene.update(hiddenPallets);
+    hiddenPalletKey = nextHiddenKey;
   }
   if (count !== agentCount) setAgentCount(count);
   livePrevious = liveCurrent;
-  liveCurrent = { positions, statuses, step, receivedAt: performance.now() };
+  liveCurrent = { positions, statuses, stages, palletIds, completedTasks, step, receivedAt: performance.now() };
   robotMesh.thinInstanceBufferUpdated('color');
 }
 
@@ -469,12 +557,12 @@ function connect(): void {
   const ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
   socket = ws;
-  ws.addEventListener('open', () => setConnection('planning', 'FASTDMM // PLANNING'));
+  ws.addEventListener('open', () => setConnection('planning', 'LIFELONG // PLANNING'));
   ws.addEventListener('message', (event) => {
     if (event.data instanceof ArrayBuffer) {
       live = true;
       parseFrame(event.data);
-      setConnection('live', 'FASTDMM // LOCAL');
+      setConnection('live', 'FASTDMM // LIFELONG');
       return;
     }
     const message = JSON.parse(String(event.data));
@@ -485,7 +573,7 @@ function connect(): void {
       liveTickRate = Number(message.tickRate) || 20;
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
-      setConnection('live', 'FASTDMM // LOCAL');
+      setConnection('live', 'FASTDMM // LIFELONG');
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
@@ -493,7 +581,7 @@ function connect(): void {
     } else if (message.type === 'status' && message.state === 'complete') {
       paused = true;
       syncPauseButton();
-      setConnection('complete', 'REPLAY // COMPLETE');
+      setConnection('complete', 'HORIZON // COMPLETE');
     } else if (message.type === 'error') {
       setConnection('error', 'RUNTIME // ERROR');
       console.error(message.message);
@@ -504,6 +592,8 @@ function connect(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
+    palletScene.update(new Set());
+    hiddenPalletKey = '';
     setConnection('fallback', 'DEMO // RECONNECTING');
     window.setTimeout(connect, 2000);
   });
@@ -524,6 +614,8 @@ const stepValue = document.querySelector('#step-value')!;
 const agentsValue = document.querySelector('#agents-value')!;
 const throughputValue = document.querySelector('#throughput-value')!;
 const latencyValue = document.querySelector('#latency-value')!;
+const loadedValue = document.querySelector('#loaded-value')!;
+const tasksValue = document.querySelector('#tasks-value')!;
 let telemetryElapsed = 0;
 
 engine.runRenderLoop(() => {
@@ -540,6 +632,8 @@ engine.runRenderLoop(() => {
     stepValue.textContent = String(step).padStart(4, '0');
     throughputValue.textContent = Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
     latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
+    loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
+    tasksValue.textContent = String(liveCurrent?.completedTasks ?? 0);
   }
 });
 
@@ -575,7 +669,7 @@ document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (e
 document.querySelector('#reset-camera')!.addEventListener('click', () => {
   camera.alpha = -Math.PI / 4;
   camera.beta = 1.02;
-  camera.radius = 58;
+  camera.radius = 32;
   camera.target.set(0, 0, 0);
 });
 

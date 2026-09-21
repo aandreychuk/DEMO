@@ -114,6 +114,9 @@ public:
     std::vector<std::vector<int>> agents_in_obs;
     // Full-map cost2go per agent: agent_cost2go[agent_id][row][col] = distance from goal (or max if unreachable)
     std::vector<std::vector<std::vector<uint16_t>>> agent_cost2go;
+    // Optional per-agent dynamic obstacles. Lifelong warehouse agents without
+    // a pallet leave this empty; loaded agents mark currently parked pallets.
+    std::vector<std::vector<std::vector<uint8_t>>> dynamic_obstacles;
     ObservationGenerator(const std::vector<std::vector<int>> &grid, const InputParameters &cfg)
         : grid(grid), cfg(cfg), encoder(cfg), vector_observation(cfg)
     {
@@ -124,6 +127,7 @@ public:
     void generate_cost2go_obs(int agent_idx, bool only_obstacles, std::vector<std::vector<int>> &buffer);
     int get_distance(int agent_idx, const std::pair<int, int> &pos);
     void create_agents(const std::vector<std::pair<int, int>> &positions, const std::vector<std::pair<int, int>> &goals);
+    void set_dynamic_obstacles(const std::vector<std::vector<std::pair<int, int>>> &cells);
     void update_next_action(int agent_idx);
     void update_agents(const std::vector<std::pair<int, int>> &positions, const std::vector<std::pair<int, int>> &goals, const std::vector<int> &actions);
     // Set positions, goals, and full 5-action history (POGEMA: 0=wait, 1=up, 2=down, 3=left, 4=right, -1=no action). Used when restoring state from LaCAM HNode.
@@ -145,7 +149,12 @@ void ObservationGenerator::compute_agent_cost2go(int agent_idx)
     auto& cost = agent_cost2go[agent_idx];
     cost.assign(H, std::vector<uint16_t>(W, std::numeric_limits<uint16_t>::max()));
 
-    if (goal.first < 0 || goal.first >= H || goal.second < 0 || goal.second >= W || grid[goal.first][goal.second] != 0)
+    auto blocked = [&](int row, int col) {
+        return grid[row][col] != 0 ||
+               (!dynamic_obstacles.empty() && dynamic_obstacles[agent_idx][row][col] != 0);
+    };
+
+    if (goal.first < 0 || goal.first >= H || goal.second < 0 || goal.second >= W || blocked(goal.first, goal.second))
         return;
 
     std::queue<std::pair<int, int>> fringe;
@@ -163,7 +172,7 @@ void ObservationGenerator::compute_agent_cost2go(int agent_idx)
             int nr = r + move.first;
             int nc = c + move.second;
             if (nr >= 0 && nr < H && nc >= 0 && nc < W &&
-                grid[nr][nc] == 0 && cost[nr][nc] == std::numeric_limits<uint16_t>::max())
+                !blocked(nr, nc) && cost[nr][nc] == std::numeric_limits<uint16_t>::max())
             {
                 cost[nr][nc] = d + 1;
                 fringe.push({nr, nc});
@@ -454,6 +463,7 @@ void ObservationGenerator::create_agents(const std::vector<std::pair<int, int>> 
     agents_in_obs.resize(total_agents);
     cost2go_obs_buffer.resize(total_agents, std::vector<std::vector<int>>(2 * cfg.obs_radius + 1, std::vector<int>(2 * cfg.obs_radius + 1)));
     agent_cost2go.resize(total_agents, std::vector<std::vector<uint16_t>>(grid.size(), std::vector<uint16_t>(grid[0].size(), std::numeric_limits<uint16_t>::max())));
+    dynamic_obstacles.resize(total_agents, std::vector<std::vector<uint8_t>>(grid.size(), std::vector<uint8_t>(grid[0].size(), 0)));
     for (int i = 0; i < total_agents; i++)
     {
         agents[i].pos = positions[i];
@@ -462,6 +472,28 @@ void ObservationGenerator::create_agents(const std::vector<std::pair<int, int>> 
             agents[i].action_history.push_back("n");
         compute_agent_cost2go(i);
         update_next_action(i);
+    }
+}
+
+void ObservationGenerator::set_dynamic_obstacles(const std::vector<std::vector<std::pair<int, int>>> &cells)
+{
+    if (cells.size() != agents.size())
+        throw std::runtime_error("dynamic obstacle rows must match agent count");
+    const int H = static_cast<int>(grid.size());
+    const int W = H > 0 ? static_cast<int>(grid[0].size()) : 0;
+    for (size_t agent_idx = 0; agent_idx < agents.size(); ++agent_idx)
+    {
+        std::vector<std::vector<uint8_t>> next(H, std::vector<uint8_t>(W, 0));
+        for (const auto &[row, col] : cells[agent_idx])
+        {
+            if (row >= 0 && row < H && col >= 0 && col < W)
+                next[row][col] = 1;
+        }
+        if (next == dynamic_obstacles[agent_idx])
+            continue;
+        dynamic_obstacles[agent_idx] = std::move(next);
+        compute_agent_cost2go(static_cast<int>(agent_idx));
+        update_next_action(static_cast<int>(agent_idx));
     }
 }
 

@@ -21,18 +21,28 @@ from websockets.exceptions import ConnectionClosed
 
 MAGIC = 0x4D415046
 PROTOCOL = 1
-MAX_AGENTS = 2500
+MAX_AGENTS = 100
+
+
+@dataclass(frozen=True)
+class AgentState:
+    x: int
+    y: int
+    loaded: bool
+    task_stage: int
+    pallet_id: int
+    completed_tasks: int
 
 
 @dataclass
 class Episode:
-    frames: list[list[tuple[int, int]]]
+    frames: list[list[AgentState]]
     summary: dict[str, Any]
     planning_seconds: float
 
 
-def load_trajectory(path: Path, agent_count: int) -> list[list[tuple[int, int]]]:
-    frames: dict[int, list[tuple[int, int] | None]] = {}
+def load_trajectory(path: Path, agent_count: int) -> list[list[AgentState]]:
+    frames: dict[int, list[AgentState | None]] = {}
     with path.open(newline="", encoding="utf-8") as stream:
         for row in csv.DictReader(stream, delimiter="\t"):
             step = int(row["step"])
@@ -40,8 +50,15 @@ def load_trajectory(path: Path, agent_count: int) -> list[list[tuple[int, int]]]
             if agent >= agent_count:
                 continue
             frame = frames.setdefault(step, [None] * agent_count)
-            frame[agent] = (int(row["x"]), int(row["y"]))
-    result: list[list[tuple[int, int]]] = []
+            frame[agent] = AgentState(
+                x=int(row["x"]),
+                y=int(row["y"]),
+                loaded=bool(int(row.get("loaded", "0"))),
+                task_stage=int(row.get("task_stage", "-1")),
+                pallet_id=int(row.get("pallet_id", "-1")),
+                completed_tasks=int(row.get("completed_tasks", "0")),
+            )
+    result: list[list[AgentState]] = []
     for step in sorted(frames):
         if any(position is None for position in frames[step]):
             raise RuntimeError(f"trajectory step {step} is incomplete")
@@ -53,15 +70,28 @@ def load_trajectory(path: Path, agent_count: int) -> list[list[tuple[int, int]]]
 
 def encode_frame(
     step: int,
-    positions: list[tuple[int, int]],
-    previous: list[tuple[int, int]] | None,
+    states: list[AgentState],
+    previous: list[AgentState] | None,
     final: bool = False,
 ) -> bytes:
-    payload = bytearray(16 + 16 * len(positions))
-    struct.pack_into("<IHHII", payload, 0, MAGIC, PROTOCOL, 0, step, len(positions))
-    for agent, (x, y) in enumerate(positions):
-        status = 3 if final else (1 if previous is not None and previous[agent] == (x, y) else 0)
-        struct.pack_into("<IffBxxx", payload, 16 + agent * 16, agent, float(x), float(y), status)
+    payload = bytearray(16 + 16 * len(states))
+    completed_tasks = min(65535, states[0].completed_tasks if states else 0)
+    struct.pack_into("<IHHII", payload, 0, MAGIC, PROTOCOL, completed_tasks, step, len(states))
+    for agent, state in enumerate(states):
+        waiting = previous is not None and (previous[agent].x, previous[agent].y) == (state.x, state.y)
+        transitioned = previous is not None and (
+            previous[agent].task_stage != state.task_stage
+            or previous[agent].pallet_id != state.pallet_id
+        )
+        status = (1 if waiting else 0) | (2 if state.loaded else 0) | (4 if transitioned else 0)
+        if final:
+            status |= 8
+        pallet_id = 65535 if state.pallet_id < 0 else min(65534, state.pallet_id)
+        struct.pack_into(
+            "<IffBBH", payload, 16 + agent * 16,
+            agent, float(state.x), float(state.y), status,
+            max(0, state.task_stage), pallet_id,
+        )
     return bytes(payload)
 
 
@@ -92,8 +122,7 @@ class Bridge:
                 "--max-steps", str(self.args.max_steps),
                 "--mode", "pibt",
                 "--sampling", "deterministic",
-                "--escape-repeated-states",
-                "--max-repeat-retries", "16",
+                "--lifelong-tasks", str(self.args.tasks.resolve()),
                 "--output-prefix", str(prefix),
             ]
             env = os.environ.copy()
@@ -150,7 +179,13 @@ class Bridge:
             await socket.send(json.dumps({
                 "type": "hello",
                 "protocol": PROTOCOL,
-                "map": {"width": 90, "height": 70, "cellSize": 1},
+                "map": {
+                    "width": int(self.args.layout_data["width"]),
+                    "height": int(self.args.layout_data["height"]),
+                    "cellSize": 1,
+                },
+                "layout": self.args.layout_data,
+                "lifelong": True,
                 "agents": count,
                 "tickRate": self.args.tick_rate,
                 "frames": len(episode.frames),
@@ -163,7 +198,7 @@ class Bridge:
             paused = False
             speed = 1.0
             reload_count: int | None = None
-            previous: list[tuple[int, int]] | None = None
+            previous: list[AgentState] | None = None
             complete_sent = False
             while reload_count is None:
                 if not paused:
@@ -178,8 +213,9 @@ class Bridge:
                     await socket.send(encode_frame(index, frame, previous, final))
                     previous = frame
                     index += 1
+                    await asyncio.sleep(1.0 / max(1.0, self.args.tick_rate * speed))
 
-                timeout = 1.0 / max(1.0, self.args.tick_rate * speed) if not paused else None
+                timeout = 0.001 if not paused else None
                 try:
                     raw = await asyncio.wait_for(socket.recv(), timeout=timeout)
                 except asyncio.TimeoutError:
@@ -221,11 +257,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runner", type=Path, default=root / "native-runner" / "build" / "dmm_native_runner")
     parser.add_argument("--model", type=Path, required=True)
-    parser.add_argument("--map", type=Path, default=root / "scenarios" / "warehouse-90x70.map")
-    parser.add_argument("--scenario", type=Path, default=root / "scenarios" / "warehouse-90x70.scen")
+    parser.add_argument("--map", type=Path, default=root / "scenarios" / "warehouse-lifelong-44x32.map")
+    parser.add_argument("--scenario", type=Path, default=root / "scenarios" / "warehouse-lifelong-44x32.scen")
+    parser.add_argument("--tasks", type=Path, default=root / "scenarios" / "warehouse-lifelong-44x32.tasks.tsv")
+    parser.add_argument("--layout", type=Path, default=root / "scenarios" / "warehouse-lifelong-44x32.layout.json")
     parser.add_argument("--run-dir", type=Path, default=root / "runs")
-    parser.add_argument("--agents", type=int, choices=(64, 256, 1000, 2500), default=1000)
-    parser.add_argument("--max-steps", type=int, default=256)
+    parser.add_argument("--agents", type=int, choices=(25, 50, 100), default=100)
+    parser.add_argument("--max-steps", type=int, default=600)
     parser.add_argument("--tick-rate", type=float, default=20)
     parser.add_argument("--threads", type=int, default=6)
     parser.add_argument("--host", default="127.0.0.1")
@@ -235,9 +273,10 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     args = parse_args()
-    for path in (args.runner, args.model, args.map, args.scenario):
+    for path in (args.runner, args.model, args.map, args.scenario, args.tasks, args.layout):
         if not path.exists():
             raise SystemExit(f"missing required file: {path}")
+    args.layout_data = json.loads(args.layout.read_text(encoding="utf-8"))
     bridge = Bridge(args)
     async with serve(bridge.handler, args.host, args.port, max_size=1 << 20):
         print(f"MAPF bridge listening on ws://{args.host}:{args.port}", flush=True)

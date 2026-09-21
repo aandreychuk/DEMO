@@ -10,6 +10,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -54,6 +55,7 @@ struct Arguments {
   int fallback_min_burst = 1;
   int fallback_budget_reserve = 0;
   int fallback_urgent_remaining = 0;
+  std::string lifelong_tasks;
 };
 
 Arguments parse_arguments(int argc, char** argv)
@@ -108,6 +110,8 @@ Arguments parse_arguments(int argc, char** argv)
       args.fallback_budget_reserve = std::stoi(value(i));
     else if (key == "--fallback-urgent-remaining")
       args.fallback_urgent_remaining = std::stoi(value(i));
+    else if (key == "--lifelong-tasks")
+      args.lifelong_tasks = value(i);
     else throw std::runtime_error("unknown argument: " + key);
   }
   if (args.map.empty() || args.scen.empty() || args.model.empty() ||
@@ -143,9 +147,39 @@ Arguments parse_arguments(int argc, char** argv)
         "[--fallback-model MODEL --fallback-after-stagnation N "
         "--fallback-max-remaining N] [--fallback-release-on-progress] "
         "[--fallback-min-burst N] [--fallback-budget-reserve N] "
-        "[--fallback-urgent-remaining N]");
+        "[--fallback-urgent-remaining N] "
+        "[--lifelong-tasks TASKS.tsv]");
   }
   return args;
+}
+
+struct LifelongTask {
+  int id;
+  int pallet_id;
+  int pallet_x;
+  int pallet_y;
+  int station_x;
+  int station_y;
+};
+
+std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
+{
+  std::ifstream stream(path);
+  if (!stream) throw std::runtime_error("failed to open lifelong task list");
+  std::vector<LifelongTask> tasks;
+  std::string line;
+  std::getline(stream, line);
+  while (std::getline(stream, line)) {
+    if (line.empty()) continue;
+    std::istringstream row(line);
+    LifelongTask task{};
+    if (row >> task.id >> task.pallet_id >> task.pallet_x >> task.pallet_y >>
+            task.station_x >> task.station_y) {
+      tasks.push_back(task);
+    }
+  }
+  if (tasks.empty()) throw std::runtime_error("lifelong task list is empty");
+  return tasks;
 }
 
 int action_index(const Vertex* from, const Vertex* to)
@@ -311,8 +345,73 @@ int main(int argc, char** argv)
     at::globalContext().setBenchmarkCuDNN(false);
     at::globalContext().setDeterministicAlgorithms(true, false);
 
-    const Instance ins(args.scen, args.map, args.num_agents);
+    Instance ins(args.scen, args.map, args.num_agents);
     if (!ins.is_valid()) throw std::runtime_error("invalid MAPF instance");
+    const bool lifelong = !args.lifelong_tasks.empty();
+    std::vector<LifelongTask> lifelong_tasks;
+    std::deque<int> pending_tasks;
+    std::vector<Vertex*> pallet_vertices;
+    std::vector<char> pallet_reserved;
+    std::vector<char> pallet_present;
+    std::vector<int> agent_task(ins.N, -1);
+    std::vector<int> task_stage(ins.N, 0);
+    std::vector<char> loaded(ins.N, false);
+    long long completed_tasks = 0;
+    long long goal_updates = 0;
+    std::function<bool(int, Vertex*)> assign_task;
+    if (lifelong) {
+      lifelong_tasks = load_lifelong_tasks(args.lifelong_tasks);
+      int max_pallet_id = -1;
+      for (const auto& task : lifelong_tasks) {
+        max_pallet_id = std::max(max_pallet_id, task.pallet_id);
+      }
+      pallet_vertices.assign(max_pallet_id + 1, nullptr);
+      pallet_reserved.assign(max_pallet_id + 1, false);
+      pallet_present.assign(max_pallet_id + 1, true);
+      for (int index = 0; index < static_cast<int>(lifelong_tasks.size());
+           ++index) {
+        const auto& task = lifelong_tasks[index];
+        auto* pallet = ins.G->U[ins.G->width * task.pallet_y + task.pallet_x];
+        auto* station =
+            ins.G->U[ins.G->width * task.station_y + task.station_x];
+        if (pallet == nullptr || station == nullptr) {
+          throw std::runtime_error("lifelong task references a blocked cell");
+        }
+        if (pallet_vertices[task.pallet_id] != nullptr &&
+            pallet_vertices[task.pallet_id] != pallet) {
+          throw std::runtime_error("pallet id maps to multiple cells");
+        }
+        pallet_vertices[task.pallet_id] = pallet;
+        pending_tasks.push_back(index);
+      }
+      assign_task = [&](int agent, Vertex* current_position) {
+        const size_t candidates = pending_tasks.size();
+        for (size_t attempt = 0; attempt < candidates; ++attempt) {
+          const int task_index = pending_tasks.front();
+          pending_tasks.pop_front();
+          const auto& task = lifelong_tasks[task_index];
+          auto* pallet = pallet_vertices[task.pallet_id];
+          if (pallet_reserved[task.pallet_id] || pallet == current_position) {
+            pending_tasks.push_back(task_index);
+            continue;
+          }
+          pallet_reserved[task.pallet_id] = true;
+          agent_task[agent] = task_index;
+          task_stage[agent] = 0;
+          loaded[agent] = false;
+          ins.goals[agent] = pallet;
+          ++goal_updates;
+          return true;
+        }
+        return false;
+      };
+      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        if (!assign_task(i, ins.starts[i])) {
+          throw std::runtime_error(
+              "not enough distinct pallets for initial lifelong tasks");
+        }
+      }
+    }
     DistTable distances(&ins);
     PolicyConfig config;
     config.policy_type = args.policy;
@@ -348,6 +447,37 @@ int main(int argc, char** argv)
       }
     }
 
+    auto refresh_navigation = [&]() {
+      if (!lifelong) return;
+      std::vector<std::vector<int>> blocked_vertices(ins.N);
+      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        std::vector<char> blocked_mask(ins.G->size(), false);
+        if (loaded[i]) {
+          auto& ids = blocked_vertices[i];
+          ids.reserve(pallet_vertices.size());
+          for (int pallet_id = 0;
+               pallet_id < static_cast<int>(pallet_vertices.size());
+               ++pallet_id) {
+            if (!pallet_present[pallet_id] ||
+                pallet_vertices[pallet_id] == nullptr) {
+              continue;
+            }
+            const int vertex_id = pallet_vertices[pallet_id]->id;
+            ids.push_back(vertex_id);
+            blocked_mask[vertex_id] = true;
+          }
+        }
+        distances.set_goal(i, ins.goals[i],
+                           loaded[i] ? &blocked_mask : nullptr);
+      }
+      if (raw_policy) raw_policy->set_dynamic_obstacles(blocked_vertices);
+      if (pibt) pibt->policy.set_dynamic_obstacles(blocked_vertices);
+      if (fallback_pibt) {
+        fallback_pibt->policy.set_dynamic_obstacles(blocked_vertices);
+      }
+    };
+    refresh_navigation();
+
     Config current = ins.starts;
     std::ofstream trajectory;
     std::ofstream decisions;
@@ -358,13 +488,24 @@ int main(int argc, char** argv)
       if (!trajectory || !decisions) {
         throw std::runtime_error("failed to open trajectory trace files");
       }
-      trajectory << "step\tagent\tx\ty\n";
+      trajectory << "step\tagent\tx\ty\tloaded\ttask_stage\ttask_id"
+                    "\tpallet_id\tstation_x\tstation_y\tcompleted_tasks\n";
       decisions << "step\tagent\tpre_x\tpre_y\tpreferred0\tpreferred1"
                    "\tpreferred2\tpreferred3\tpreferred4\texecuted"
                    "\tchosen_rank\tpriority\torder_rank\n";
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+        const LifelongTask* task =
+            lifelong && agent_task[i] >= 0
+                ? &lifelong_tasks[agent_task[i]]
+                : nullptr;
         trajectory << 0 << '\t' << i << '\t' << current[i]->x << '\t'
-                   << current[i]->y << '\n';
+                   << current[i]->y << '\t' << (loaded[i] ? 1 : 0) << '\t'
+                   << (task ? task_stage[i] : -1) << '\t'
+                   << (task ? task->id : -1) << '\t'
+                   << (task ? task->pallet_id : -1) << '\t'
+                   << (task ? task->station_x : -1) << '\t'
+                   << (task ? task->station_y : -1) << '\t'
+                   << completed_tasks << '\n';
       }
     }
     if (!args.dump_training.empty()) {
@@ -456,7 +597,7 @@ int main(int argc, char** argv)
     long long obstacle_collisions = 0;
     int episode_steps = 0;
     const auto started = std::chrono::steady_clock::now();
-    bool solved = is_goal(ins, current);
+    bool solved = !lifelong && is_goal(ins, current);
     int best_reached = 0;
     for (int i = 0; i < static_cast<int>(ins.N); ++i) {
       if (current[i] == ins.goals[i]) ++best_reached;
@@ -469,7 +610,7 @@ int main(int argc, char** argv)
     long long fallback_steps = 0;
     int fallback_burst_steps = 0;
 
-    for (int step = 0; step < args.max_steps && !solved; ++step) {
+    for (int step = 0; step < args.max_steps && (lifelong || !solved); ++step) {
       std::vector<int> actions(ins.N, 0);
       Config next(ins.N, nullptr);
       if (args.mode == "soft") {
@@ -511,6 +652,20 @@ int main(int argc, char** argv)
           ++fallback_burst_steps;
         }
         std::vector<std::vector<int>> forbidden_vertex_ids(ins.N);
+        if (lifelong) {
+          for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+            if (!loaded[i]) continue;
+            for (int pallet_id = 0;
+                 pallet_id < static_cast<int>(pallet_vertices.size());
+                 ++pallet_id) {
+              if (pallet_present[pallet_id] &&
+                  pallet_vertices[pallet_id] != nullptr) {
+                forbidden_vertex_ids[i].push_back(
+                    pallet_vertices[pallet_id]->id);
+              }
+            }
+          }
+        }
         Config repeated_escape_candidate;
         std::vector<std::vector<int>> dump_observations;
         std::vector<std::vector<int>> dump_chat;
@@ -529,7 +684,7 @@ int main(int argc, char** argv)
         while (true) {
           next.assign(ins.N, nullptr);
           const auto* forbidden =
-              retries == 0 ? nullptr : &forbidden_vertex_ids;
+              (lifelong || retries > 0) ? &forbidden_vertex_ids : nullptr;
           if (!active_pibt->set_new_config(current, next, order, {}, &history,
                                            forbidden)) {
             if (repeated_escape_candidate.empty()) {
@@ -609,7 +764,7 @@ int main(int argc, char** argv)
           }
 
           const bool repeated =
-              args.escape_repeated_states &&
+              !lifelong && args.escape_repeated_states &&
               was_visited(next);
           if (!repeated) {
             if (saw_repeated_candidate) ++repeat_escapes;
@@ -730,12 +885,54 @@ int main(int argc, char** argv)
       }
 
       current = std::move(next);
+      bool navigation_changed = false;
+      if (lifelong) {
+        for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+          if (agent_task[i] < 0 || current[i] != ins.goals[i]) continue;
+          const auto& task = lifelong_tasks[agent_task[i]];
+          if (task_stage[i] == 0) {
+            loaded[i] = true;
+            pallet_present[task.pallet_id] = false;
+            task_stage[i] = 1;
+            ins.goals[i] =
+                ins.G->U[ins.G->width * task.station_y + task.station_x];
+            ++goal_updates;
+          } else if (task_stage[i] == 1) {
+            task_stage[i] = 2;
+            ins.goals[i] = pallet_vertices[task.pallet_id];
+            ++goal_updates;
+          } else {
+            loaded[i] = false;
+            pallet_present[task.pallet_id] = true;
+            pallet_reserved[task.pallet_id] = false;
+            agent_task[i] = -1;
+            ++completed_tasks;
+            if (!assign_task(i, current[i])) {
+              ins.goals[i] = current[i];
+            }
+          }
+          priorities[i] -= std::floor(priorities[i]);
+          navigation_changed = true;
+        }
+        if (navigation_changed) refresh_navigation();
+      }
       remember_config(current);
       episode_steps = step + 1;
       if (trajectory) {
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+          const LifelongTask* task =
+              lifelong && agent_task[i] >= 0
+                  ? &lifelong_tasks[agent_task[i]]
+                  : nullptr;
           trajectory << episode_steps << '\t' << i << '\t'
-                     << current[i]->x << '\t' << current[i]->y << '\n';
+                     << current[i]->x << '\t' << current[i]->y << '\t'
+                     << (loaded[i] ? 1 : 0) << '\t'
+                     << (task ? task_stage[i] : -1) << '\t'
+                     << (task ? task->id : -1) << '\t'
+                     << (task ? task->pallet_id : -1) << '\t'
+                     << (task ? task->station_x : -1) << '\t'
+                     << (task ? task->station_y : -1) << '\t'
+                     << completed_tasks << '\n';
         }
       }
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
@@ -773,23 +970,36 @@ int main(int argc, char** argv)
                     return priorities[a] > priorities[b];
                   });
       }
-      solved = is_goal(ins, current);
+      solved = !lifelong && is_goal(ins, current);
     }
 
     const double runtime_sec = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - started).count();
     int reached = 0;
+    int active_loaded = 0;
+    int active_tasks = 0;
     long long soc = 0;
     int makespan = 0;
     for (int i = 0; i < static_cast<int>(ins.N); ++i) {
       if (current[i] == ins.goals[i]) ++reached;
+      if (loaded[i]) ++active_loaded;
+      if (agent_task[i] >= 0) ++active_tasks;
       if (solve_time[i] >= 0) {
         soc += solve_time[i] + 1;
         makespan = std::max(makespan, solve_time[i] + 1);
       }
     }
-    std::cout << "status=" << (solved ? "solved" : "no_solution") << '\n'
+    const char* status = lifelong
+        ? "lifelong_horizon"
+        : (solved ? "solved" : "no_solution");
+    std::cout << "status=" << status << '\n'
               << "solved=" << (solved ? 1 : 0) << '\n'
+              << "lifelong=" << (lifelong ? 1 : 0) << '\n'
+              << "completed_tasks=" << completed_tasks << '\n'
+              << "goal_updates=" << goal_updates << '\n'
+              << "active_loaded=" << active_loaded << '\n'
+              << "active_tasks=" << active_tasks << '\n'
+              << "pending_tasks=" << pending_tasks.size() << '\n'
               << "csr=" << (solved ? 1 : 0) << '\n'
               << "isr=" << static_cast<double>(reached) / ins.N << '\n'
               << "soc=" << (solved ? soc : -1) << '\n'
@@ -827,12 +1037,20 @@ int main(int argc, char** argv)
         throw std::runtime_error("failed to open summary JSON");
       }
       summary << "{\n"
-              << "  \"schema\": \"dmm-native-result/v1\",\n"
-              << "  \"status\": \""
-              << (solved ? "solved" : "no_solution") << "\",\n"
+              << "  \"schema\": \""
+              << (lifelong ? "dmm-lifelong-result/v1"
+                           : "dmm-native-result/v1")
+              << "\",\n"
+              << "  \"status\": \"" << status << "\",\n"
               << "  \"solved\": " << (solved ? "true" : "false") << ",\n"
+              << "  \"lifelong\": " << (lifelong ? "true" : "false") << ",\n"
               << "  \"num_agents\": " << ins.N << ",\n"
               << "  \"episode_steps\": " << episode_steps << ",\n"
+              << "  \"completed_tasks\": " << completed_tasks << ",\n"
+              << "  \"goal_updates\": " << goal_updates << ",\n"
+              << "  \"active_loaded\": " << active_loaded << ",\n"
+              << "  \"active_tasks\": " << active_tasks << ",\n"
+              << "  \"pending_tasks\": " << pending_tasks.size() << ",\n"
               << "  \"reached_agents\": " << reached << ",\n"
               << "  \"isr\": " << static_cast<double>(reached) / ins.N
               << ",\n"
@@ -858,7 +1076,7 @@ int main(int argc, char** argv)
               << "}\n";
     }
 
-    if (args.diagnostics && !solved) {
+    if (args.diagnostics && !lifelong && !solved) {
       std::vector<int> occupant(ins.G->size(), -1);
       std::vector<int> unresolved;
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
@@ -1011,7 +1229,7 @@ int main(int argc, char** argv)
         std::cout << "diag_final_surroundings=" << surroundings << '\n';
       }
     }
-    return 0;
+    return lifelong || solved ? 0 : 2;
   } catch (const std::exception& error) {
     std::cerr << "error=" << error.what() << '\n';
     return 2;

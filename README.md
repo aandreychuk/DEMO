@@ -3,7 +3,13 @@
 A browser-based 2.5D demonstration of the trained FastDMM policy. CUDA/AOTI
 inference, observation construction, PIBT shielding, and collision checks run
 locally in the native process. The browser receives compact state frames over a
-loopback WebSocket and renders up to 2,500 agents with Babylon.js thin instances.
+loopback WebSocket and renders the 100-agent lifelong warehouse with Babylon.js
+thin instances.
+
+Each generated task has three goals: pick up a pallet, deliver it to an
+unloading station, and return it to its original cell. Empty robots can pass
+under parked pallets. Loaded robots receive a pallet-aware cost-to-go map and
+cannot enter cells occupied by parked pallets.
 
 ## Run the live demo
 
@@ -18,7 +24,7 @@ python -m pip install -r runtime/requirements.txt
 runtime/build_native.sh
 runtime/run_demo.sh \
   artifacts/fastdmm-stage2-step12800-bf16-sm86-dynamic-N2-2580.pt2 \
-  --agents 1000
+  --agents 100
 ```
 
 In a second terminal, start the browser client (Node.js 20.19 or newer):
@@ -29,23 +35,22 @@ npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
 Open `http://127.0.0.1:4173/`. The agent selector starts or reuses a local run
-for 64, 256, 1,000, or 2,500 agents. Pause, replay, playback speed, orbit, and
+for 25, 50, or 100 agents. Pause, replay, playback speed, orbit, and
 zoom controls remain browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
-## Verified 1,000-agent run
+## Verified 100-agent lifelong run
 
-The included deterministic warehouse scenario has 5,120 traversable cells. On
-the current machine, FastDMM 0.8M with PIBT solved the 1,000-agent instance in
-139 steps:
+The included 44×32 warehouse has 160 pallet cells and 22 unloading cells. A
+deterministic FastDMM 0.8M + PIBT run on the current machine completed this
+600-step horizon as follows:
 
 | Metric | Result |
 | --- | ---: |
-| status | solved |
-| reached agents | 1,000 / 1,000 |
-| native runtime | 3.91 s |
-| mean AOTI inference | 22.63 ms |
-| sum of costs | 63,396 |
+| status | lifelong horizon complete |
+| completed three-goal tasks | 722 |
+| native runtime | 5.64 s |
+| mean AOTI inference | 4.93 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |
@@ -57,7 +62,8 @@ documented in [docs/protocol.md](docs/protocol.md).
 
 - `runtime/native-runner/`: standalone C++ MovingAI/FastDMM/PIBT runtime;
 - `runtime/bridge.py`: loopback WebSocket server and binary frame encoder;
-- `runtime/generate_warehouse.py`: shared 90×70 warehouse map and scenario;
+- `runtime/generate_lifelong_warehouse.py`: compact warehouse, starts, layout,
+  and deterministic random task queue;
 - `runtime/export_fastdmm_aoti.py`: machine-specific AOTI exporter;
 - `src/main.ts`: Babylon.js renderer, interpolation, controls, and telemetry.
 

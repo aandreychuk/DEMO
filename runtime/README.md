@@ -45,7 +45,7 @@ The generated package is machine-specific and intentionally ignored by Git.
 ## Native demo pipeline
 
 The repository includes the standalone C++ runtime in `native-runner/`, a
-deterministic warehouse scenario, and a loopback WebSocket bridge. From an
+deterministic lifelong warehouse scenario, and a loopback WebSocket bridge. From an
 activated Linux/WSL environment with PyTorch 2.13:
 
 ```bash
@@ -60,5 +60,11 @@ native process, and replays its collision-free trajectory at 20 Hz. Browser
 requests for a previously computed agent count use the in-memory episode cache.
 Runs and decision traces are written below ignored `runtime/runs/`.
 
-Supported demo sizes are 64, 256, 1,000, and 2,500 agents. The default native
-horizon is 256 steps; change it with `--max-steps` when invoking `run_demo.sh`.
+Supported demo sizes are 25, 50, and 100 agents. The default native horizon is
+600 steps; change it with `--max-steps` when invoking `run_demo.sh`.
+
+`generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
+layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
+one unloading cell, and the original pallet cell. The native runner updates the
+goal and cost-to-go after every stage. Parked pallets are per-agent dynamic
+obstacles only while that agent is carrying a load.

@@ -23,7 +23,7 @@
 
       <aside class="stats glass">
         <p class="eyebrow">LIVE TELEMETRY</p>
-        <div class="metric major"><span id="agents-value">1,000</span><small>ACTIVE AGENTS</small></div>
+        <div class="metric major"><span id="agents-value">100</span><small>ACTIVE AGENTS</small></div>
         <div class="metric-row">
           <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
           <div class="metric"><span id="step-value">0</span><small>STEP</small></div>
@@ -32,15 +32,19 @@
           <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
           <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
         </div>
+        <div class="metric-row">
+          <div class="metric"><span id="loaded-value">0</span><small>LOADED</small></div>
+          <div class="metric"><span id="tasks-value">0</span><small>TASKS DONE</small></div>
+        </div>
         <div class="sparkline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       </aside>
 
       <aside class="legend glass">
         <p class="eyebrow">STATUS</p>
-        <span><i class="cyan"></i>En route</span>
-        <span><i class="violet"></i>Replanned</span>
+        <span><i class="cyan"></i>Empty</span>
+        <span><i class="violet"></i>Loaded</span>
         <span><i class="amber"></i>Waiting</span>
-        <span><i class="green"></i>Arrived</span>
+        <span><i class="green"></i>Task handoff</span>
       </aside>
 
       <section class="controls glass">
@@ -48,10 +52,9 @@
         <label>
           <span>AGENTS</span>
           <select id="agent-count">
-            <option value="64">64</option>
-            <option value="256">256</option>
-            <option value="1000" selected>1,000</option>
-            <option value="2500">2,500</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
           </select>
         </label>
         <label class="speed-control">

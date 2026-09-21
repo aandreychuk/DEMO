@@ -15,5 +15,5 @@ if [[ -z "${model}" ]]; then
   shift
 fi
 
-"${python_executable}" "${runtime_dir}/generate_warehouse.py"
+"${python_executable}" "${runtime_dir}/generate_lifelong_warehouse.py"
 exec "${python_executable}" "${runtime_dir}/bridge.py" --model "${model}" "$@"

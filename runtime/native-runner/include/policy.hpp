@@ -229,6 +229,11 @@ struct AgentPolicy {
   void get_dmm_encoded_inputs(
       std::vector<std::vector<int>>& observations,
       std::vector<std::vector<int>>& chat) const;
+  // Update per-agent cells that must appear as obstacles in DMM cost-to-go.
+  // Used by lifelong warehouse rollouts where loaded agents cannot travel
+  // through parked pallets while empty agents can pass underneath them.
+  void set_dynamic_obstacles(
+      const std::vector<std::vector<int>>& blocked_vertex_ids);
   // Ensemble: MAGAT-first cascade. Run MAGAT; if any agent's MAGAT confidence
   // < MAGAT_THRESHOLD also run LC-MAPF; cache as EnsembleCacheEntry; build
   // preferences from pinned MAGAT actions + free-agent LC-MAPF priorities.

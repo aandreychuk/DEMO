@@ -19,20 +19,7 @@ DistTable::DistTable(const Instance *ins)
 void DistTable::setup(const Instance *ins)
 {
   auto bfs_to_goal = [&](const int i) {
-    auto g_i = ins->goals[i];
-    auto Q = std::queue<Vertex *>({g_i});
-    table[i][g_i->id] = 0;
-    while (!Q.empty()) {
-      auto n = Q.front();
-      Q.pop();
-      const int d_n = table[i][n->id];
-      for (auto &m : n->neighbor) {
-        const int d_m = table[i][m->id];
-        if (d_n + 1 >= d_m) continue;
-        table[i][m->id] = d_n + 1;
-        Q.push(m);
-      }
-    }
+    set_goal(i, ins->goals[i]);
   };
 
   auto bfs_to_start = [&](const int i) {
@@ -56,6 +43,35 @@ void DistTable::setup(const Instance *ins)
   for (size_t i = 0; i < ins->N; ++i) {
     pool.emplace_back(std::async(std::launch::async, bfs_to_goal, i));
     pool.emplace_back(std::async(std::launch::async, bfs_to_start, i));
+  }
+}
+
+void DistTable::set_goal(const int i, Vertex *goal,
+                         const std::vector<char> *blocked)
+{
+  if (i < 0 || i >= static_cast<int>(table.size()) || goal == nullptr) return;
+  auto &distances = table[i];
+  std::fill(distances.begin(), distances.end(), K);
+  if (blocked != nullptr && goal->id < static_cast<int>(blocked->size()) &&
+      (*blocked)[goal->id]) {
+    return;
+  }
+  auto queue = std::queue<Vertex *>({goal});
+  distances[goal->id] = 0;
+  while (!queue.empty()) {
+    auto *vertex = queue.front();
+    queue.pop();
+    const int distance = distances[vertex->id];
+    for (auto *neighbor : vertex->neighbor) {
+      if (blocked != nullptr &&
+          neighbor->id < static_cast<int>(blocked->size()) &&
+          (*blocked)[neighbor->id]) {
+        continue;
+      }
+      if (distance + 1 >= distances[neighbor->id]) continue;
+      distances[neighbor->id] = distance + 1;
+      queue.push(neighbor);
+    }
   }
 }
 

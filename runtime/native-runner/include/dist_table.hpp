@@ -25,4 +25,6 @@ struct DistTable {
   DistTable(const Instance *ins);
 
   void setup(const Instance *ins);  // initialization
+  void set_goal(const int i, Vertex *goal,
+                const std::vector<char> *blocked = nullptr);
 };

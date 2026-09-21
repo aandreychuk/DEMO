@@ -1213,6 +1213,29 @@ void AgentPolicy::get_dmm_encoded_inputs(
   chat = lc_obs_gen->get_agents_in_obs();
 }
 
+void AgentPolicy::set_dynamic_obstacles(
+    const std::vector<std::vector<int>>& blocked_vertex_ids)
+{
+  if (!lc_obs_gen) return;
+  if (blocked_vertex_ids.size() != static_cast<size_t>(N)) {
+    throw std::runtime_error(
+        "dynamic obstacle rows must match policy agent count");
+  }
+  std::vector<std::vector<std::pair<int, int>>> cells(N);
+  for (int i = 0; i < N; ++i) {
+    cells[i].reserve(blocked_vertex_ids[i].size());
+    for (const int vertex_id : blocked_vertex_ids[i]) {
+      if (vertex_id < 0 || vertex_id >= V_size) continue;
+      const auto* vertex = ins->G->V[vertex_id];
+      cells[i].push_back({vertex->y, vertex->x});
+    }
+  }
+  lc_obs_gen->set_dynamic_obstacles(cells);
+  known_config_table.clear();
+  lc_mapf_action_logits_cache.clear();
+  ensemble_cache.clear();
+}
+
 // ============================================================================
 // Ensemble forward — combine N*5 action probabilities from multiple members.
 //
