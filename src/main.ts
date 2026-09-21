@@ -23,6 +23,7 @@ const UNLOAD_X = MAP_WIDTH - 3;
 const UNLOAD_MIN_Z = 1;
 const UNLOAD_MAX_Z = MAP_DEPTH - 2;
 const UNLOAD_STATION_COUNT = UNLOAD_MAX_Z - UNLOAD_MIN_Z + 1;
+const PALLET_DWELL_TICKS = 2;
 const UNLOAD_DWELL_TICKS = 5;
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
@@ -43,6 +44,13 @@ type LiveFrame = {
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
 type CargoTransfer = { gridX: number; gridZ: number; worldY: number; cargoType: number };
 type PendingHandoff = { taskId: number; palletId: number; stationZ: number };
+type PalletMotion = {
+  kind: 'pickup' | 'drop';
+  taskId: number;
+  palletId: number;
+  startedStep: number;
+};
+type PendingPalletMotion = Omit<PalletMotion, 'startedStep'>;
 type AgentStats = {
   distance: number;
   moveTicks: number;
@@ -125,6 +133,14 @@ let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let selectedAgentId = -1;
 const pendingHandoffs: Array<PendingHandoff | null> = Array.from(
+  { length: MAX_AGENTS },
+  () => null,
+);
+const pendingPalletMotions: Array<PendingPalletMotion | null> = Array.from(
+  { length: MAX_AGENTS },
+  () => null,
+);
+const palletMotions: Array<PalletMotion | null> = Array.from(
   { length: MAX_AGENTS },
   () => null,
 );
@@ -927,8 +943,10 @@ function updateFallback(time: number): void {
   for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
 }
 
-function resetHandoffAnimations(): void {
+function resetServiceAnimations(): void {
   pendingHandoffs.fill(null);
+  pendingPalletMotions.fill(null);
+  palletMotions.fill(null);
   unloadingScene.reset();
 }
 
@@ -939,6 +957,7 @@ function updateLive(now: number): void {
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
   const simulationStep = from.step + (liveCurrent.step - from.step) * alpha;
   const transfers = unloadingScene.update(simulationStep);
+  const hiddenPallets = new Set<number>();
   let loadedCount = 0;
   const cargoCounts = [0, 0, 0];
   loadAgentIds.fill(-1);
@@ -958,20 +977,42 @@ function updateLive(now: number): void {
       selectionHalo.scaling.set(pulse, pulse, pulse);
       selectionHalo.isVisible = true;
     }
-    if ((liveCurrent.statuses[i] & 2) !== 0) {
+    const palletId = liveCurrent.palletIds[i];
+    const enteringPickup = from.taskIds[i] === liveCurrent.taskIds[i]
+      && from.stages[i] === 0
+      && liveCurrent.stages[i] === 1
+      && (from.statuses[i] & 2) === 0;
+    const motion = palletMotions[i];
+    const motionProgress = motion
+      ? Math.max(0, Math.min(1, (simulationStep - motion.startedStep) / PALLET_DWELL_TICKS))
+      : 1;
+    const activeDrop = motion?.kind === 'drop' && motionProgress < 1;
+    const showLoadedPallet = (liveCurrent.statuses[i] & 2) !== 0 && !enteringPickup;
+    if (showLoadedPallet || activeDrop) {
       const loadIndex = loadedCount++;
       loadAgentIds[loadIndex] = i;
-      writeTransform(loadMatrices, loadIndex, x, z, 0.1);
-      const palletId = liveCurrent.palletIds[i];
-      const carriesCargo = liveCurrent.stages[i] === 1
-        || (from.stages[i] === 1 && liveCurrent.stages[i] === 2);
-      if (carriesCargo && palletId < palletCells.length) {
-        const cargoType = palletCells[palletId].cargoType;
+      const visualPalletId = activeDrop ? motion.palletId : palletId;
+      const liftProgress = motion?.kind === 'pickup'
+        ? smoothstep(motionProgress)
+        : motion?.kind === 'drop'
+          ? 1 - smoothstep(motionProgress)
+          : 1;
+      writeTransform(loadMatrices, loadIndex, x, z, 0.1 * liftProgress);
+      if (visualPalletId < palletCells.length) hiddenPallets.add(visualPalletId);
+      const carriesCargo = !activeDrop && (liveCurrent.stages[i] === 1
+        || (from.stages[i] === 1 && liveCurrent.stages[i] === 2));
+      if (carriesCargo && visualPalletId < palletCells.length) {
+        const cargoType = palletCells[visualPalletId].cargoType;
         const cargoIndex = cargoCounts[cargoType]++;
         cargoAgentIds[cargoType][cargoIndex] = i;
-        writeTransform(cargoMatrices[cargoType], cargoIndex, x, z, 0.1);
+        writeTransform(cargoMatrices[cargoType], cargoIndex, x, z, 0.1 * liftProgress);
       }
     }
+  }
+  const nextHiddenKey = [...hiddenPallets].sort((a, b) => a - b).join(',');
+  if (nextHiddenKey !== hiddenPalletKey) {
+    palletScene.update(hiddenPallets);
+    hiddenPalletKey = nextHiddenKey;
   }
   for (const transfer of transfers) {
     const cargoIndex = cargoCounts[transfer.cargoType]++;
@@ -1023,7 +1064,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
   if (liveCurrent && step < liveCurrent.step) {
-    resetHandoffAnimations();
+    resetServiceAnimations();
     resetAgentStats();
   }
   const completedTasks = view.getUint16(6, true);
@@ -1037,7 +1078,6 @@ function parseFrame(buffer: ArrayBuffer): void {
   const stationPositions = new Int16Array(count * 2);
   taskIds.fill(0xffffffff);
   stationPositions.fill(-1);
-  const hiddenPallets = new Set<number>();
   for (let i = 0; i < count; i++) {
     const offset = 16 + i * recordSize;
     const id = view.getUint32(offset, true);
@@ -1052,17 +1092,11 @@ function parseFrame(buffer: ArrayBuffer): void {
       stationPositions[id * 2] = view.getInt16(offset + 20, true);
       stationPositions[id * 2 + 1] = view.getInt16(offset + 22, true);
     }
-    if ((statuses[id] & 2) !== 0 && palletIds[id] !== 65535) hiddenPallets.add(palletIds[id]);
     const enteringUnloadingBay = stages[id] === 2
       && Math.round(positions[id * 2]) === UNLOAD_X
       && (statuses[id] & 4) !== 0
       && (statuses[id] & 1) === 0;
     setAgentColor(id, enteringUnloadingBay ? statuses[id] & ~4 : statuses[id]);
-  }
-  const nextHiddenKey = [...hiddenPallets].sort((a, b) => a - b).join(',');
-  if (nextHiddenKey !== hiddenPalletKey) {
-    palletScene.update(hiddenPallets);
-    hiddenPalletKey = nextHiddenKey;
   }
   if (count !== agentCount) setAgentCount(count);
   const receivedAt = performance.now();
@@ -1079,6 +1113,8 @@ function parseFrame(buffer: ArrayBuffer): void {
         stats.waitTicks += 1;
       }
       const enteredReturnStage = priorFrame.stages[id] === 1 && stages[id] === 2;
+      const enteredPickupStage = priorFrame.stages[id] === 0 && stages[id] === 1
+        && priorFrame.taskIds[id] === taskIds[id];
       if (taskIds[id] !== priorFrame.taskIds[id]) {
         if (priorFrame.taskIds[id] !== 0xffffffff) stats.completedTasks += 1;
         stats.taskStartedAt = step;
@@ -1087,6 +1123,19 @@ function parseFrame(buffer: ArrayBuffer): void {
       const palletId = palletIds[id];
       const x = Math.round(positions[id * 2]);
       const stationZ = Math.round(positions[id * 2 + 1]);
+      if (enteredPickupStage && palletId < palletCells.length) {
+        pendingPalletMotions[id] = { kind: 'pickup', taskId: taskIds[id], palletId };
+      }
+      const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
+      const arrivedAtReturn = stages[id] === 2
+        && pallet !== null
+        && x === pallet.x
+        && stationZ === pallet.z
+        && (priorFrame.positions[id * 2] !== positions[id * 2]
+          || priorFrame.positions[id * 2 + 1] !== positions[id * 2 + 1]);
+      if (arrivedAtReturn) {
+        pendingPalletMotions[id] = { kind: 'drop', taskId: taskIds[id], palletId };
+      }
       if (enteredReturnStage && x === UNLOAD_X && palletId < palletCells.length) {
         pendingHandoffs[id] = { taskId: taskIds[id], palletId, stationZ };
       }
@@ -1107,6 +1156,24 @@ function parseFrame(buffer: ArrayBuffer): void {
         pendingHandoffs[id] = null;
       } else if (pending && (pending.taskId !== taskIds[id] || stages[id] !== 2)) {
         pendingHandoffs[id] = null;
+      }
+      const pendingPallet = pendingPalletMotions[id];
+      const waitingAtPallet = (statuses[id] & 1) !== 0
+        && pallet !== null
+        && x === pallet.x
+        && stationZ === pallet.z;
+      if (pendingPallet && pendingPallet.taskId === taskIds[id] && waitingAtPallet) {
+        palletMotions[id] = { ...pendingPallet, startedStep: priorFrame.step };
+        pendingPalletMotions[id] = null;
+      } else if (pendingPallet && pendingPallet.taskId !== taskIds[id]) {
+        pendingPalletMotions[id] = null;
+      }
+      const palletMotion = palletMotions[id];
+      if (palletMotion && step - palletMotion.startedStep > PALLET_DWELL_TICKS) {
+        palletMotions[id] = null;
+      } else if (palletMotion?.kind === 'pickup'
+          && (taskIds[id] !== palletMotion.taskId || stages[id] !== 1)) {
+        palletMotions[id] = null;
       }
     }
   } else {
@@ -1201,7 +1268,12 @@ function renderAgentPanel(): void {
   const transitioned = (status & 4) !== 0;
   const atUnloadingBay = nativeStage === 2 && Math.round(frame.positions[id * 2]) === UNLOAD_X;
   const stage = atUnloadingBay ? 1 : nativeStage;
-  const stateLabel = transitioned && waiting && atUnloadingBay
+  const palletMotion = palletMotions[id];
+  const stateLabel = palletMotion?.kind === 'pickup' && waiting
+    ? 'LOADING PALLET'
+    : palletMotion?.kind === 'drop' && waiting
+      ? 'PARKING PALLET'
+      : transitioned && waiting && atUnloadingBay
     ? 'HANDOFF'
     : atUnloadingBay && waiting
       ? 'UNLOADING'
@@ -1297,7 +1369,7 @@ function connect(): void {
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
-      resetHandoffAnimations();
+      resetServiceAnimations();
       resetAgentStats();
       clearAgentSelection();
       setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
@@ -1317,7 +1389,7 @@ function connect(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
-    resetHandoffAnimations();
+    resetServiceAnimations();
     resetAgentStats();
     clearAgentSelection();
     palletScene.update(new Set());
@@ -1409,7 +1481,7 @@ stopButton.addEventListener('click', () => {
   paused = true;
   simTime = 0;
   syncPauseButton();
-  resetHandoffAnimations();
+  resetServiceAnimations();
   resetAgentStats();
   sendControl('stop');
   setConnection('stopped', 'SIMULATION // STOPPED');

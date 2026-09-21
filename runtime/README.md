@@ -77,5 +77,8 @@ After that transition, the native runtime holds the agent in its bay for five
 additional simulation steps before allowing it to leave. The renderer keeps the
 cargo on the moving pallet during entry and starts the arm on the first confirmed
 waiting step in the bay.
+Pickup and return each hold the agent for two additional native steps. During
+those holds the browser lifts or lowers the pallet using interpolated simulation
+time, so the handling motion stays synchronized at every playback speed.
 Completed task templates return to the randomized queue with a new assignment
 ID, so task generation continues for the lifetime of the simulator.

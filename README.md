@@ -16,6 +16,9 @@ pallet and carries it into the service area while the robot returns the empty
 pallet. The robot remains in the bay for five additional simulation steps during
 the handoff so the transfer stays visually readable. The arm starts only after
 the robot has completed its entry and produced its first stationary bay tick.
+Picking up a loaded pallet and parking the empty pallet each take two additional
+simulation steps; the rendered pallet rises and lowers smoothly during those
+steps at every playback speed.
 
 Click a robot or its carried pallet to open the right-side inspector. It shows
 the assigned task and pallet, all three route goals, the active task stage, and
@@ -63,9 +66,9 @@ the current machine completed this
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed three-goal tasks | 630 |
-| native runtime | 6.01 s |
-| mean AOTI inference | 5.51 ms |
+| completed three-goal tasks | 602 |
+| native runtime | 5.54 s |
+| mean AOTI inference | 5.12 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

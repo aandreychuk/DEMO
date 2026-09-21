@@ -166,6 +166,7 @@ struct LifelongTask {
   int station_y;
 };
 
+constexpr int kPalletHandlingDwellSteps = 2;
 constexpr int kUnloadingDwellSteps = 5;
 
 std::vector<LifelongTask> load_lifelong_tasks(const std::string& path)
@@ -365,7 +366,8 @@ int main(int argc, char** argv)
     std::vector<long long> agent_task_id(ins.N, -1);
     std::vector<int> task_stage(ins.N, 0);
     std::vector<char> loaded(ins.N, false);
-    std::vector<int> unloading_dwell_remaining(ins.N, 0);
+    std::vector<int> service_dwell_remaining(ins.N, 0);
+    std::vector<char> return_dwell_started(ins.N, false);
     long long completed_tasks = 0;
     long long goal_updates = 0;
     long long next_task_id = 0;
@@ -415,7 +417,8 @@ int main(int argc, char** argv)
           agent_task_id[agent] = next_task_id++;
           task_stage[agent] = 0;
           loaded[agent] = false;
-          unloading_dwell_remaining[agent] = 0;
+          service_dwell_remaining[agent] = 0;
+          return_dwell_started[agent] = false;
           ins.goals[agent] = pallet;
           ++goal_updates;
           return true;
@@ -676,7 +679,7 @@ int main(int argc, char** argv)
           actions[i] = static_cast<int>(
               std::max_element(probs[i].begin(), probs[i].end()) -
               probs[i].begin());
-          if (unloading_dwell_remaining[i] > 0) actions[i] = 0;
+          if (service_dwell_remaining[i] > 0) actions[i] = 0;
         }
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
           std::rotate(history[i].begin(), history[i].begin() + 1,
@@ -715,7 +718,7 @@ int main(int argc, char** argv)
             forbidden.reserve(
                 station_vertices.size() +
                 (loaded[i] ? pallet_vertices.size() : 0) +
-                (unloading_dwell_remaining[i] > 0
+                (service_dwell_remaining[i] > 0
                      ? current[i]->neighbor.size()
                      : 0));
             for (auto* station : station_vertices) {
@@ -733,7 +736,7 @@ int main(int argc, char** argv)
                 }
               }
             }
-            if (unloading_dwell_remaining[i] > 0) {
+            if (service_dwell_remaining[i] > 0) {
               for (auto* neighbor : current[i]->neighbor) {
                 if (std::find(forbidden.begin(), forbidden.end(),
                               neighbor->id) == forbidden.end()) {
@@ -974,8 +977,8 @@ int main(int argc, char** argv)
       bool navigation_changed = false;
       if (lifelong) {
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
-          if (unloading_dwell_remaining[i] > 0) {
-            --unloading_dwell_remaining[i];
+          if (service_dwell_remaining[i] > 0) {
+            --service_dwell_remaining[i];
           }
         }
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
@@ -985,16 +988,23 @@ int main(int argc, char** argv)
             loaded[i] = true;
             pallet_present[task.pallet_id] = false;
             task_stage[i] = 1;
-            unloading_dwell_remaining[i] = 0;
+            service_dwell_remaining[i] = kPalletHandlingDwellSteps;
             ins.goals[i] =
                 ins.G->U[ins.G->width * task.station_y + task.station_x];
             ++goal_updates;
           } else if (task_stage[i] == 1) {
             task_stage[i] = 2;
-            unloading_dwell_remaining[i] = kUnloadingDwellSteps;
+            service_dwell_remaining[i] = kUnloadingDwellSteps;
+            return_dwell_started[i] = false;
             ins.goals[i] = pallet_vertices[task.pallet_id];
             ++goal_updates;
           } else {
+            if (!return_dwell_started[i]) {
+              return_dwell_started[i] = true;
+              service_dwell_remaining[i] = kPalletHandlingDwellSteps;
+              continue;
+            }
+            if (service_dwell_remaining[i] > 0) continue;
             const int completed_task = agent_task[i];
             loaded[i] = false;
             pallet_present[task.pallet_id] = true;
@@ -1002,7 +1012,8 @@ int main(int argc, char** argv)
             pending_tasks.push_back(completed_task);
             agent_task[i] = -1;
             agent_task_id[i] = -1;
-            unloading_dwell_remaining[i] = 0;
+            service_dwell_remaining[i] = 0;
+            return_dwell_started[i] = false;
             ++completed_tasks;
             if (!assign_task(i, current[i])) {
               ins.goals[i] = current[i];
