@@ -104,11 +104,14 @@
           <div><small>PALLETS</small><strong id="editor-pallet-count">792</strong></div>
           <div><small>DENSITY</small><strong id="editor-density">66.7%</strong></div>
         </div>
-        <label class="editor-agent-control" for="editor-agent-count">
-          <span>AGENTS <output id="editor-agent-value">100</output></span>
-          <input id="editor-agent-count" type="range" min="1" max="1000" value="100" step="1">
+        <div class="editor-agent-control">
+          <div class="editor-agent-header">
+            <label for="editor-agent-number">AGENTS</label>
+            <input id="editor-agent-number" type="number" min="1" max="1000" value="100" step="1" required aria-label="Number of agents">
+          </div>
+          <input id="editor-agent-count" type="range" min="1" max="1000" value="100" step="1" aria-label="Number of agents slider">
           <small>1 <span id="editor-agent-limit">1000 MAX</span></small>
-        </label>
+        </div>
         <div id="editor-validation" class="editor-validation valid">
           <span></span><strong>LAYOUT VALID</strong>
           <small>Every pallet has a route to the service aisles.</small>

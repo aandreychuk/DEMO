@@ -689,6 +689,11 @@ function paintEditorCell(cell: { x: number; z: number }): void {
 }
 
 function validateEditorLayout(): { valid: boolean; message: string } {
+  const agentInput = document.querySelector<HTMLInputElement>('#editor-agent-number')!;
+  const requestedAgents = Number(agentInput.value);
+  if (!agentInput.validity.valid || !Number.isInteger(requestedAgents) || requestedAgents < 1 || requestedAgents > MAX_AGENTS) {
+    return { valid: false, message: 'Enter a whole number of agents from 1 to ' + MAX_AGENTS + '.' };
+  }
   if (editorLayout.size === 0) {
     return { valid: false, message: 'Add at least one pallet to generate delivery tasks.' };
   }
@@ -746,7 +751,6 @@ function updateEditorPanel(): void {
   const count = editorLayout.size;
   document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
   document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
-  document.querySelector('#editor-agent-value')!.textContent = editorAgentCount.toLocaleString('en-US');
   document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' MAX';
   const validation = validateEditorLayout();
   const card = document.querySelector<HTMLElement>('#editor-validation')!;
@@ -766,6 +770,7 @@ function enterLayoutEditor(): void {
   editorLayout = new Set(editorOriginal);
   editorAgentCount = agentCount;
   document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(editorAgentCount);
+  document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
   editorHistory = [];
   editorWasPaused = paused;
   if (!paused) sendControl('pause');
@@ -2897,6 +2902,17 @@ document.querySelector('#layout-editor-button')!.addEventListener('click', enter
 
 document.querySelector<HTMLInputElement>('#editor-agent-count')!.addEventListener('input', (event) => {
   editorAgentCount = Number((event.currentTarget as HTMLInputElement).value);
+  document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
+  updateEditorPanel();
+});
+
+document.querySelector<HTMLInputElement>('#editor-agent-number')!.addEventListener('input', (event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const value = Number(input.value);
+  if (input.validity.valid && Number.isInteger(value) && value >= 1 && value <= MAX_AGENTS) {
+    editorAgentCount = value;
+    document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(value);
+  }
   updateEditorPanel();
 });
 
