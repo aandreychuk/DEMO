@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const width = 44;
 const height = 33;
-const count = 100;
+const count = Number(process.argv[2] ?? 100);
 const cells = width * height;
 const wasm = await WebAssembly.instantiate(
   await readFile(resolve('public/runtime/mapf-core.wasm')),

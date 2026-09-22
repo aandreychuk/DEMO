@@ -536,6 +536,11 @@ int main(int argc, char** argv)
       tow_position = tow_depot;
 
       assign_task = [&](int agent, Vertex* current_position) {
+        bool has_free_pallet = false;
+        for (char reserved : pallet_reserved) {
+          if (!reserved) { has_free_pallet = true; break; }
+        }
+        if (!has_free_pallet) return false;
         const size_t candidates = pending_tasks.size();
         for (size_t attempt = 0; attempt < candidates; ++attempt) {
           const int task_index = pending_tasks.front();
@@ -567,10 +572,7 @@ int main(int argc, char** argv)
         return false;
       };
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
-        if (!assign_task(i, ins.starts[i])) {
-          throw std::runtime_error(
-              "not enough distinct pallets for initial lifelong tasks");
-        }
+        if (!assign_task(i, ins.starts[i])) ins.goals[i] = ins.starts[i];
       }
     }
     DistTable distances(&ins);
@@ -1406,8 +1408,11 @@ int main(int argc, char** argv)
             return_dwell_started[i] = false;
             task_requires_reload[i] = false;
             ++completed_tasks;
-            if (!assign_task(i, current[i])) {
-              ins.goals[i] = current[i];
+            ins.goals[i] = current[i];
+            for (int offset = 1; offset <= static_cast<int>(ins.N); ++offset) {
+              const int candidate = (i + offset) % static_cast<int>(ins.N);
+              if (agent_task[candidate] < 0 && !failed[candidate] &&
+                  assign_task(candidate, current[candidate])) break;
             }
           }
           priorities[i] -= std::floor(priorities[i]);

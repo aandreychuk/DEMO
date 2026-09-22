@@ -95,6 +95,11 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .editor-stats > div { padding: 13px; background: rgba(7, 21, 32, .9); }
 .editor-stats small { display: block; color: #567286; font: 600 7px 'IBM Plex Mono', monospace; letter-spacing: .12em; }
 .editor-stats strong { display: block; margin-top: 6px; color: #e4f8ff; font: 500 18px 'IBM Plex Mono', monospace; }
+.editor-agent-control { display: block; margin-top: 18px; color: #7797aa; font: 600 8px 'IBM Plex Mono', monospace; letter-spacing: .12em; }
+.editor-agent-control > span, .editor-agent-control > small { display: flex; justify-content: space-between; align-items: center; }
+.editor-agent-control output { font-size: 16px; letter-spacing: 0; }
+.editor-agent-control input { display: block; margin: 14px 0 9px; }
+.editor-agent-control > small { color: #567286; font-size: 8px; }
 .editor-validation { margin-top: 12px; padding: 12px; border: 1px solid rgba(83, 245, 193, .16); border-radius: 8px; background: rgba(31, 138, 112, .08); }
 .editor-validation > span { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #58f2ad; box-shadow: 0 0 10px #58f2ad; }
 .editor-validation strong { color: #75efca; font: 600 8px 'IBM Plex Mono', monospace; letter-spacing: .1em; }

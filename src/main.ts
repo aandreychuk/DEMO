@@ -21,7 +21,7 @@ const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
 const CELL_SIZE = 1.056;
 const PALLET_FOOTPRINT = 0.792;
-const MAX_AGENTS = 100;
+const MAX_AGENTS = 1000;
 const UNLOAD_X = MAP_WIDTH - 3;
 const UNLOAD_MIN_Z = 1;
 const UNLOAD_MAX_Z = MAP_DEPTH - 2;
@@ -227,6 +227,7 @@ let editorAwaitingApply = false;
 let editorWasPaused = false;
 let editorOriginal = new Set<string>();
 let editorLayout = new Set<string>();
+let editorAgentCount = agentCount;
 let editorHistory: Set<string>[] = [];
 let editorPaintMode: 'add' | 'remove' | null = null;
 let editorLastPainted = '';
@@ -688,24 +689,19 @@ function paintEditorCell(cell: { x: number; z: number }): void {
 }
 
 function validateEditorLayout(): { valid: boolean; message: string } {
-  if (editorLayout.size < MAX_AGENTS) {
-    return { valid: false, message: `At least ${MAX_AGENTS} pallets are required for ${MAX_AGENTS} agents.` };
+  if (editorLayout.size === 0) {
+    return { valid: false, message: 'Add at least one pallet to generate delivery tasks.' };
   }
   const interiorRows = MAP_DEPTH - 2;
   const sideAisleCells = interiorRows * 2;
-  const interiorPalletCount = [...editorLayout]
-    .map(parsePalletCellKey)
-    .filter(({ z }) => z > 0 && z < MAP_DEPTH - 1)
-    .length;
   const reservedApproachCells = [REPAIR_Z, TOW_DEPOT_Z]
     .filter((z) => z > 0 && z < MAP_DEPTH - 1)
     .length;
   const availableStartCells = sideAisleCells
     + (STORAGE_MAX_X - STORAGE_MIN_X + 1) * interiorRows
-    - reservedApproachCells
-    - interiorPalletCount;
-  if (availableStartCells < MAX_AGENTS) {
-    return { valid: false, message: `The layout leaves only ${availableStartCells} robot start cells.` };
+    - reservedApproachCells;
+  if (availableStartCells < editorAgentCount) {
+    return { valid: false, message: 'The map has only ' + availableStartCells + ' robot start cells.' };
   }
   const reachable = new Set<string>();
   const queue: Array<{ x: number; z: number }> = [];
@@ -750,6 +746,8 @@ function updateEditorPanel(): void {
   const count = editorLayout.size;
   document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
   document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
+  document.querySelector('#editor-agent-value')!.textContent = editorAgentCount.toLocaleString('en-US');
+  document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' MAX';
   const validation = validateEditorLayout();
   const card = document.querySelector<HTMLElement>('#editor-validation')!;
   card.classList.toggle('invalid', !validation.valid);
@@ -766,6 +764,8 @@ function enterLayoutEditor(): void {
   editorAwaitingApply = false;
   editorOriginal = new Set(palletCells.map(({ x, z }) => palletCellKey(x, z)));
   editorLayout = new Set(editorOriginal);
+  editorAgentCount = agentCount;
+  document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(editorAgentCount);
   editorHistory = [];
   editorWasPaused = paused;
   if (!paused) sendControl('pause');
@@ -823,7 +823,8 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
     syncPauseButton();
     sendControl('run');
   }
-  setConnection(live ? 'live' : 'fallback', live ? 'FASTDMM // SIMULATOR' : 'DEMO // RECONNECTING');
+  if (live) setRuntimeConnection();
+  else setConnection('fallback', 'DEMO // RECONNECTING');
 }
 
 function goodsSlotOffset(slot: number): { x: number; z: number } {
@@ -2614,13 +2615,19 @@ function syncDocumentActivity(): void {
 }
 
 function setAgentCount(count: number): void {
-  agentCount = Math.min(MAX_AGENTS, count);
+  agentCount = Math.max(1, Math.min(MAX_AGENTS, count));
   if (selectedAgentId >= agentCount) clearAgentSelection();
   setThinInstanceCount(robotMesh, agentCount);
   setThinInstanceCount(agentPicker, agentCount);
   agentsValue.textContent = agentCount.toLocaleString('en-US');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
-  if ([...select.options].some((option) => Number(option.value) === agentCount)) select.value = String(agentCount);
+  select.querySelector('option[data-custom-agent-count]')?.remove();
+  if (![...select.options].some((option) => Number(option.value) === agentCount)) {
+    const option = new Option(String(agentCount), String(agentCount));
+    option.dataset.customAgentCount = '';
+    select.add(option);
+  }
+  select.value = String(agentCount);
 }
 
 function sendControl(action: string, extra: Record<string, unknown> = {}): void {
@@ -2888,6 +2895,11 @@ document.querySelector('#reset-camera')!.addEventListener('click', () => {
 
 document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
 
+document.querySelector<HTMLInputElement>('#editor-agent-count')!.addEventListener('input', (event) => {
+  editorAgentCount = Number((event.currentTarget as HTMLInputElement).value);
+  updateEditorPanel();
+});
+
 document.querySelector('#editor-undo')!.addEventListener('click', () => {
   const previous = editorHistory.pop();
   if (!previous) return;
@@ -2930,6 +2942,7 @@ document.querySelector('#editor-apply')!.addEventListener('click', () => {
   editorMessage.classList.remove('error');
   updateEditorPanel();
   sendControl('layout', {
+    agents: editorAgentCount,
     pallets: palletRecordsFromKeys(editorLayout).map(({ x, z }) => ({ x, y: z })),
   });
 });

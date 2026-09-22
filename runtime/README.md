@@ -4,9 +4,9 @@
 
 `export_fastdmm_onnx.py` exports the same trusted checkpoint as a fixed
 100-agent ONNX graph for ONNX Runtime Web. The fixed shape keeps WebGPU graph
-creation predictable; the browser pads unused slots for the 25 and 50 agent
-presets. Alongside `observations` and `chat`, the browser supplies a boolean
-`neighbor_padding[1,100,13]` tensor computed from the validated observation
+creation predictable; the browser pads unused slots below 100 agents and loads a separate 1000-slot
+graph for larger runs. Alongside `observations` and `chat`, the browser supplies a boolean
+`neighbor_padding[1,N,13]` tensor computed from the validated observation
 tokens. Keeping that trivial reduction outside ONNX removes its casts and
 reduction from the hot graph. The exporter writes an inference-only model and a
 metadata sidecar,
@@ -19,6 +19,11 @@ python runtime/export_fastdmm_onnx.py \
   --output public/runtime/fastdmm-0.8m.onnx \
   --agents 100
 ```
+
+The browser also ships 1000-slot FP32, FP16 and optimized WebGPU FP16 graphs.
+They preserve the same learned weights and communication across all agents.
+Regenerate them from the validated 100-slot exports with
+python runtime/resize_fastdmm_onnx.py --agents 1000.
 
 The deployment model rewrites the centered one-hot logarithm as its exact two
 constant values before export. This avoids the unsafe `log(one_hot)` folding

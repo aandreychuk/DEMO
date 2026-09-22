@@ -1,7 +1,7 @@
 // Dense browser-side MAPF primitives. AssemblyScript keeps the hot loops
 // (cost-to-go BFS, observation tokenization and collision shielding) in WASM.
 
-const MAX_AGENTS: i32 = 100;
+const MAX_AGENTS: i32 = 1000;
 const OBS_TOKENS: i32 = 256;
 const CHAT_SLOTS: i32 = 13;
 const ACTIONS: i32 = 5;
@@ -34,6 +34,7 @@ let executedActions = new Int32Array(MAX_AGENTS);
 let distances = new Int16Array(0);
 let queue = new Int32Array(0);
 let agentAt = new Int32Array(0);
+let failedAt = new Int32Array(0);
 let occupiedNext = new Int32Array(0);
 let preference = new Int32Array(MAX_AGENTS * ACTIONS);
 let preferenceCount = new Int32Array(MAX_AGENTS);
@@ -52,6 +53,7 @@ export function configure(mapWidth: i32, mapHeight: i32, agentCount: i32): void 
   distances = new Int16Array(MAX_AGENTS * cells);
   queue = new Int32Array(cells);
   agentAt = new Int32Array(cells);
+  failedAt = new Int32Array(cells);
   occupiedNext = new Int32Array(cells);
   positions.fill(-1);
   goals.fill(-1);
@@ -125,9 +127,7 @@ function blockedFor(agent: i32, cell: i32): bool {
   if (cell == towCell || cell == towPreviousCell) {
     if (cell != positions[agent]) return true;
   }
-  for (let other: i32 = 0; other < agents; ++other) {
-    if (other != agent && failed[other] != 0 && positions[other] == cell) return true;
-  }
+  if (failedAt[cell] >= 0 && failedAt[cell] != agent) return true;
   return false;
 }
 
@@ -210,10 +210,14 @@ export function buildInputs(): void {
   observations.fill(PAD_TOKEN);
   chat.fill(-1);
   agentAt.fill(-1);
+  failedAt.fill(-1);
   for (let i: i32 = 0; i < agents; ++i) {
-    if (positions[i] >= 0 && positions[i] < cells) agentAt[positions[i]] = i;
-    computeDistance(i);
+    if (positions[i] >= 0 && positions[i] < cells) {
+      agentAt[positions[i]] = i;
+      if (failed[i] != 0) failedAt[positions[i]] = i;
+    }
   }
+  for (let i: i32 = 0; i < agents; ++i) computeDistance(i);
   const candidates = new Int32Array(MAX_AGENTS);
   for (let agent: i32 = 0; agent < agents; ++agent) {
     const distanceOffset = agent * cells;

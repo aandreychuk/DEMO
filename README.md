@@ -5,7 +5,7 @@ runtime is fully self-contained: ONNX Runtime Web executes the 0.8M policy with
 WebGPU, a compact WebAssembly core builds observations and performs BFS and
 PIBT collision shielding, and a Web Worker owns the lifelong simulation. The
 main thread receives the same compact binary frames used by the native runtime
-and renders the 100-agent warehouse with Babylon.js thin instances. When
+and renders warehouses with up to 1000 agents using Babylon.js thin instances. When
 WebGPU is unavailable, ONNX Runtime automatically falls back to single-threaded
 WASM.
 
@@ -66,11 +66,11 @@ pnpm install
 pnpm dev -- --host 127.0.0.1 --port 4173
 ```
 
-Open `http://127.0.0.1:4173/`. The first load downloads the 5.3 MiB ONNX model;
-the header reports `FASTDMM // WEBGPU` or `FASTDMM // WASM` after the selected
-execution provider is ready. The 25, 50, and 100 agent presets share a fixed
-100-slot ONNX graph, padding inactive slots so changing the active count does
-not re-export or reload the policy.
+Open the local URL shown by Vite. The header reports FASTDMM // WEBGPU or
+FASTDMM // WASM after the selected execution provider is ready. Runs with up
+to 100 agents keep the original 100-slot ONNX graph. Selecting 101–1000 agents
+in the layout editor loads a separate 1000-slot graph on demand and pads unused
+slots. This increases inference time and GPU memory use at larger counts.
 
 For a static self-hosted build:
 
@@ -94,8 +94,10 @@ grid axis. WASD pans the view and the wheel zooms without changing its angle.
 Click or drag over storage cells, including the two outer rows, to add and remove
 pallets; undo, reset, and clear tools make larger changes practical. The editor
 checks loaded-pallet access before enabling apply. Applying a valid layout keeps
-it in the current browser session, regenerates 100 deterministic starts and
-4,000 tasks, then restarts the Worker simulation.
+it in the current browser session, regenerates 1000 deterministic starts and
+4,000 tasks, then restarts the Worker simulation. The agent slider runs from
+1 to 1000, independent of pallet density: unloaded robots may start under
+pallets, and robots wait for a free pallet when all are assigned.
 
 ## Optional native AOTI runtime
 
@@ -119,7 +121,7 @@ pnpm dev -- --host 127.0.0.1 --port 4173
 
 ## Verified 100-agent lifelong run
 
-The included 44×33 warehouse has 792 pallet cells, filling exactly two thirds of
+The included 44×33 warehouse has 713 pallet cells, filling about 60% of
 the storage grid while preserving load-bearing aisles. It also has 31 unloading
 cells along one full inner edge and 31 batch-loading cells shifted to one end of
 the opposite edge. The two cells at the other end hold the tow depot and repair

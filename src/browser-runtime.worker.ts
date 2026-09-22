@@ -3,7 +3,8 @@ import scenarioText from '../runtime/scenarios/warehouse-lifelong-44x33.scen?raw
 import tasksText from '../runtime/scenarios/warehouse-lifelong-44x33.tasks.tsv?raw';
 import initialLayout from '../runtime/scenarios/warehouse-lifelong-44x33.layout.json';
 
-const MAX_AGENTS = 100;
+const MAX_AGENTS = 1000;
+const SMALL_POLICY_SLOTS = 100;
 const OBS_TOKENS = 256;
 const CHAT_SLOTS = 13;
 const ACTIONS = 5;
@@ -107,10 +108,10 @@ let taskTemplates = parseTasks(tasksText);
 let core: WasmCore;
 let session: ort.InferenceSession;
 let booted = false;
-let requestedAgentCount = MAX_AGENTS;
+let requestedAgentCount = SMALL_POLICY_SLOTS;
 let backend = 'WASM';
 let backendAdapter = '';
-let agentCount = MAX_AGENTS;
+let agentCount = SMALL_POLICY_SLOTS;
 let speed = 1;
 let paused = false;
 let timer: number | null = null;
@@ -126,18 +127,28 @@ let inferenceWindowIndex = 0;
 let inferenceWindowCount = 0;
 let inferenceWindowTotal = 0;
 
-// The model shape is fixed at 100 agents. Reuse the CPU-side input tensors for
-// every tick instead of allocating three typed arrays and three Tensor wrappers
-// per inference. This also keeps long-running browser simulations out of the
-// garbage collector's allocation path.
-const observationInput = new BigInt64Array(MAX_AGENTS * OBS_TOKENS);
-const chatInput = new BigInt64Array(MAX_AGENTS * CHAT_SLOTS);
-const neighborPaddingInput = new Uint8Array(MAX_AGENTS * CHAT_SLOTS);
-const inferenceFeeds = {
-  observations: new ort.Tensor('int64', observationInput, [1, MAX_AGENTS, OBS_TOKENS]),
-  chat: new ort.Tensor('int64', chatInput, [1, MAX_AGENTS, CHAT_SLOTS]),
-  neighbor_padding: new ort.Tensor('bool', neighborPaddingInput, [1, MAX_AGENTS, CHAT_SLOTS]),
+// Keep the fast 100-slot policy for small runs and load 1000 slots on demand.
+let modelSlots = SMALL_POLICY_SLOTS;
+let observationInput = new BigInt64Array(modelSlots * OBS_TOKENS);
+let chatInput = new BigInt64Array(modelSlots * CHAT_SLOTS);
+let neighborPaddingInput = new Uint8Array(modelSlots * CHAT_SLOTS);
+let inferenceFeeds = {
+  observations: new ort.Tensor('int64', observationInput, [1, modelSlots, OBS_TOKENS]),
+  chat: new ort.Tensor('int64', chatInput, [1, modelSlots, CHAT_SLOTS]),
+  neighbor_padding: new ort.Tensor('bool', neighborPaddingInput, [1, modelSlots, CHAT_SLOTS]),
 };
+
+function configureModelInputs(slots: number): void {
+  modelSlots = slots;
+  observationInput = new BigInt64Array(slots * OBS_TOKENS);
+  chatInput = new BigInt64Array(slots * CHAT_SLOTS);
+  neighborPaddingInput = new Uint8Array(slots * CHAT_SLOTS);
+  inferenceFeeds = {
+    observations: new ort.Tensor('int64', observationInput, [1, slots, OBS_TOKENS]),
+    chat: new ort.Tensor('int64', chatInput, [1, slots, CHAT_SLOTS]),
+    neighbor_padding: new ort.Tensor('bool', neighborPaddingInput, [1, slots, CHAT_SLOTS]),
+  };
+}
 
 let positions = new Int32Array(MAX_AGENTS);
 let goals = new Int32Array(MAX_AGENTS);
@@ -240,14 +251,14 @@ function shuffled<T>(values: T[], random: () => number): T[] {
 function rebuildScenarioForLayout(): void {
   const random = mulberry32(800_000);
   const services = new Set(serviceCells());
-  const occupied = new Set(layout.pallets.map((pallet) => cell(pallet.x, pallet.y)));
   const pool: number[] = [];
   for (let y = 1; y < map.height - 1; y++) {
     for (let x = 1; x < map.width - 1; x++) {
       const index = cell(x, y);
-      if (!map.blocked[index] && !services.has(index) && !occupied.has(index)) pool.push(index);
+      if (!map.blocked[index] && !services.has(index)) pool.push(index);
     }
   }
+  if (pool.length < MAX_AGENTS) throw new Error('The map has fewer than 1000 robot start cells.');
   const generatedStarts = shuffled(pool, random).slice(0, MAX_AGENTS);
   scenarioStarts.splice(0, scenarioStarts.length, ...generatedStarts);
   const stations = layout.stations;
@@ -274,13 +285,16 @@ async function loadWasm(): Promise<WasmCore> {
   return result.instance.exports as unknown as WasmCore;
 }
 
-async function loadPolicy(): Promise<ort.InferenceSession> {
+async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
-  const fp32ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
-  const fp16ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-fp16.onnx`, self.location.origin).href;
-  const fusedFp32ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-webgpu.onnx`, self.location.origin).href;
-  const fusedFp16ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-webgpu-fp16.onnx`, self.location.origin).href;
+  const suffix = slots > SMALL_POLICY_SLOTS ? '-1000' : '';
+  const fp32ModelUrl = new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m' + suffix + '.onnx', self.location.origin).href;
+  const fp16ModelUrl = new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m-fp16' + suffix + '.onnx', self.location.origin).href;
+  const fusedFp32ModelUrl = slots > SMALL_POLICY_SLOTS ? fp32ModelUrl
+    : new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m-webgpu.onnx', self.location.origin).href;
+  const fusedFp16ModelUrl = slots > SMALL_POLICY_SLOTS ? new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m-webgpu-fp16-1000.onnx', self.location.origin).href
+    : new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m-webgpu-fp16.onnx', self.location.origin).href;
   const gpu = (navigator as Navigator & { gpu?: BrowserGpu }).gpu;
   if (gpu) {
     let device: BrowserGpuDevice | null = null;
@@ -373,6 +387,7 @@ function initializePallets(): void {
 }
 
 function assignTask(agent: number): boolean {
+  if (palletReserved.every((reserved) => reserved !== 0)) return false;
   const candidates = pendingTasks.length;
   for (let attempt = 0; attempt < candidates; attempt++) {
     const index = pendingTasks[pendingCursor];
@@ -401,7 +416,8 @@ function assignTask(agent: number): boolean {
 
 function resetSimulation(count: number): void {
   generation++;
-  agentCount = Math.max(2, Math.min(MAX_AGENTS, count));
+  agentCount = Math.max(1, Math.min(MAX_AGENTS, count));
+  if (scenarioStarts.length < agentCount) throw new Error("Not enough robot start cells.");
   positions = new Int32Array(MAX_AGENTS);
   goals = new Int32Array(MAX_AGENTS);
   taskIndex = new Int32Array(MAX_AGENTS); taskIndex.fill(-1);
@@ -424,7 +440,7 @@ function resetSimulation(count: number): void {
   nextTaskId = 0;
   for (let i = 0; i < agentCount; i++) positions[i] = scenarioStarts[i];
   for (let i = 0; i < agentCount; i++) {
-    if (!assignTask(i)) throw new Error('Not enough distinct pallets for active agents.');
+    if (!assignTask(i)) goals[i] = positions[i];
   }
   towPosition = cell(layout.towDepot.x, layout.towDepot.y);
   towPrevious = -1;
@@ -562,11 +578,11 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
   syncCore();
   core.buildInputs();
   const memory = core.memory.buffer;
-  const obs32 = new Int32Array(memory, core.observationsPointer(), MAX_AGENTS * OBS_TOKENS);
-  const chat32 = new Int32Array(memory, core.chatPointer(), MAX_AGENTS * CHAT_SLOTS);
+  const obs32 = new Int32Array(memory, core.observationsPointer(), modelSlots * OBS_TOKENS);
+  const chat32 = new Int32Array(memory, core.chatPointer(), modelSlots * CHAT_SLOTS);
   for (let i = 0; i < obs32.length; i++) observationInput[i] = BigInt(obs32[i]);
   for (let i = 0; i < chat32.length; i++) chatInput[i] = BigInt(chat32[i]);
-  for (let agent = 0; agent < MAX_AGENTS; agent++) {
+  for (let agent = 0; agent < modelSlots; agent++) {
     for (let slot = 0; slot < CHAT_SLOTS; slot++) {
       let padded = 1;
       const start = agent * OBS_TOKENS + 121 + slot * 10;
@@ -595,7 +611,7 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
       lastInferenceMs = elapsed;
     }
     const values = output.action_probabilities.data as Float32Array;
-    new Float32Array(core.memory.buffer, core.probabilitiesPointer(), MAX_AGENTS * ACTIONS).set(values);
+    new Float32Array(core.memory.buffer, core.probabilitiesPointer(), modelSlots * ACTIONS).set(values);
   } finally {
     // ONNX Runtime keeps backend resources alive until output tensors are
     // disposed. Omitting this in an endless simulation gradually slows WebGPU.
@@ -643,7 +659,12 @@ function processTaskArrivals(): void {
       palletReserved[palletId] = 0; taskIndex[i] = -1; taskIds[i] = -1;
       dwell[i] = 0; reloadStarted[i] = 0; returnStarted[i] = 0; requiresReload[i] = 0;
       completedTasks++;
-      if (!assignTask(i)) goals[i] = positions[i];
+      goals[i] = positions[i];
+      // A free pallet goes to a waiting robot; tasks remain with robots once assigned.
+      for (let offset = 1; offset <= agentCount; offset++) {
+        const candidate = (i + offset) % agentCount;
+        if (taskIndex[candidate] < 0 && !failed[candidate] && assignTask(candidate)) break;
+      }
     }
   }
 }
@@ -758,23 +779,64 @@ function failAgent(agent: number): void {
   emitFrame();
 }
 
-function applyLayout(raw: Array<{ x: number; y: number }>): void {
+function applyLayout(raw: Array<{ x: number; y: number }>, count: number): void {
   const unique = new Map<string, { x: number; y: number }>();
   for (const entry of raw) unique.set(`${entry.x},${entry.y}`, entry);
-  if (unique.size < MAX_AGENTS) throw new Error(`At least ${MAX_AGENTS} pallets are required.`);
+  if (unique.size < 1) throw new Error('At least one pallet is required.');
   const pallets = [...unique.values()].sort((a, b) => a.x - b.x || a.y - b.y).map((entry, id) => ({
     id, x: entry.x, y: entry.y, cargoType: (entry.x * 31 + entry.y * 17) % 3,
   }));
   layout = { ...layout, pallets };
   rebuildScenarioForLayout();
-  resetSimulation(agentCount);
+  resetSimulation(count);
+}
+
+let reconfiguring = false;
+
+async function reconfigure(count: number, pallets: Array<{ x: number; y: number }> | null): Promise<void> {
+  if (reconfiguring) return;
+  reconfiguring = true;
+  const wasPaused = paused;
+  paused = true;
+  generation++;
+  schedule();
+  count = Number.isFinite(count) ? Math.max(1, Math.min(MAX_AGENTS, Math.floor(count))) : agentCount;
+  post({ type: 'status', state: 'planning', agents: count });
+  try {
+    while (stepping) await new Promise<void>((resolve) => workerScope.setTimeout(resolve, 10));
+    const slots = count > SMALL_POLICY_SLOTS ? MAX_AGENTS : SMALL_POLICY_SLOTS;
+    if (slots !== modelSlots) {
+      const nextSession = await loadPolicy(slots);
+      const previous = session;
+      session = nextSession;
+      configureModelInputs(slots);
+      await previous.release();
+    }
+    if (pallets) {
+      applyLayout(pallets, count);
+      post({ type: 'layout-applied', pallets: layout.pallets.length });
+    } else {
+      if (scenarioStarts.length < count) rebuildScenarioForLayout();
+      resetSimulation(count);
+    }
+    paused = false;
+    hello();
+    emitFrame();
+    schedule();
+  } catch (error) {
+    paused = wasPaused;
+    post({ type: pallets ? 'layout-error' : 'error', message: error instanceof Error ? error.message : String(error) });
+    schedule();
+  } finally {
+    reconfiguring = false;
+  }
 }
 
 workerScope.onmessage = (event): void => {
   const message = event.data;
-  if (message.type !== 'control') return;
+  if (message.type !== 'control' || reconfiguring) return;
   if (!booted) {
-    if (message.action === 'load') requestedAgentCount = Math.max(2, Math.min(MAX_AGENTS, Number(message.agents) || MAX_AGENTS));
+    if (message.action === 'load') requestedAgentCount = Math.max(1, Math.min(MAX_AGENTS, Number(message.agents) || MAX_AGENTS));
     else if (message.action === 'speed') speed = Math.max(0.25, Math.min(3, Number(message.value) || 1));
     else if (message.action === 'pause' || message.action === 'stop') paused = true;
     else if (message.action === 'run') paused = false;
@@ -790,23 +852,19 @@ workerScope.onmessage = (event): void => {
     post({ type: 'status', state: 'stopped' }); schedule();
   } else if (message.action === 'fail') failAgent(Number(message.agent));
   else if (message.action === 'load') {
-    paused = true; post({ type: 'status', state: 'planning', agents: Number(message.agents) });
-    resetSimulation(Number(message.agents)); paused = false; hello(); emitFrame(); schedule();
+    void reconfigure(Number(message.agents), null);
   } else if (message.action === 'layout' && Array.isArray(message.pallets)) {
-    try {
-      paused = true; post({ type: 'status', state: 'planning', agents: agentCount });
-      applyLayout(message.pallets); post({ type: 'layout-applied', pallets: layout.pallets.length });
-      paused = false; hello(); emitFrame(); schedule();
-    } catch (error) {
-      paused = false; post({ type: 'layout-error', message: error instanceof Error ? error.message : String(error) }); schedule();
-    }
+    void reconfigure(Number(message.agents) || agentCount, message.pallets);
   }
 };
 
 async function boot(): Promise<void> {
   try {
     post({ type: 'status', state: 'planning', agents: agentCount });
-    [core, session] = await Promise.all([loadWasm(), loadPolicy()]);
+    const slots = requestedAgentCount > SMALL_POLICY_SLOTS ? MAX_AGENTS : SMALL_POLICY_SLOTS;
+    [core, session] = await Promise.all([loadWasm(), loadPolicy(slots)]);
+    if (slots !== modelSlots) configureModelInputs(slots);
+    if (scenarioStarts.length < requestedAgentCount) rebuildScenarioForLayout();
     resetSimulation(requestedAgentCount);
     booted = true;
     hello(); emitFrame(); schedule();
