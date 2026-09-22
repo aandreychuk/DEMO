@@ -96,6 +96,35 @@
         </section>
       </aside>
 
+      <aside id="layout-editor" class="layout-editor glass" hidden>
+        <p class="eyebrow">WAREHOUSE CONFIGURATION</p>
+        <h2>PALLET LAYOUT</h2>
+        <p class="editor-copy">Click a cell to add or remove a pallet. Drag to paint a continuous row.</p>
+        <div class="editor-stats">
+          <div><small>PALLETS</small><strong id="editor-pallet-count">718</strong></div>
+          <div><small>DENSITY</small><strong id="editor-density">66.5%</strong></div>
+        </div>
+        <div id="editor-validation" class="editor-validation valid">
+          <span></span><strong>LAYOUT VALID</strong>
+          <small>Every pallet has a route to the service aisles.</small>
+        </div>
+        <div class="editor-legend">
+          <span><i class="pallet-cell"></i>PALLET</span>
+          <span><i class="aisle-cell"></i>AISLE</span>
+          <span><i class="locked-cell"></i>SERVICE ZONE</span>
+        </div>
+        <div class="editor-tools">
+          <button id="editor-undo" type="button">↶ UNDO</button>
+          <button id="editor-reset" type="button">RESET</button>
+          <button id="editor-clear" type="button">CLEAR</button>
+        </div>
+        <p id="editor-message" class="editor-message">Changes are applied to the local simulator.</p>
+        <div class="editor-actions">
+          <button id="editor-cancel" type="button">CANCEL</button>
+          <button id="editor-apply" class="primary" type="button">APPLY &amp; RESTART</button>
+        </div>
+      </aside>
+
       <section class="controls glass">
         <button id="pause-button" class="primary" type="button"><span id="pause-icon">Ⅱ</span><span id="pause-label">PAUSE</span></button>
         <button id="stop-button" class="stop-button" type="button"><span>■</span><span>STOP</span></button>
@@ -111,6 +140,7 @@
           <span>SPEED <output id="speed-value">1.0×</output></span>
           <input id="speed" type="range" min="0.25" max="3" value="1" step="0.25" />
         </label>
+        <button id="layout-editor-button" class="layout-button" type="button"><span>▦</span><span>LAYOUT</span></button>
         <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
       </section>
 

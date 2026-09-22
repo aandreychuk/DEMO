@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import struct
 import sys
 import time
@@ -21,6 +22,8 @@ from websockets.exceptions import ConnectionClosed
 MAGIC = 0x4D415046
 PROTOCOL = 5
 MAX_AGENTS = 100
+LAYOUT_SEED = 800_000
+TASK_COUNT = 4_000
 
 
 @dataclass(frozen=True)
@@ -298,6 +301,161 @@ class Bridge:
             "--stream",
         ]
 
+    def apply_layout(self, raw_pallets: object) -> int:
+        if not isinstance(raw_pallets, list):
+            raise ValueError("layout payload must contain a pallet list")
+        layout = dict(self.args.layout_data)
+        width = int(layout["width"])
+        height = int(layout["height"])
+        repair = (
+            int(layout["repairStation"]["x"]),
+            int(layout["repairStation"]["y"]),
+        )
+        tow_depot = (
+            int(layout["towDepot"]["x"]),
+            int(layout["towDepot"]["y"]),
+        )
+        recovery_approach = {
+            (repair[0], repair[1] - 1),
+            (tow_depot[0], tow_depot[1] - 1),
+        }
+        pallet_cells: set[tuple[int, int]] = set()
+        for item in raw_pallets:
+            if not isinstance(item, dict):
+                raise ValueError("every pallet must have integer x and y coordinates")
+            x = item.get("x")
+            y = item.get("y")
+            if isinstance(x, bool) or isinstance(y, bool):
+                raise ValueError("pallet coordinates must be integers")
+            if not isinstance(x, int) or not isinstance(y, int):
+                raise ValueError("pallet coordinates must be integers")
+            if not (4 <= x <= width - 5 and 1 <= y <= height - 2):
+                raise ValueError(f"pallet ({x}, {y}) is outside the editable storage grid")
+            if (x, y) in recovery_approach:
+                raise ValueError("repair-station approach cells must remain clear")
+            if (x, y) in pallet_cells:
+                raise ValueError(f"duplicate pallet cell ({x}, {y})")
+            pallet_cells.add((x, y))
+        if len(pallet_cells) < MAX_AGENTS:
+            raise ValueError(f"at least {MAX_AGENTS} pallets are required")
+
+        rows = self.args.map.read_text(encoding="ascii").splitlines()
+        try:
+            map_start = rows.index("map") + 1
+        except ValueError as error:
+            raise ValueError("map file has no grid section") from error
+        grid = rows[map_start : map_start + height]
+        if len(grid) != height or any(len(row) != width for row in grid):
+            raise ValueError("map dimensions do not match the layout")
+        passable = {
+            (x, y)
+            for y, row in enumerate(grid)
+            for x, symbol in enumerate(row)
+            if symbol != "@"
+        }
+        stations = {
+            (int(station["x"]), int(station["y"]))
+            for station in layout["stations"]
+        }
+        reload_stations = {
+            (int(station["x"]), int(station["y"]))
+            for station in layout["reloadStations"]
+        }
+        service_cells = stations | reload_stations | {repair, tow_depot}
+        corridors = passable - pallet_cells - service_cells
+        unload_approaches = {
+            (x - 1, y)
+            for x, y in stations
+            if (x - 1, y) in corridors
+        }
+        reachable = set(unload_approaches)
+        queue = deque(unload_approaches)
+        while queue:
+            x, y = queue.popleft()
+            for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if neighbor in corridors and neighbor not in reachable:
+                    reachable.add(neighbor)
+                    queue.append(neighbor)
+        if not any((x + 1, y) in reachable for x, y in reload_stations):
+            raise ValueError("loading and unloading sides are disconnected")
+        unreachable_pallets = [
+            (x, y)
+            for x, y in pallet_cells
+            if not any(
+                neighbor in reachable
+                for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))
+            )
+        ]
+        if unreachable_pallets:
+            raise ValueError(
+                f"{len(unreachable_pallets)} pallet cells have no loaded route to an aisle"
+            )
+
+        excluded = pallet_cells | service_cells | recovery_approach
+        starts_pool = [
+            (x, y)
+            for y in range(1, height - 1)
+            for x in range(1, width - 1)
+            if (x, y) in passable and (x, y) not in excluded
+        ]
+        if len(starts_pool) < MAX_AGENTS:
+            raise ValueError("layout leaves fewer than 100 valid robot start cells")
+
+        pallets = sorted(pallet_cells)
+        pallet_records = [
+            {"id": index, "x": x, "y": y, "cargoType": (x * 31 + y * 17) % 3}
+            for index, (x, y) in enumerate(pallets)
+        ]
+        layout["pallets"] = pallet_records
+
+        rng = random.Random(LAYOUT_SEED)
+        starts = rng.sample(starts_pool, MAX_AGENTS)
+        goals = starts[1:] + starts[:1]
+        scenario_lines = ["version 1"]
+        for (sx, sy), (gx, gy) in zip(starts, goals):
+            scenario_lines.append(
+                f"0\t{self.args.map.name}\t{width}\t{height}\t{sx}\t{sy}\t{gx}\t{gy}\t0.0"
+            )
+
+        station_list = sorted(stations)
+        reload_list = sorted(reload_stations)
+        task_lines = [
+            "task_id\tpallet_id\tpallet_x\tpallet_y\tstation_x\tstation_y"
+            "\treload_x\treload_y"
+        ]
+        task_id = 0
+        while task_id < TASK_COUNT:
+            cycle = list(enumerate(pallets))
+            rng.shuffle(cycle)
+            for pallet_id, (px, py) in cycle:
+                if task_id >= TASK_COUNT:
+                    break
+                sx, sy = rng.choice(station_list)
+                rx, ry = rng.choice(reload_list)
+                task_lines.append(
+                    f"{task_id}\t{pallet_id}\t{px}\t{py}\t{sx}\t{sy}\t{rx}\t{ry}"
+                )
+                task_id += 1
+
+        outputs = (
+            (self.args.layout, json.dumps(layout, indent=2) + "\n", "utf-8"),
+            (self.args.scenario, "\n".join(scenario_lines) + "\n", "ascii"),
+            (self.args.tasks, "\n".join(task_lines) + "\n", "ascii"),
+        )
+        temporary: list[tuple[Path, Path]] = []
+        try:
+            for path, content, encoding in outputs:
+                temp = path.with_name(path.name + ".tmp")
+                temp.write_text(content, encoding=encoding, newline="\n")
+                temporary.append((temp, path))
+            for temp, path in temporary:
+                temp.replace(path)
+        finally:
+            for temp, _ in temporary:
+                temp.unlink(missing_ok=True)
+        self.args.layout_data = layout
+        return len(pallets)
+
     async def start_native(
         self, count: int
     ) -> tuple[NativeSession, NativeFrame, float]:
@@ -457,6 +615,28 @@ class Bridge:
                     elif action == "load":
                         requested = int(message.get("agents", count))
                         reload_count = min(MAX_AGENTS, max(2, requested))
+                    elif action == "layout":
+                        try:
+                            async with self.start_lock:
+                                pallet_count = self.apply_layout(message.get("pallets"))
+                            await socket.send(
+                                json.dumps(
+                                    {
+                                        "type": "layout-applied",
+                                        "pallets": pallet_count,
+                                    }
+                                )
+                            )
+                            reload_count = count
+                        except (OSError, TypeError, ValueError) as error:
+                            await socket.send(
+                                json.dumps(
+                                    {
+                                        "type": "layout-error",
+                                        "message": str(error),
+                                    }
+                                )
+                            )
 
                 await session.close()
                 session = None

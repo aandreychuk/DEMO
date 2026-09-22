@@ -84,6 +84,12 @@ speed, layout-independent WASD movement, mouse orbit, and wheel zoom remain
 browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
+The `LAYOUT` control opens a fixed-angle overhead pallet editor. Click or drag
+over storage cells to add and remove pallets; undo, reset, and clear tools make
+larger changes practical. The editor checks loaded-pallet access before enabling
+apply. Applying a valid layout saves it locally, regenerates 100 deterministic
+starts and 4,000 tasks, then restarts the native simulation.
+
 ## Verified 100-agent lifelong run
 
 The included 44×32 warehouse has 718 pallet cells, filling about two thirds of

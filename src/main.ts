@@ -33,6 +33,12 @@ const REPAIR_X = 22;
 const REPAIR_Z = MAP_DEPTH - 1;
 const TOW_DEPOT_X = REPAIR_X - 1;
 const TOW_DEPOT_Z = REPAIR_Z;
+const STORAGE_MIN_X = 4;
+const STORAGE_MAX_X = MAP_WIDTH - 5;
+const STORAGE_MIN_Z = 1;
+const STORAGE_MAX_Z = MAP_DEPTH - 2;
+const STORAGE_CELL_COUNT = (STORAGE_MAX_X - STORAGE_MIN_X + 1)
+  * (STORAGE_MAX_Z - STORAGE_MIN_Z + 1);
 const PALLET_CAPACITY = 12;
 const PALLET_DWELL_TICKS = 2;
 const TOW_LOADING_TICKS = 3;
@@ -128,7 +134,7 @@ scene.ambientColor = new Color3(0.09, 0.15, 0.2);
 const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 37.5, new Vector3(0, 0, 0), scene);
 camera.attachControl(canvas, true);
 camera.lowerRadiusLimit = 12;
-camera.upperRadiusLimit = 68;
+camera.upperRadiusLimit = 84;
 camera.lowerBetaLimit = 0.28;
 camera.upperBetaLimit = 1.38;
 camera.wheelPrecision = 28;
@@ -154,9 +160,10 @@ floor.position.y = -0.05;
 
 createGrid();
 const palletCells = buildPalletCells();
-const palletInventory = new Uint8Array(palletCells.length);
+let palletInventory = new Uint8Array(palletCells.length);
 palletInventory.fill(PALLET_CAPACITY);
 const palletScene = createWarehousePallets(palletCells);
+const editorCursor = createEditorCursor();
 const conveyorScene = createConveyor();
 const unloadingScene = createUnloadingZone(conveyorScene);
 const reloadingScene = createReloadingZone();
@@ -198,6 +205,20 @@ let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let palletInventoryRevision = 0;
 let selectedAgentId = -1;
+let editorActive = false;
+let editorAwaitingApply = false;
+let editorWasPaused = false;
+let editorOriginal = new Set<string>();
+let editorLayout = new Set<string>();
+let editorHistory: Set<string>[] = [];
+let editorPaintMode: 'add' | 'remove' | null = null;
+let editorLastPainted = '';
+let editorCameraState = {
+  alpha: camera.alpha,
+  beta: camera.beta,
+  radius: camera.radius,
+  target: camera.target.clone(),
+};
 const pendingHandoffs: Array<PendingHandoff | null> = Array.from(
   { length: MAX_AGENTS },
   () => null,
@@ -244,6 +265,7 @@ robotLoad.deck.thinInstanceEnablePicking = true;
 for (const cargo of robotLoad.cargo) cargo.thinInstanceEnablePicking = true;
 
 scene.onPointerObservable.add((pointerInfo) => {
+  if (editorActive) return;
   const pickInfo = pointerInfo.pickInfo;
   if (pointerInfo.type !== PointerEventTypes.POINTERDOWN || !pickInfo) return;
   const instance = pickInfo.thinInstanceIndex;
@@ -270,6 +292,30 @@ scene.onPointerObservable.add((pointerInfo) => {
   }
   if (agent >= 0 && agent < agentCount) selectAgent(agent);
 }, PointerEventTypes.POINTERDOWN);
+
+scene.onPointerObservable.add((pointerInfo) => {
+  if (!editorActive) return;
+  const cell = pickEditorCell();
+  if (pointerInfo.type === PointerEventTypes.POINTERMOVE) {
+    updateEditorCursor(cell);
+    const event = pointerInfo.event as PointerEvent;
+    if (editorPaintMode && (event.buttons & 1) !== 0 && cell) paintEditorCell(cell);
+    return;
+  }
+  if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+    if (!cell) return;
+    pushEditorHistory();
+    const key = palletCellKey(cell.x, cell.z);
+    editorPaintMode = editorLayout.has(key) ? 'remove' : 'add';
+    editorLastPainted = '';
+    paintEditorCell(cell);
+    return;
+  }
+  if (pointerInfo.type === PointerEventTypes.POINTERUP) {
+    editorPaintMode = null;
+    editorLastPainted = '';
+  }
+}, PointerEventTypes.POINTERDOWN | PointerEventTypes.POINTERMOVE | PointerEventTypes.POINTERUP);
 
 function createRobotMesh(): Mesh {
   const base = MeshBuilder.CreateCylinder('agent-base', {
@@ -501,6 +547,229 @@ function buildPalletCells(): PalletCell[] {
     }
   }
   return result;
+}
+
+function createEditorCursor(): Mesh {
+  const cursor = MeshBuilder.CreateBox('layout-editor-cursor', {
+    width: CELL_SIZE * 0.92,
+    height: 0.035,
+    depth: CELL_SIZE * 0.92,
+  }, scene);
+  const material = new StandardMaterial('layout-editor-cursor-material', scene);
+  material.diffuseColor = Color3.FromHexString('#58f2ad');
+  material.emissiveColor = Color3.FromHexString('#1b8f69');
+  material.alpha = 0.58;
+  material.disableLighting = true;
+  cursor.material = material;
+  cursor.isPickable = false;
+  cursor.isVisible = false;
+  cursor.alwaysSelectAsActiveMesh = true;
+  return cursor;
+}
+
+function palletCellKey(x: number, z: number): string {
+  return `${x},${z}`;
+}
+
+function parsePalletCellKey(key: string): { x: number; z: number } {
+  const [x, z] = key.split(',').map(Number);
+  return { x, z };
+}
+
+function isEditablePalletCell(x: number, z: number): boolean {
+  if (x < STORAGE_MIN_X || x > STORAGE_MAX_X) return false;
+  if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) return false;
+  return !(z === MAP_DEPTH - 2 && (x === TOW_DEPOT_X || x === REPAIR_X));
+}
+
+function palletRecordsFromKeys(keys: Set<string>): PalletCell[] {
+  return [...keys]
+    .map(parsePalletCellKey)
+    .sort((a, b) => a.x - b.x || a.z - b.z)
+    .map(({ x, z }, id) => ({ id, x, z, cargoType: (x * 31 + z * 17) % 3 }));
+}
+
+function replacePalletCells(records: Array<{ x: number; z: number; cargoType?: number }>): void {
+  const sorted = records
+    .filter(({ x, z }) => isEditablePalletCell(x, z))
+    .sort((a, b) => a.x - b.x || a.z - b.z)
+    .map(({ x, z, cargoType }, id) => ({
+      id,
+      x,
+      z,
+      cargoType: cargoType ?? (x * 31 + z * 17) % 3,
+    }));
+  palletCells.splice(0, palletCells.length, ...sorted);
+  palletInventory = new Uint8Array(palletCells.length);
+  palletInventory.fill(PALLET_CAPACITY);
+  palletInventoryRevision += 1;
+  palletScene.update(new Set(), palletInventory);
+  hiddenPalletKey = '';
+}
+
+function pickEditorCell(): { x: number; z: number } | null {
+  const pick = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh === floor);
+  if (!pick?.hit || !pick.pickedPoint) return null;
+  const x = Math.floor((pick.pickedPoint.x + MAP_WIDTH * CELL_SIZE / 2) / CELL_SIZE);
+  const z = Math.floor((pick.pickedPoint.z + MAP_DEPTH * CELL_SIZE / 2) / CELL_SIZE);
+  return isEditablePalletCell(x, z) ? { x, z } : null;
+}
+
+function updateEditorCursor(cell: { x: number; z: number } | null): void {
+  editorCursor.isVisible = editorActive && cell !== null;
+  if (!cell) return;
+  const occupied = editorLayout.has(palletCellKey(cell.x, cell.z));
+  editorCursor.position.copyFrom(worldAt(cell.x, cell.z, occupied ? 1.48 : 0.025));
+  const material = editorCursor.material as StandardMaterial;
+  material.diffuseColor = Color3.FromHexString(occupied ? '#ff9d56' : '#58f2ad');
+  material.emissiveColor = Color3.FromHexString(occupied ? '#b9471e' : '#1b8f69');
+}
+
+function pushEditorHistory(): void {
+  editorHistory.push(new Set(editorLayout));
+  if (editorHistory.length > 50) editorHistory.shift();
+  updateEditorPanel();
+}
+
+function paintEditorCell(cell: { x: number; z: number }): void {
+  if (!editorPaintMode) return;
+  const key = palletCellKey(cell.x, cell.z);
+  if (key === editorLastPainted) return;
+  editorLastPainted = key;
+  if (editorPaintMode === 'add') editorLayout.add(key);
+  else editorLayout.delete(key);
+  replacePalletCells(palletRecordsFromKeys(editorLayout));
+  updateEditorCursor(cell);
+  updateEditorPanel();
+}
+
+function validateEditorLayout(): { valid: boolean; message: string } {
+  if (editorLayout.size < MAX_AGENTS) {
+    return { valid: false, message: `At least ${MAX_AGENTS} pallets are required for ${MAX_AGENTS} agents.` };
+  }
+  const sideAisleCells = (STORAGE_MAX_Z - STORAGE_MIN_Z + 1) * 2;
+  const reservedApproachCells = 2;
+  const availableStartCells = sideAisleCells
+    + STORAGE_CELL_COUNT
+    - reservedApproachCells
+    - editorLayout.size;
+  if (availableStartCells < MAX_AGENTS) {
+    return { valid: false, message: `The layout leaves only ${availableStartCells} robot start cells.` };
+  }
+  const reachable = new Set<string>();
+  const queue: Array<{ x: number; z: number }> = [];
+  for (let z = STORAGE_MIN_Z; z <= STORAGE_MAX_Z; z++) {
+    const key = palletCellKey(STORAGE_MAX_X + 1, z);
+    if (!editorLayout.has(key)) {
+      reachable.add(key);
+      queue.push({ x: STORAGE_MAX_X + 1, z });
+    }
+  }
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const cell = queue[cursor];
+    for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const x = cell.x + dx;
+      const z = cell.z + dz;
+      if (x < STORAGE_MIN_X - 1 || x > STORAGE_MAX_X + 1) continue;
+      if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) continue;
+      const key = palletCellKey(x, z);
+      if (editorLayout.has(key) || reachable.has(key)) continue;
+      reachable.add(key);
+      queue.push({ x, z });
+    }
+  }
+  const leftConnected = [...Array(STORAGE_MAX_Z - STORAGE_MIN_Z + 1)]
+    .some((_, index) => reachable.has(palletCellKey(STORAGE_MIN_X - 1, STORAGE_MIN_Z + index)));
+  if (!leftConnected) {
+    return { valid: false, message: 'The loading and unloading sides are disconnected.' };
+  }
+  let unreachable = 0;
+  for (const key of editorLayout) {
+    const { x, z } = parsePalletCellKey(key);
+    const hasExit = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+      .some(([dx, dz]) => reachable.has(palletCellKey(x + dx, z + dz)));
+    if (!hasExit) unreachable += 1;
+  }
+  if (unreachable > 0) {
+    return { valid: false, message: `${unreachable} pallet cells have no loaded route to an aisle.` };
+  }
+  return { valid: true, message: 'Every pallet has a route to the service aisles.' };
+}
+
+function updateEditorPanel(): void {
+  const count = editorLayout.size;
+  document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
+  document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
+  const validation = validateEditorLayout();
+  const card = document.querySelector<HTMLElement>('#editor-validation')!;
+  card.classList.toggle('invalid', !validation.valid);
+  card.classList.toggle('valid', validation.valid);
+  card.querySelector('strong')!.textContent = validation.valid ? 'LAYOUT VALID' : 'LAYOUT BLOCKED';
+  card.querySelector('small')!.textContent = validation.message;
+  document.querySelector<HTMLButtonElement>('#editor-undo')!.disabled = editorHistory.length === 0;
+  document.querySelector<HTMLButtonElement>('#editor-apply')!.disabled = !validation.valid || editorAwaitingApply;
+}
+
+function enterLayoutEditor(): void {
+  if (editorActive) return;
+  editorActive = true;
+  editorAwaitingApply = false;
+  editorOriginal = new Set(palletCells.map(({ x, z }) => palletCellKey(x, z)));
+  editorLayout = new Set(editorOriginal);
+  editorHistory = [];
+  editorWasPaused = paused;
+  if (!paused) sendControl('pause');
+  paused = true;
+  syncPauseButton();
+  clearAgentSelection();
+  hideTaskMarkers();
+  robotMesh.thinInstanceCount = 0;
+  agentPicker.thinInstanceCount = 0;
+  robotLoad.frame.thinInstanceCount = 0;
+  robotLoad.deck.thinInstanceCount = 0;
+  for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
+  editorCameraState = {
+    alpha: camera.alpha,
+    beta: camera.beta,
+    radius: camera.radius,
+    target: camera.target.clone(),
+  };
+  camera.detachControl();
+  cameraKeys.clear();
+  camera.alpha = -Math.PI / 2.65;
+  camera.beta = 0.3;
+  camera.radius = 78;
+  camera.target.set(-2.6, 0, 0);
+  document.querySelector('#app')!.classList.add('editor-mode');
+  document.querySelector<HTMLElement>('#layout-editor')!.hidden = false;
+  document.querySelector('#editor-message')!.textContent = 'Changes are applied to the local simulator.';
+  document.querySelector('#editor-message')!.classList.remove('error');
+  setConnection('editor', 'LAYOUT // EDITOR');
+  updateEditorPanel();
+}
+
+function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): void {
+  if (!editorActive) return;
+  if (restoreLayout) replacePalletCells(palletRecordsFromKeys(editorOriginal));
+  editorActive = false;
+  editorAwaitingApply = false;
+  editorPaintMode = null;
+  editorCursor.isVisible = false;
+  document.querySelector('#app')!.classList.remove('editor-mode');
+  document.querySelector<HTMLElement>('#layout-editor')!.hidden = true;
+  camera.alpha = editorCameraState.alpha;
+  camera.beta = editorCameraState.beta;
+  camera.radius = editorCameraState.radius;
+  camera.target.copyFrom(editorCameraState.target);
+  camera.attachControl(canvas, true);
+  robotMesh.thinInstanceCount = agentCount;
+  agentPicker.thinInstanceCount = agentCount;
+  if (resumeSimulation && !editorWasPaused) {
+    paused = false;
+    syncPauseButton();
+    sendControl('run');
+  }
+  setConnection(live ? 'live' : 'fallback', live ? 'FASTDMM // SIMULATOR' : 'DEMO // RECONNECTING');
 }
 
 function goodsSlotOffset(slot: number): { x: number; z: number } {
@@ -2278,7 +2547,7 @@ function setAgentCount(count: number): void {
   if ([...select.options].some((option) => Number(option.value) === agentCount)) select.value = String(agentCount);
 }
 
-function sendControl(action: string, extra: Record<string, number> = {}): void {
+function sendControl(action: string, extra: Record<string, unknown> = {}): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'control', action, ...extra }));
 }
 
@@ -2297,6 +2566,16 @@ function connect(): void {
     }
     const message = JSON.parse(String(event.data));
     if (message.type === 'hello') {
+      if (Array.isArray(message.layout?.pallets)) {
+        replacePalletCells(message.layout.pallets.map((pallet: { x: number; y: number; cargoType?: number }) => {
+          const cargoType = Number(pallet.cargoType);
+          return {
+            x: Number(pallet.x),
+            z: Number(pallet.y),
+            cargoType: Number.isFinite(cargoType) ? cargoType : undefined,
+          };
+        }));
+      }
       live = true;
       paused = false;
       syncPauseButton();
@@ -2305,6 +2584,14 @@ function connect(): void {
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
       setConnection('live', 'FASTDMM // SIMULATOR');
+    } else if (message.type === 'layout-applied') {
+      closeLayoutEditor(false, false);
+    } else if (message.type === 'layout-error') {
+      editorAwaitingApply = false;
+      const editorMessage = document.querySelector('#editor-message')!;
+      editorMessage.textContent = String(message.message ?? 'The layout could not be applied.');
+      editorMessage.classList.add('error');
+      updateEditorPanel();
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
@@ -2349,7 +2636,7 @@ function mod(value: number, divisor: number): number {
 }
 
 function updateCameraMovement(dt: number): void {
-  if (cameraKeys.size === 0) return;
+  if (editorActive || cameraKeys.size === 0) return;
   const forward = camera.target.subtract(camera.position);
   forward.y = 0;
   if (forward.lengthSquared() < 1e-6) return;
@@ -2386,10 +2673,12 @@ let telemetryElapsed = 0;
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   updateCameraMovement(dt);
-  if (!paused && !live) simTime += dt * speed;
-  if (live) updateLive(performance.now());
-  else updateFallback(simTime);
-  updateTaskMarkers(performance.now());
+  if (!editorActive) {
+    if (!paused && !live) simTime += dt * speed;
+    if (live) updateLive(performance.now());
+    else updateFallback(simTime);
+    updateTaskMarkers(performance.now());
+  }
   scene.render();
   telemetryElapsed += dt;
   if (telemetryElapsed > 0.25) {
@@ -2477,6 +2766,54 @@ document.querySelector('#reset-camera')!.addEventListener('click', () => {
   camera.beta = 1.02;
   camera.radius = 37.5;
   camera.target.set(0, 0, 0);
+});
+
+document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
+
+document.querySelector('#editor-undo')!.addEventListener('click', () => {
+  const previous = editorHistory.pop();
+  if (!previous) return;
+  editorLayout = previous;
+  replacePalletCells(palletRecordsFromKeys(editorLayout));
+  updateEditorPanel();
+});
+
+document.querySelector('#editor-reset')!.addEventListener('click', () => {
+  pushEditorHistory();
+  editorLayout = new Set(editorOriginal);
+  replacePalletCells(palletRecordsFromKeys(editorLayout));
+  updateEditorPanel();
+});
+
+document.querySelector('#editor-clear')!.addEventListener('click', () => {
+  pushEditorHistory();
+  editorLayout.clear();
+  replacePalletCells([]);
+  updateEditorPanel();
+});
+
+document.querySelector('#editor-cancel')!.addEventListener('click', () => {
+  closeLayoutEditor(true, true);
+});
+
+document.querySelector('#editor-apply')!.addEventListener('click', () => {
+  const validation = validateEditorLayout();
+  if (!validation.valid || socket?.readyState !== WebSocket.OPEN) {
+    const editorMessage = document.querySelector('#editor-message')!;
+    editorMessage.textContent = socket?.readyState === WebSocket.OPEN
+      ? validation.message
+      : 'The local runtime is not connected.';
+    editorMessage.classList.add('error');
+    return;
+  }
+  editorAwaitingApply = true;
+  const editorMessage = document.querySelector('#editor-message')!;
+  editorMessage.textContent = 'Saving the layout and rebuilding the task queue…';
+  editorMessage.classList.remove('error');
+  updateEditorPanel();
+  sendControl('layout', {
+    pallets: palletRecordsFromKeys(editorLayout).map(({ x, z }) => ({ x, y: z })),
+  });
 });
 
 window.addEventListener('keydown', (event) => {

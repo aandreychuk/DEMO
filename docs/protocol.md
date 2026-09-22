@@ -12,7 +12,7 @@ The first server message is JSON so integrations are easy to inspect:
 ```json
 {
   "type": "hello",
-  "protocol": 4,
+  "protocol": 5,
   "map": { "width": 44, "height": 32, "cellSize": 1 },
   "agents": 100,
   "tickRate": 10,
@@ -44,13 +44,13 @@ High-frequency state uses one little-endian binary message per simulation step:
 | Offset | Type | Meaning |
 | ---: | --- | --- |
 | 0 | `uint32` | Magic `0x4d415046` (`MAPF`) |
-| 4 | `uint16` | Protocol version (`4`) |
+| 4 | `uint16` | Protocol version (`5`) |
 | 6 | `uint16` | Completed task count, saturated at 65,535 |
 | 8 | `uint32` | Simulation step |
 | 12 | `uint32` | Number of agents |
 | 16 | repeated record | Agent records, followed by one recovery-vehicle record |
 
-Each protocol 4 agent record is 36 bytes:
+Each protocol 5 agent record is 36 bytes:
 
 | Record offset | Type | Meaning |
 | ---: | --- | --- |
@@ -91,7 +91,7 @@ failed robot, and bit 5 marks a repaired robot recovering its dropped pallet.
 Recovery state is 0 for normal operation, 1 for waiting for the vehicle, 2 for
 transport, 3 for repair, and 4 for pallet recovery. Vehicle state is 0 for idle,
 1 for driving to an agent, 2 for transport to repair, and 3 for returning to
-the depot. Protocol 1 through 3 frames remain readable by the browser.
+the depot. Protocol 1 through 4 frames remain readable by the browser.
 `task_stage` is 0 for pickup, 1 for unloading, 2 for batch reloading, and 3 for
 return. A pallet ID of 65,535 or task ID of 4,294,967,295 means that no
 corresponding assignment exists.
@@ -111,6 +111,7 @@ Commands are infrequent JSON messages:
 { "type": "control", "action": "speed", "value": 2.0 }
 { "type": "control", "action": "load", "agents": 100 }
 { "type": "control", "action": "fail", "agent": 21 }
+{ "type": "control", "action": "layout", "pallets": [{ "x": 4, "y": 1 }] }
 ```
 
 `pause` preserves the native simulator state and stops requesting steps. `stop`
@@ -123,6 +124,12 @@ dynamic obstacle but never an algorithm-controlled agent. After transport and
 eight repair ticks, the robot resumes its saved goal. A pallet carried during
 failure remains at that cell and is recovered first. Starting a fresh simulation
 clears the recovery queue and all failures.
+
+`layout` validates the edited pallet coordinates, saves the layout, regenerates
+100 deterministic start positions and 4,000 tasks, and restarts that browser's
+native simulation. Pallets are accepted only inside the storage grid. Every
+pallet must retain a loaded route to the unloading side, both service sides must
+remain connected, and the repair-station approach stays reserved.
 
 The native process should listen on loopback only by default. Hugging Face tokens,
 model paths, and AOTI runtime details are never sent to the browser.
