@@ -259,10 +259,12 @@ export function buildInputs(): void {
       chat[agent * CHAT_SLOTS + slot] = other;
       const otherPosition = positions[other];
       const otherGoal = goals[other];
-      observations[base + cursor++] = col(otherPosition) - cx + LIMIT;
+      // Match the training/native runtime contract: relative coordinates are
+      // encoded as (row, column), not Cartesian (x, y).
       observations[base + cursor++] = row(otherPosition) - cy + LIMIT;
-      observations[base + cursor++] = clampI(col(otherGoal) - cx, -LIMIT, LIMIT) + LIMIT;
+      observations[base + cursor++] = col(otherPosition) - cx + LIMIT;
       observations[base + cursor++] = clampI(row(otherGoal) - cy, -LIMIT, LIMIT) + LIMIT;
+      observations[base + cursor++] = clampI(col(otherGoal) - cx, -LIMIT, LIMIT) + LIMIT;
       for (let h: i32 = 0; h < 5; ++h) {
         observations[base + cursor++] = actionToken(history[other * 5 + h]);
       }

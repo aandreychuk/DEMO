@@ -54,6 +54,30 @@ for (let tick = 0; tick < 10; tick++) {
   for (const neighbor of current.chat) {
     if (neighbor < -1 || neighbor >= count) throw new Error(`chat id out of range: ${neighbor}`);
   }
+  for (let agent = 0; agent < count; agent++) {
+    const agentX = positions[agent] % width;
+    const agentY = Math.floor(positions[agent] / width);
+    for (let slot = 0; slot < 13; slot++) {
+      const neighbor = current.chat[agent * 13 + slot];
+      if (neighbor < 0) break;
+      const neighborX = positions[neighbor] % width;
+      const neighborY = Math.floor(positions[neighbor] / width);
+      const goalX = goals[neighbor] % width;
+      const goalY = Math.floor(goals[neighbor] / width);
+      const base = agent * 256 + 121 + slot * 10;
+      const expected = [
+        neighborY - agentY + 20,
+        neighborX - agentX + 20,
+        Math.max(-20, Math.min(20, goalY - agentY)) + 20,
+        Math.max(-20, Math.min(20, goalX - agentX)) + 20,
+      ];
+      for (let field = 0; field < expected.length; field++) {
+        if (current.observations[base + field] !== expected[field]) {
+          throw new Error(`row/column observation mismatch at agent ${agent}, slot ${slot}, field ${field}`);
+        }
+      }
+    }
+  }
   for (let i = 0; i < count; i++) {
     for (let action = 0; action < 5; action++) {
       // Stable but changing preferences exercise pushes and conflict resolution.
