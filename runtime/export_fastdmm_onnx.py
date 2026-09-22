@@ -27,8 +27,12 @@ class FastDMMOnnx(nn.Module):
         super().__init__()
         self.model = model
 
-    def forward(self, observations: Tensor, chat: Tensor) -> Tensor:
-        consensus = self.model.deterministic_zero_act(observations, chat)
+    def forward(
+        self, observations: Tensor, chat: Tensor, neighbor_padding: Tensor
+    ) -> Tensor:
+        consensus = self.model.deterministic_zero_act(
+            observations, chat, neighbor_padding=neighbor_padding
+        )
         return torch.softmax(consensus[0], dim=-1)
 
 
@@ -50,26 +54,40 @@ def main() -> None:
     model, checkpoint = load_model(checkpoint_path, device)
     wrapper = FastDMMOnnx(model).eval()
     observations, chat = sample_inputs(args.agents, device)
+    neighbor_padding = observations[:, :, 121:251].reshape(
+        1, args.agents, 13, 10
+    ).eq(66).all(-1)
 
     with torch.inference_mode():
-        expected = wrapper(observations, chat).cpu().numpy()
+        reference = torch.softmax(
+            model.deterministic_zero_act(observations, chat)[0], dim=-1
+        ).cpu().numpy()
+    for module in model.modules():
+        if hasattr(module, "onnx_explicit_attention"):
+            module.onnx_explicit_attention = True
+    model.onnx_simplify_consensus = True
+    with torch.inference_mode():
+        expected = wrapper(observations, chat, neighbor_padding).cpu().numpy()
+    attention_max_abs = float(np.max(np.abs(expected - reference)))
+    attention_agreement = float(np.mean(expected.argmax(-1) == reference.argmax(-1)))
+    if attention_agreement < 1.0 or attention_max_abs > 1e-4:
+        raise RuntimeError(
+            "explicit ONNX attention changed model output: "
+            f"max_abs={attention_max_abs}, agreement={attention_agreement}"
+        )
 
     print(f"exporting fixed-N={args.agents} policy to {output_path}", flush=True)
     with torch.inference_mode():
         torch.onnx.export(
             wrapper,
-            (observations, chat),
+            (observations, chat, neighbor_padding),
             output_path,
-            input_names=("observations", "chat"),
+            input_names=("observations", "chat", "neighbor_padding"),
             output_names=("action_probabilities",),
             opset_version=args.opset,
             dynamo=True,
             external_data=False,
-            # The PyTorch 2.13 ONNX optimizer currently folds
-            # ``log(one_hot + 1e-8)`` into ``log(one_hot)`` in this graph,
-            # producing -inf and NaN consensus values. Preserve the explicit
-            # epsilon until that upstream optimization is safe.
-            optimize=False,
+            optimize=True,
         )
 
     exported = onnx.load(output_path)
@@ -82,6 +100,7 @@ def main() -> None:
         {
             "observations": observations.cpu().numpy(),
             "chat": chat.cpu().numpy(),
+            "neighbor_padding": neighbor_padding.cpu().numpy(),
         },
     )[0]
     max_abs = float(np.max(np.abs(actual - expected)))
@@ -96,7 +115,7 @@ def main() -> None:
         )
 
     metadata = {
-        "schema": "fastdmm-browser-policy/v1",
+        "schema": "fastdmm-browser-policy/v2",
         "architecture": "FastDMM-0.8M",
         "checkpoint": checkpoint_path.name,
         "checkpoint_sha256": sha256(checkpoint_path),
@@ -105,6 +124,7 @@ def main() -> None:
         "inputs": [
             {"name": "observations", "dtype": "int64", "shape": [1, args.agents, 256]},
             {"name": "chat", "dtype": "int64", "shape": [1, args.agents, 13]},
+            {"name": "neighbor_padding", "dtype": "bool", "shape": [1, args.agents, 13]},
         ],
         "output": {
             "name": "action_probabilities",
@@ -120,6 +140,8 @@ def main() -> None:
             "max_abs_error": max_abs,
             "action_agreement": agreement,
             "max_probability_sum_error": sums,
+            "explicit_attention_max_abs_error": attention_max_abs,
+            "explicit_attention_action_agreement": attention_agreement,
         },
     }
     sidecar = output_path.with_suffix(output_path.suffix + ".json")

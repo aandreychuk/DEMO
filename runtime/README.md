@@ -5,7 +5,11 @@
 `export_fastdmm_onnx.py` exports the same trusted checkpoint as a fixed
 100-agent ONNX graph for ONNX Runtime Web. The fixed shape keeps WebGPU graph
 creation predictable; the browser pads unused slots for the 25 and 50 agent
-presets. The exporter writes an inference-only model and a metadata sidecar,
+presets. Alongside `observations` and `chat`, the browser supplies a boolean
+`neighbor_padding[1,100,13]` tensor computed from the validated observation
+tokens. Keeping that trivial reduction outside ONNX removes its casts and
+reduction from the hot graph. The exporter writes an inference-only model and a
+metadata sidecar,
 then compares ONNX Runtime CPU output with PyTorch and requires identical
 argmax actions.
 
@@ -16,10 +20,11 @@ python runtime/export_fastdmm_onnx.py \
   --agents 100
 ```
 
-The export intentionally disables the PyTorch ONNX optimizer. With this model,
-the optimizer folds the stabilized one-hot logarithm into `log(one_hot)`, which
-introduces infinities and NaNs. The unoptimized opset-20 graph preserves the
-PyTorch values exactly and is the graph validated by the exporter.
+The deployment model rewrites the centered one-hot logarithm as its exact two
+constant values before export. This avoids the unsafe `log(one_hot)` folding
+that previously produced infinities and allows the PyTorch ONNX optimizer to
+compact the fixed-size opset-20 graph. The optimized graph is still checked
+against eager PyTorch and must preserve every argmax action.
 
 `export_fastdmm_aoti.py` turns a trusted FastDMM training checkpoint into a
 two-input AOTInductor package for the GPU in the current machine. The package

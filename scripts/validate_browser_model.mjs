@@ -7,11 +7,14 @@ const session = await ort.InferenceSession.create(resolve('public/runtime/fastdm
 });
 const observations = new BigInt64Array(100 * 256);
 const chat = new BigInt64Array(100 * 13);
+const neighborPadding = new Uint8Array(100 * 13);
 observations.fill(66n);
 chat.fill(-1n);
+neighborPadding.fill(1);
 const result = await session.run({
   observations: new ort.Tensor('int64', observations, [1, 100, 256]),
   chat: new ort.Tensor('int64', chat, [1, 100, 13]),
+  neighbor_padding: new ort.Tensor('bool', neighborPadding, [1, 100, 13]),
 });
 const output = result.action_probabilities;
 if (output.dims.join(',') !== '100,5') throw new Error(`unexpected output shape: ${output.dims}`);

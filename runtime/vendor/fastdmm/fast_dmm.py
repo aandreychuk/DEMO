@@ -48,6 +48,7 @@ class ExplicitSDPASelfAttention(nn.Module):
             raise ValueError("width must be divisible by heads")
         self.heads = heads
         self.head_width = width // heads
+        self.onnx_explicit_attention = False
         self.qkv = nn.Linear(width, 3 * width, bias=False)
         self.output = nn.Linear(width, width, bias=False)
 
@@ -58,13 +59,17 @@ class ExplicitSDPASelfAttention(nn.Module):
         )
         query, key, value = qkv.unbind(dim=2)
         allowed = (~padding_mask).unsqueeze(1).unsqueeze(1)
-        attended = F.scaled_dot_product_attention(
-            query.transpose(1, 2),
-            key.transpose(1, 2),
-            value.transpose(1, 2),
-            attn_mask=allowed,
-            dropout_p=0.0,
-        )
+        query = query.transpose(1, 2)
+        key = key.transpose(1, 2)
+        value = value.transpose(1, 2)
+        if self.onnx_explicit_attention:
+            scores = torch.matmul(query, key.transpose(-2, -1)) * self.head_width**-0.5
+            scores = scores.masked_fill(~allowed, float("-inf"))
+            attended = torch.matmul(torch.softmax(scores, dim=-1), value)
+        else:
+            attended = F.scaled_dot_product_attention(
+                query, key, value, attn_mask=allowed, dropout_p=0.0
+            )
         attended = attended.transpose(1, 2).reshape(batch, length, width)
         return self.output(attended)
 
@@ -163,7 +168,9 @@ class FastStructuredEncoder(nn.Module):
         )
         self.output_norm = nn.RMSNorm(width)
 
-    def forward(self, observations: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, observations: Tensor, neighbor_padding: Tensor | None = None
+    ) -> tuple[Tensor, Tensor]:
         if observations.shape[-1] != 256:
             raise ValueError(f"Expected 256 tokens, got {observations.shape}")
         flat = observations.reshape(-1, 256)
@@ -176,7 +183,10 @@ class FastStructuredEncoder(nn.Module):
         grid = grid + self.spatial_positions.unsqueeze(0) + self.token_types[0]
 
         neighbor_ids = flat[:, 121:251].reshape(-1, 13, 10)
-        neighbor_padding = neighbor_ids.eq(self.config.empty_token_code).all(-1)
+        if neighbor_padding is None:
+            neighbor_padding = neighbor_ids.eq(self.config.empty_token_code).all(-1)
+        else:
+            neighbor_padding = neighbor_padding.reshape(-1, 13)
         neighbors = self.token_embedding(neighbor_ids).flatten(2)
         neighbors = self.neighbor_mlp(neighbors)
         neighbors = neighbors + self.neighbor_slots.unsqueeze(0) + self.token_types[1]
@@ -202,6 +212,7 @@ class QueryCrossAttentionBlock(nn.Module):
         hidden = config.communication_hidden_multiplier * width
         self.heads = config.heads
         self.head_width = width // config.heads
+        self.onnx_explicit_attention = False
         self.memory_norm = nn.RMSNorm(width)
         self.static_key_value = nn.Linear(width, 2 * width, bias=False)
         self.message_key_value = nn.Linear(width, 2 * width, bias=False)
@@ -253,9 +264,14 @@ class QueryCrossAttentionBlock(nn.Module):
         query = self.query(self.query_norm(query_token)).view(
             batch_agents, 1, self.heads, self.head_width
         ).transpose(1, 2)
-        attended = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=allowed, dropout_p=0.0
-        )
+        if self.onnx_explicit_attention:
+            scores = torch.matmul(query, key.transpose(-2, -1)) * self.head_width**-0.5
+            scores = scores.masked_fill(~allowed, float("-inf"))
+            attended = torch.matmul(torch.softmax(scores, dim=-1), value)
+        else:
+            attended = F.scaled_dot_product_attention(
+                query, key, value, attn_mask=allowed, dropout_p=0.0
+            )
         attended = attended.transpose(1, 2).reshape(batch_agents, 1, width)
         feature = query_token + self.output(attended)
         normalized = self.attention_output_norm(feature)
@@ -392,12 +408,28 @@ class FastDMM(nn.Module):
         self.communication = CachedCrossAttentionCommunication(config)
         self.pi_head = nn.Linear(config.width, NUM_ACTIONS, bias=False)
         self.msg_head = nn.Linear(config.width, config.width, bias=False)
+        self.onnx_simplify_consensus = False
 
-    @staticmethod
-    def _centred_log_ohe(actions: Tensor, dtype: torch.dtype) -> Tensor:
-        one_hot = F.one_hot(actions, NUM_ACTIONS).to(dtype)
-        target = F.log_softmax((one_hot + 1e-8).log(), dim=-1)
-        return target - target.mean(-1, keepdim=True)
+    def _centred_log_ohe(self, actions: Tensor, dtype: torch.dtype) -> Tensor:
+        if not self.onnx_simplify_consensus:
+            one_hot = F.one_hot(actions, NUM_ACTIONS).to(dtype)
+            target = F.log_softmax((one_hot + 1e-8).log(), dim=-1)
+            return target - target.mean(-1, keepdim=True)
+        # ``log_softmax(log(one_hot + eps))`` followed by centering is exactly
+        # ``log(one_hot + eps) - mean(log(one_hot + eps))``: the shared
+        # log-sum-exp term cancels.  Express the two possible values directly
+        # so deployment exporters do not materialize OneHot/Log/LogSoftmax
+        # subgraphs (and cannot fold away the epsilon before Log).
+        epsilon = 1e-8
+        low = torch.log(torch.tensor(epsilon, dtype=dtype, device=actions.device))
+        high = torch.log(
+            torch.tensor(1.0 + epsilon, dtype=dtype, device=actions.device)
+        )
+        mean = (high + (NUM_ACTIONS - 1) * low) / NUM_ACTIONS
+        values = torch.arange(NUM_ACTIONS, device=actions.device)
+        return torch.where(
+            actions.unsqueeze(-1).eq(values), high - mean, low - mean
+        )
 
     @staticmethod
     def _dirichlet_z0(
@@ -430,11 +462,11 @@ class FastDMM(nn.Module):
         return (z - z.mean(-1, keepdim=True)).to(probabilities.dtype)
 
     def _encode(
-        self, obs: Tensor
+        self, obs: Tensor, neighbor_padding: Tensor | None = None
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         batch, agents, token_count = obs.shape
         tokens, padding = self.representation_encoder(
-            obs.reshape(batch * agents, token_count)
+            obs.reshape(batch * agents, token_count), neighbor_padding
         )
         static_key, static_value = self.communication.prepare_static_memory(tokens)
         return static_key, static_value, padding, tokens
@@ -670,6 +702,7 @@ class FastDMM(nn.Module):
         obs: Tensor,
         agent_chat_ids: Tensor,
         agent_chunk_size: int = 0,
+        neighbor_padding: Tensor | None = None,
     ) -> Tensor:
         """Deployment path: z0=0 and argmax votes in all communication rounds."""
         batch, agents, _ = obs.shape
@@ -679,7 +712,9 @@ class FastDMM(nn.Module):
                 obs, agent_chunk_size
             )
         else:
-            static_key, static_value, padding, _ = self._encode(obs)
+            static_key, static_value, padding, _ = self._encode(
+                obs, neighbor_padding
+            )
         dtype = static_key.dtype
         z = torch.zeros(count, NUM_ACTIONS, dtype=dtype, device=obs.device)
         h = self.communication.empty_message.reshape(1, 1, -1).expand(
@@ -695,7 +730,15 @@ class FastDMM(nn.Module):
                 logits, h = self._run_round(
                     z, h, agent_chat_ids, static_key, static_value, padding
                 )
-            vote = logits.nan_to_num(0.0).argmax(dim=-1)
+            if self.onnx_simplify_consensus:
+                # Preserve nan_to_num(NaN=0) semantics without IsNaN/IsInf
+                # fallback nodes. NaN is the only floating-point value that
+                # does not compare equal to itself; Equal and Where both stay
+                # on the WebGPU execution provider.
+                logits = torch.where(logits.eq(logits), logits, 0.0)
+            else:
+                logits = logits.nan_to_num(0.0)
+            vote = logits.argmax(dim=-1)
             target = self._centred_log_ohe(vote, dtype)
             z = z + self.config.dt * (target - z)
         # The first centred-log update promotes z to FP32 under BF16 autocast.

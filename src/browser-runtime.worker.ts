@@ -232,10 +232,18 @@ async function loadWasm(): Promise<WasmCore> {
 async function loadPolicy(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
+  ort.env.webgpu.powerPreference = 'high-performance';
   const modelUrl = new URL('/runtime/fastdmm-0.8m.onnx', self.location.origin).href;
   if ('gpu' in navigator) {
     try {
-      const webgpuSession = await ort.InferenceSession.create(modelUrl, { executionProviders: ['webgpu'] });
+      const webgpuSession = await ort.InferenceSession.create(modelUrl, {
+        executionProviders: [{
+          name: 'webgpu',
+          preferredLayout: 'NHWC',
+          validationMode: 'wgpuOnly',
+          storageBufferCacheMode: 'simple',
+        }],
+      });
       backend = 'WEBGPU';
       return webgpuSession;
     } catch (error) {
@@ -452,12 +460,24 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
   const chat32 = new Int32Array(memory, core.chatPointer(), MAX_AGENTS * CHAT_SLOTS);
   const obs64 = new BigInt64Array(obs32.length);
   const chat64 = new BigInt64Array(chat32.length);
+  const neighborPadding = new Uint8Array(MAX_AGENTS * CHAT_SLOTS);
   for (let i = 0; i < obs32.length; i++) obs64[i] = BigInt(obs32[i]);
   for (let i = 0; i < chat32.length; i++) chat64[i] = BigInt(chat32[i]);
+  for (let agent = 0; agent < MAX_AGENTS; agent++) {
+    for (let slot = 0; slot < CHAT_SLOTS; slot++) {
+      let padded = 1;
+      const start = agent * OBS_TOKENS + 121 + slot * 10;
+      for (let feature = 0; feature < 10; feature++) {
+        if (obs32[start + feature] !== 66) { padded = 0; break; }
+      }
+      neighborPadding[agent * CHAT_SLOTS + slot] = padded;
+    }
+  }
   const started = performance.now();
   const output = await session.run({
     observations: new ort.Tensor('int64', obs64, [1, MAX_AGENTS, OBS_TOKENS]),
     chat: new ort.Tensor('int64', chat64, [1, MAX_AGENTS, CHAT_SLOTS]),
+    neighbor_padding: new ort.Tensor('bool', neighborPadding, [1, MAX_AGENTS, CHAT_SLOTS]),
   });
   if (generation !== expectedGeneration) return false;
   lastInferenceMs = performance.now() - started;
