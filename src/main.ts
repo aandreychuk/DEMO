@@ -206,6 +206,7 @@ let browserWorker: Worker | null = null;
 let runtimeBackend = 'WASM';
 let runtimeAdapter = '';
 let live = false;
+let backgroundSuspended = document.visibilityState === 'hidden' || !document.hasFocus();
 let liveTickRate = 10;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
@@ -2594,6 +2595,17 @@ function setRuntimeConnection(): void {
   setConnection('live', `FASTDMM // ${runtimeBackend}${adapter}`);
 }
 
+function syncDocumentActivity(): void {
+  if (USE_SERVER_RUNTIME || !browserWorker || paused || editorActive) return;
+  if (backgroundSuspended) {
+    sendControl('pause');
+    setConnection('stopped', 'SIMULATION // INACTIVE WINDOW');
+  } else {
+    sendControl('run');
+    if (live) setRuntimeConnection();
+  }
+}
+
 function setAgentCount(count: number): void {
   agentCount = Math.min(MAX_AGENTS, count);
   if (selectedAgentId >= agentCount) clearAgentSelection();
@@ -2643,6 +2655,7 @@ function handleRuntimeMessage(data: unknown): void {
     setAgentCount(Number(message.agents));
     sendControl('speed', { value: speed });
     setRuntimeConnection();
+    syncDocumentActivity();
   } else if (message.type === 'layout-applied') {
     closeLayoutEditor(false, false);
   } else if (message.type === 'layout-error') {
@@ -2771,6 +2784,7 @@ engine.runRenderLoop(() => {
     const step = liveCurrent?.step ?? Math.floor(simTime / FALLBACK_STEP_SECONDS);
     stepValue.textContent = String(step).padStart(4, '0');
     throughputValue.textContent = paused
+      || backgroundSuspended
       ? '0'
       : Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
     latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
@@ -2802,6 +2816,16 @@ const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
 const failAgentButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
+
+function handleDocumentActivityChange(): void {
+  backgroundSuspended = document.visibilityState === 'hidden' || !document.hasFocus();
+  syncDocumentActivity();
+}
+
+document.addEventListener('visibilitychange', handleDocumentActivityChange);
+window.addEventListener('focus', handleDocumentActivityChange);
+window.addEventListener('blur', handleDocumentActivityChange);
+
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
   document.querySelector('#pause-label')!.textContent = paused ? 'RUN' : 'PAUSE';
