@@ -94,6 +94,19 @@ let completedTasks = 0;
 let nextTaskId = 0;
 let lastInferenceMs = 0;
 
+// The model shape is fixed at 100 agents. Reuse the CPU-side input tensors for
+// every tick instead of allocating three typed arrays and three Tensor wrappers
+// per inference. This also keeps long-running browser simulations out of the
+// garbage collector's allocation path.
+const observationInput = new BigInt64Array(MAX_AGENTS * OBS_TOKENS);
+const chatInput = new BigInt64Array(MAX_AGENTS * CHAT_SLOTS);
+const neighborPaddingInput = new Uint8Array(MAX_AGENTS * CHAT_SLOTS);
+const inferenceFeeds = {
+  observations: new ort.Tensor('int64', observationInput, [1, MAX_AGENTS, OBS_TOKENS]),
+  chat: new ort.Tensor('int64', chatInput, [1, MAX_AGENTS, CHAT_SLOTS]),
+  neighbor_padding: new ort.Tensor('bool', neighborPaddingInput, [1, MAX_AGENTS, CHAT_SLOTS]),
+};
+
 let positions = new Int32Array(MAX_AGENTS);
 let goals = new Int32Array(MAX_AGENTS);
 let taskIndex = new Int32Array(MAX_AGENTS);
@@ -458,11 +471,8 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
   const memory = core.memory.buffer;
   const obs32 = new Int32Array(memory, core.observationsPointer(), MAX_AGENTS * OBS_TOKENS);
   const chat32 = new Int32Array(memory, core.chatPointer(), MAX_AGENTS * CHAT_SLOTS);
-  const obs64 = new BigInt64Array(obs32.length);
-  const chat64 = new BigInt64Array(chat32.length);
-  const neighborPadding = new Uint8Array(MAX_AGENTS * CHAT_SLOTS);
-  for (let i = 0; i < obs32.length; i++) obs64[i] = BigInt(obs32[i]);
-  for (let i = 0; i < chat32.length; i++) chat64[i] = BigInt(chat32[i]);
+  for (let i = 0; i < obs32.length; i++) observationInput[i] = BigInt(obs32[i]);
+  for (let i = 0; i < chat32.length; i++) chatInput[i] = BigInt(chat32[i]);
   for (let agent = 0; agent < MAX_AGENTS; agent++) {
     for (let slot = 0; slot < CHAT_SLOTS; slot++) {
       let padded = 1;
@@ -470,19 +480,21 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
       for (let feature = 0; feature < 10; feature++) {
         if (obs32[start + feature] !== 66) { padded = 0; break; }
       }
-      neighborPadding[agent * CHAT_SLOTS + slot] = padded;
+      neighborPaddingInput[agent * CHAT_SLOTS + slot] = padded;
     }
   }
   const started = performance.now();
-  const output = await session.run({
-    observations: new ort.Tensor('int64', obs64, [1, MAX_AGENTS, OBS_TOKENS]),
-    chat: new ort.Tensor('int64', chat64, [1, MAX_AGENTS, CHAT_SLOTS]),
-    neighbor_padding: new ort.Tensor('bool', neighborPadding, [1, MAX_AGENTS, CHAT_SLOTS]),
-  });
-  if (generation !== expectedGeneration) return false;
-  lastInferenceMs = performance.now() - started;
-  const values = output.action_probabilities.data as Float32Array;
-  new Float32Array(core.memory.buffer, core.probabilitiesPointer(), MAX_AGENTS * ACTIONS).set(values);
+  const output = await session.run(inferenceFeeds);
+  try {
+    if (generation !== expectedGeneration) return false;
+    lastInferenceMs = performance.now() - started;
+    const values = output.action_probabilities.data as Float32Array;
+    new Float32Array(core.memory.buffer, core.probabilitiesPointer(), MAX_AGENTS * ACTIONS).set(values);
+  } finally {
+    // ONNX Runtime keeps backend resources alive until output tensors are
+    // disposed. Omitting this in an endless simulation gradually slows WebGPU.
+    for (const tensor of Object.values(output)) tensor.dispose();
+  }
   core.plan();
   const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), MAX_AGENTS);
   for (let i = 0; i < agentCount; i++) positions[i] = next[i];

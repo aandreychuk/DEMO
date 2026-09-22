@@ -130,6 +130,9 @@ type AgentStats = {
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false }, true);
+// The neural policy and Babylon share the same GPU. Rendering above the
+// display-friendly 60 FPS only steals GPU time from WebGPU inference.
+engine.maxFPS = 60;
 const scene = new Scene(engine);
 scene.clearColor = new Color4(0.018, 0.035, 0.055, 1);
 scene.ambientColor = new Color3(0.09, 0.15, 0.2);
