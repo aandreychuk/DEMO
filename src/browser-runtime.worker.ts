@@ -67,6 +67,31 @@ type ControlMessage = {
   pallets?: Array<{ x: number; y: number }>;
 };
 
+type BrowserGpuAdapterInfo = {
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
+};
+
+type BrowserGpuDevice = {
+  adapterInfo?: BrowserGpuAdapterInfo;
+  destroy?: () => void;
+};
+
+type BrowserGpuAdapter = {
+  info?: BrowserGpuAdapterInfo;
+  isFallbackAdapter?: boolean;
+  requestDevice: () => Promise<BrowserGpuDevice>;
+};
+
+type BrowserGpu = {
+  requestAdapter: (options?: {
+    powerPreference?: 'low-power' | 'high-performance';
+    forceFallbackAdapter?: boolean;
+  }) => Promise<BrowserGpuAdapter | null>;
+};
+
 const workerScope = self as unknown as {
   postMessage: (message: unknown, transfer?: Transferable[]) => void;
   onmessage: ((event: MessageEvent<ControlMessage>) => void) | null;
@@ -83,6 +108,7 @@ let session: ort.InferenceSession;
 let booted = false;
 let requestedAgentCount = MAX_AGENTS;
 let backend = 'WASM';
+let backendAdapter = '';
 let agentCount = MAX_AGENTS;
 let speed = 1;
 let paused = false;
@@ -245,26 +271,50 @@ async function loadWasm(): Promise<WasmCore> {
 async function loadPolicy(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
-  ort.env.webgpu.powerPreference = 'high-performance';
   const modelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
-  if ('gpu' in navigator) {
+  const gpu = (navigator as Navigator & { gpu?: BrowserGpu }).gpu;
+  if (gpu) {
+    let device: BrowserGpuDevice | null = null;
     try {
+      const adapter = await gpu.requestAdapter({
+        powerPreference: 'high-performance',
+        forceFallbackAdapter: false,
+      });
+      if (!adapter) throw new Error('No WebGPU adapter was returned by the browser.');
+      device = await adapter.requestDevice();
+
+      // Supplying the exact device prevents ONNX Runtime from making a second,
+      // opaque adapter choice. Browsers may otherwise honor powerPreference
+      // differently and run the same build on different hardware.
+      ort.env.webgpu.device = device;
       const webgpuSession = await ort.InferenceSession.create(modelUrl, {
         executionProviders: [{
           name: 'webgpu',
+          device,
           preferredLayout: 'NHWC',
           validationMode: 'wgpuOnly',
           storageBufferCacheMode: 'simple',
         }],
       });
       backend = 'WEBGPU';
+      const info = device.adapterInfo ?? adapter.info;
+      backendAdapter = formatAdapter(info, adapter.isFallbackAdapter === true);
       return webgpuSession;
     } catch (error) {
+      device?.destroy?.();
       console.warn('WebGPU provider unavailable for this graph; using ONNX Runtime WASM.', error);
     }
   }
   backend = 'WASM';
+  backendAdapter = '';
   return ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] });
+}
+
+function formatAdapter(info: BrowserGpuAdapterInfo | undefined, fallback: boolean): string {
+  const name = info?.description?.trim()
+    || [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' ').trim()
+    || 'GPU DETAILS HIDDEN';
+  return fallback ? `${name} · SOFTWARE` : name;
 }
 
 function initializePallets(): void {
@@ -608,7 +658,7 @@ function hello(): void {
   post({
     type: 'hello', protocol: PROTOCOL, map: { width: map.width, height: map.height, cellSize: 1 },
     layout, lifelong: true, simulator: true, streaming: true, browserRuntime: true,
-    backend, agents: agentCount, tickRate: TICK_RATE, inferenceMs: lastInferenceMs,
+    backend, backendAdapter, agents: agentCount, tickRate: TICK_RATE, inferenceMs: lastInferenceMs,
     summary: { status: 'running' },
   });
 }
@@ -623,7 +673,7 @@ async function tick(): Promise<void> {
     processTaskArrivals();
     step++;
     emitFrame();
-    if (step === 1 || step % 10 === 0) post({ type: 'metrics', inferenceMs: lastInferenceMs, backend });
+    if (step === 1 || step % 10 === 0) post({ type: 'metrics', inferenceMs: lastInferenceMs, backend, backendAdapter });
   } catch (error) {
     paused = true;
     post({ type: 'error', message: error instanceof Error ? error.message : String(error) });
@@ -680,7 +730,7 @@ workerScope.onmessage = (event): void => {
   else if (message.action === 'step' && paused) { paused = false; void tick().finally(() => { paused = true; schedule(); }); }
   else if (message.action === 'stop') {
     paused = true; resetSimulation(agentCount); emitFrame();
-    post({ type: 'metrics', inferenceMs: lastInferenceMs, backend });
+    post({ type: 'metrics', inferenceMs: lastInferenceMs, backend, backendAdapter });
     post({ type: 'status', state: 'stopped' }); schedule();
   } else if (message.action === 'fail') failAgent(Number(message.agent));
   else if (message.action === 'load') {

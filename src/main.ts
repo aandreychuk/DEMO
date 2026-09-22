@@ -204,6 +204,7 @@ let simTime = 0;
 let socket: WebSocket | null = null;
 let browserWorker: Worker | null = null;
 let runtimeBackend = 'WASM';
+let runtimeAdapter = '';
 let live = false;
 let liveTickRate = 10;
 let livePrevious: LiveFrame | null = null;
@@ -2583,7 +2584,14 @@ function renderAgentPanel(): void {
 function setConnection(state: string, label: string): void {
   const connection = document.querySelector<HTMLElement>('.connection')!;
   connection.dataset.state = state;
-  document.querySelector('#source-label')!.textContent = label;
+  const sourceLabel = document.querySelector<HTMLElement>('#source-label')!;
+  sourceLabel.textContent = label;
+  sourceLabel.title = label;
+}
+
+function setRuntimeConnection(): void {
+  const adapter = runtimeAdapter ? ` · ${runtimeAdapter}` : '';
+  setConnection('live', `FASTDMM // ${runtimeBackend}${adapter}`);
 }
 
 function setAgentCount(count: number): void {
@@ -2610,12 +2618,13 @@ function handleRuntimeMessage(data: unknown): void {
   if (data instanceof ArrayBuffer) {
     live = true;
     parseFrame(data);
-    setConnection('live', `FASTDMM // ${runtimeBackend}`);
+    setRuntimeConnection();
     return;
   }
   const message = typeof data === 'string' ? JSON.parse(data) : data as Record<string, any>;
   if (message.type === 'hello') {
     runtimeBackend = String(message.backend ?? (message.browserRuntime ? 'WASM' : 'SIMULATOR'));
+    runtimeAdapter = String(message.backendAdapter ?? '');
     if (Array.isArray(message.layout?.pallets)) {
       replacePalletCells(message.layout.pallets.map((pallet: { x: number; y: number; cargoType?: number }) => {
         const cargoType = Number(pallet.cargoType);
@@ -2633,7 +2642,7 @@ function handleRuntimeMessage(data: unknown): void {
     lastInferenceMs = Number(message.inferenceMs) || 0;
     setAgentCount(Number(message.agents));
     sendControl('speed', { value: speed });
-    setConnection('live', `FASTDMM // ${runtimeBackend}`);
+    setRuntimeConnection();
   } else if (message.type === 'layout-applied') {
     closeLayoutEditor(false, false);
   } else if (message.type === 'layout-error') {
@@ -2656,6 +2665,7 @@ function handleRuntimeMessage(data: unknown): void {
     setConnection('stopped', 'SIMULATION // STOPPED');
   } else if (message.type === 'metrics') {
     runtimeBackend = String(message.backend ?? runtimeBackend);
+    runtimeAdapter = String(message.backendAdapter ?? runtimeAdapter);
     lastInferenceMs = Number(message.inferenceMs) || 0;
   } else if (message.type === 'error') {
     setConnection('error', `ERROR // ${String(message.message ?? 'RUNTIME')}`);
