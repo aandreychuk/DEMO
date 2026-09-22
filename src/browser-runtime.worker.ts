@@ -120,6 +120,8 @@ let step = 0;
 let completedTasks = 0;
 let nextTaskId = 0;
 let lastInferenceMs = 0;
+let inferenceTotalMs = 0;
+let inferenceSamples = 0;
 
 // The model shape is fixed at 100 agents. Reuse the CPU-side input tensors for
 // every tick instead of allocating three typed arrays and three Tensor wrappers
@@ -274,6 +276,8 @@ async function loadPolicy(): Promise<ort.InferenceSession> {
   ort.env.wasm.simd = true;
   const fp32ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
   const fp16ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-fp16.onnx`, self.location.origin).href;
+  const fusedFp32ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-webgpu.onnx`, self.location.origin).href;
+  const fusedFp16ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-webgpu-fp16.onnx`, self.location.origin).href;
   const gpu = (navigator as Navigator & { gpu?: BrowserGpu }).gpu;
   if (gpu) {
     let device: BrowserGpuDevice | null = null;
@@ -306,14 +310,26 @@ async function loadPolicy(): Promise<ort.InferenceSession> {
       let webgpuSession: ort.InferenceSession;
       if (supportsFp16) {
         try {
-          webgpuSession = await ort.InferenceSession.create(fp16ModelUrl, sessionOptions);
-          precision = 'FP16';
+          webgpuSession = await ort.InferenceSession.create(fusedFp16ModelUrl, sessionOptions);
+          precision = 'FP16 FUSED';
         } catch (error) {
-          console.warn('FP16 WebGPU policy unavailable; retrying the FP32 graph.', error);
-          webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+          console.warn('Fused FP16 WebGPU policy unavailable; retrying the portable FP16 graph.', error);
+          try {
+            webgpuSession = await ort.InferenceSession.create(fp16ModelUrl, sessionOptions);
+            precision = 'FP16';
+          } catch (fallbackError) {
+            console.warn('FP16 WebGPU policy unavailable; retrying the FP32 graph.', fallbackError);
+            webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+          }
         }
       } else {
-        webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+        try {
+          webgpuSession = await ort.InferenceSession.create(fusedFp32ModelUrl, sessionOptions);
+          precision = 'FP32 FUSED';
+        } catch (error) {
+          console.warn('Fused FP32 WebGPU policy unavailable; retrying the portable graph.', error);
+          webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+        }
       }
       backend = 'WEBGPU';
       const info = device.adapterInfo ?? adapter.info;
@@ -415,6 +431,9 @@ function resetSimulation(count: number): void {
   rescueQueue = [];
   step = 0;
   completedTasks = 0;
+  lastInferenceMs = 0;
+  inferenceTotalMs = 0;
+  inferenceSamples = 0;
   previousFramePositions = null;
   previousFrameStages = null;
   previousFramePalletIds = null;
@@ -556,7 +575,14 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
   const output = await session.run(inferenceFeeds);
   try {
     if (generation !== expectedGeneration) return false;
-    lastInferenceMs = performance.now() - started;
+    const elapsed = performance.now() - started;
+    if (step >= 5) {
+      inferenceTotalMs += elapsed;
+      inferenceSamples++;
+      lastInferenceMs = inferenceTotalMs / inferenceSamples;
+    } else {
+      lastInferenceMs = elapsed;
+    }
     const values = output.action_probabilities.data as Float32Array;
     new Float32Array(core.memory.buffer, core.probabilitiesPointer(), MAX_AGENTS * ACTIONS).set(values);
   } finally {
