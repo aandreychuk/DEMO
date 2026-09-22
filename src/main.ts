@@ -247,17 +247,17 @@ const cameraKeyByCode: Readonly<Record<string, string>> = {
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
 robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
-robotMesh.thinInstanceCount = agentCount;
+setThinInstanceCount(robotMesh, agentCount);
 agentPicker.thinInstanceSetBuffer('matrix', matrices, 16, false);
-agentPicker.thinInstanceCount = agentCount;
+setThinInstanceCount(agentPicker, agentCount);
 robotLoad.frame.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 robotLoad.deck.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 for (let type = 0; type < robotLoad.cargo.length; type++) {
   robotLoad.cargo[type].thinInstanceSetBuffer('matrix', cargoMatrices[type], 16, false);
-  robotLoad.cargo[type].thinInstanceCount = 0;
+  setThinInstanceCount(robotLoad.cargo[type], 0);
 }
-robotLoad.frame.thinInstanceCount = 0;
-robotLoad.deck.thinInstanceCount = 0;
+setThinInstanceCount(robotLoad.frame, 0);
+setThinInstanceCount(robotLoad.deck, 0);
 robotMesh.thinInstanceEnablePicking = true;
 agentPicker.thinInstanceEnablePicking = true;
 robotLoad.frame.thinInstanceEnablePicking = true;
@@ -376,6 +376,11 @@ function createRobotMesh(): Mesh {
   merged.material = material;
   merged.alwaysSelectAsActiveMesh = true;
   return merged;
+}
+
+function setThinInstanceCount(mesh: Mesh, count: number): void {
+  mesh.thinInstanceCount = count;
+  mesh.setEnabled(count > 0);
 }
 
 function createSelectionHalo(): Mesh {
@@ -739,11 +744,11 @@ function enterLayoutEditor(): void {
   syncPauseButton();
   clearAgentSelection();
   hideTaskMarkers();
-  robotMesh.thinInstanceCount = 0;
-  agentPicker.thinInstanceCount = 0;
-  robotLoad.frame.thinInstanceCount = 0;
-  robotLoad.deck.thinInstanceCount = 0;
-  for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
+  setThinInstanceCount(robotMesh, 0);
+  setThinInstanceCount(agentPicker, 0);
+  setThinInstanceCount(robotLoad.frame, 0);
+  setThinInstanceCount(robotLoad.deck, 0);
+  for (const cargo of robotLoad.cargo) setThinInstanceCount(cargo, 0);
   const editorInventory = new Uint8Array(palletCells.length);
   editorInventory.fill(PALLET_CAPACITY);
   palletScene.update(new Set(), editorInventory);
@@ -782,8 +787,8 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
   camera.radius = editorCameraState.radius;
   camera.target.copyFrom(editorCameraState.target);
   camera.attachControl(canvas, true);
-  robotMesh.thinInstanceCount = agentCount;
-  agentPicker.thinInstanceCount = agentCount;
+  setThinInstanceCount(robotMesh, agentCount);
+  setThinInstanceCount(agentPicker, agentCount);
   if (resumeSimulation && !editorWasPaused) {
     paused = false;
     syncPauseButton();
@@ -980,7 +985,7 @@ function createWarehousePallets(pallets: PalletCell[]): {
     }
     const setInstances = (mesh: Mesh, values: number[]) => {
       mesh.thinInstanceSetBuffer('matrix', new Float32Array(values), 16, false);
-      mesh.thinInstanceCount = values.length / 16;
+      setThinInstanceCount(mesh, values.length / 16);
     };
     setInstances(frame, palletTransforms);
     setInstances(deck, palletTransforms);
@@ -1941,9 +1946,9 @@ function updateFallback(time: number): void {
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
   agentPicker.thinInstanceBufferUpdated('matrix');
-  robotLoad.frame.thinInstanceCount = 0;
-  robotLoad.deck.thinInstanceCount = 0;
-  for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
+  setThinInstanceCount(robotLoad.frame, 0);
+  setThinInstanceCount(robotLoad.deck, 0);
+  for (const cargo of robotLoad.cargo) setThinInstanceCount(cargo, 0);
 }
 
 function resetServiceAnimations(): void {
@@ -2086,14 +2091,14 @@ function updateLive(now: number): void {
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
   agentPicker.thinInstanceBufferUpdated('matrix');
-  robotLoad.frame.thinInstanceCount = loadedCount;
-  robotLoad.deck.thinInstanceCount = loadedCount;
+  setThinInstanceCount(robotLoad.frame, loadedCount);
+  setThinInstanceCount(robotLoad.deck, loadedCount);
   if (loadedCount) {
     robotLoad.frame.thinInstanceBufferUpdated('matrix');
     robotLoad.deck.thinInstanceBufferUpdated('matrix');
   }
   for (let type = 0; type < robotLoad.cargo.length; type++) {
-    robotLoad.cargo[type].thinInstanceCount = cargoCounts[type];
+    setThinInstanceCount(robotLoad.cargo[type], cargoCounts[type]);
     if (cargoCounts[type]) robotLoad.cargo[type].thinInstanceBufferUpdated('matrix');
   }
   const towX = from.tow.x + (liveCurrent.tow.x - from.tow.x) * alpha;
@@ -2560,8 +2565,8 @@ function setConnection(state: string, label: string): void {
 function setAgentCount(count: number): void {
   agentCount = Math.min(MAX_AGENTS, count);
   if (selectedAgentId >= agentCount) clearAgentSelection();
-  robotMesh.thinInstanceCount = agentCount;
-  agentPicker.thinInstanceCount = agentCount;
+  setThinInstanceCount(robotMesh, agentCount);
+  setThinInstanceCount(agentPicker, agentCount);
   agentsValue.textContent = agentCount.toLocaleString('en-US');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
   if ([...select.options].some((option) => Number(option.value) === agentCount)) select.value = String(agentCount);
