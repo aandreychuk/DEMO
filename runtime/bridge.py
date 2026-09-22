@@ -671,22 +671,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--map",
         type=Path,
-        default=root / "scenarios" / "warehouse-lifelong-44x32.map",
+        default=root / "scenarios" / "warehouse-lifelong-44x33.map",
     )
     parser.add_argument(
         "--scenario",
         type=Path,
-        default=root / "scenarios" / "warehouse-lifelong-44x32.scen",
+        default=root / "scenarios" / "warehouse-lifelong-44x33.scen",
     )
     parser.add_argument(
         "--tasks",
         type=Path,
-        default=root / "scenarios" / "warehouse-lifelong-44x32.tasks.tsv",
+        default=root / "scenarios" / "warehouse-lifelong-44x33.tasks.tsv",
     )
     parser.add_argument(
         "--layout",
         type=Path,
-        default=root / "scenarios" / "warehouse-lifelong-44x32.layout.json",
+        default=root / "scenarios" / "warehouse-lifelong-44x33.layout.json",
     )
     parser.add_argument("--agents", type=int, choices=(25, 50, 100), default=100)
     parser.add_argument(

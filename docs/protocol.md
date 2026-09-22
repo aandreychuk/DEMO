@@ -13,7 +13,7 @@ The first server message is JSON so integrations are easy to inspect:
 {
   "type": "hello",
   "protocol": 5,
-  "map": { "width": 44, "height": 32, "cellSize": 1 },
+  "map": { "width": 44, "height": 33, "cellSize": 1 },
   "agents": 100,
   "tickRate": 10,
   "planningSeconds": 6.1,
@@ -25,8 +25,8 @@ The first server message is JSON so integrations are easy to inspect:
     "pallets": [],
     "stations": [],
     "reloadStations": [],
-    "repairStation": { "x": 2, "y": 31, "accessSide": "east" },
-    "towDepot": { "x": 2, "y": 30, "accessSide": "east" }
+    "repairStation": { "x": 2, "y": 32, "accessSide": "east" },
+    "towDepot": { "x": 2, "y": 31, "accessSide": "east" }
   },
   "summary": { "status": "running" }
 }

@@ -76,7 +76,7 @@ After eight repair ticks, the robot resumes the same assignment and stage. A
 carried pallet is left at the failure cell and becomes the repaired robot's
 temporary recovery goal before its saved task goal is restored.
 
-`generate_lifelong_warehouse.py` creates the 44×32 map, 100 starts, a visual
+`generate_lifelong_warehouse.py` creates the 44×33 map, 100 starts, a visual
 layout manifest, and 4,000 randomly ordered tasks. A task visits its pallet,
 one unloading cell, and the original pallet cell. Pallets start with 12 items,
 and the unloading arm removes one item on each visit. If the pallet becomes

@@ -17,7 +17,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import './style.css';
 
 const MAP_WIDTH = 44;
-const MAP_DEPTH = 32;
+const MAP_DEPTH = 33;
 const CELL_SIZE = 1.056;
 const PALLET_FOOTPRINT = 0.792;
 const MAX_AGENTS = 100;
@@ -543,8 +543,8 @@ function buildPalletCells(): PalletCell[] {
   let id = 0;
   for (let x = 4; x < MAP_WIDTH - 4; x++) {
     for (let z = 0; z < MAP_DEPTH; z++) {
-      const edgeStorageRow = z === 0 || z === MAP_DEPTH - 3 || z === MAP_DEPTH - 1;
-      const pairedStorageRow = z >= 2 && z <= MAP_DEPTH - 5 && z % 3 !== 1;
+      const edgeStorageRow = z === 0 || z === MAP_DEPTH - 1;
+      const pairedStorageRow = z >= 2 && z <= MAP_DEPTH - 3 && z % 3 !== 1;
       if ((edgeStorageRow || pairedStorageRow) && !isRecoveryReservedCell(x, z)) {
         result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
       }

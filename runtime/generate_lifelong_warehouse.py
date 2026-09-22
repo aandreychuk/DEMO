@@ -10,16 +10,15 @@ from pathlib import Path
 
 
 WIDTH = 44
-HEIGHT = 32
+HEIGHT = 33
 PALLET_X = range(4, WIDTH - 4)
 PALLET_Y = (
     0,
     *(
         y
-        for y in range(2, HEIGHT - 4)
+        for y in range(2, HEIGHT - 2)
         if y % 3 != 1
     ),
-    HEIGHT - 3,
     HEIGHT - 1,
 )
 UNLOAD_X = WIDTH - 3
@@ -61,11 +60,11 @@ def main() -> None:
 
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
-    map_name = "warehouse-lifelong-44x32.map"
+    map_name = "warehouse-lifelong-44x33.map"
     map_path = output / map_name
-    scen_path = output / "warehouse-lifelong-44x32.scen"
-    tasks_path = output / "warehouse-lifelong-44x32.tasks.tsv"
-    layout_path = output / "warehouse-lifelong-44x32.layout.json"
+    scen_path = output / "warehouse-lifelong-44x33.scen"
+    tasks_path = output / "warehouse-lifelong-44x33.tasks.tsv"
+    layout_path = output / "warehouse-lifelong-44x33.layout.json"
 
     pallets = pallet_cells()
     stations = [(UNLOAD_X, y) for y in UNLOAD_Y]
