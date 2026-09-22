@@ -26,14 +26,14 @@ UNLOAD_X = WIDTH - 3
 UNLOAD_Y = range(1, HEIGHT - 1)
 UNLOAD_BACK_X = UNLOAD_X + 1
 RELOAD_X = 2
-RELOAD_Y = range(1, HEIGHT - 1)
+RELOAD_Y = range(0, HEIGHT - 2)
 RELOAD_BACK_X = RELOAD_X - 1
 PALLET_CAPACITY = 12
-REPAIR_STATION = (WIDTH // 2, HEIGHT - 1)
-TOW_DEPOT = (WIDTH // 2 - 1, HEIGHT - 1)
+REPAIR_STATION = (RELOAD_X, HEIGHT - 1)
+TOW_DEPOT = (RELOAD_X, HEIGHT - 2)
 RECOVERY_APPROACH = {
-    (REPAIR_STATION[0], HEIGHT - 2),
-    (TOW_DEPOT[0], HEIGHT - 2),
+    (REPAIR_STATION[0] + 1, REPAIR_STATION[1]),
+    (TOW_DEPOT[0] + 1, TOW_DEPOT[1]),
 }
 EDITABLE_EDGE_CELLS = {
     (x, y)
@@ -77,12 +77,19 @@ def main() -> None:
         if x in (0, WIDTH - 1) or y in (0, HEIGHT - 1)
     }
     walls.update((UNLOAD_BACK_X, y) for y in UNLOAD_Y)
-    walls.update((RELOAD_BACK_X, y) for y in RELOAD_Y)
+    walls.update((RELOAD_BACK_X, y) for y in range(HEIGHT))
     walls.update({
         (UNLOAD_X, min(UNLOAD_Y) - 1),
         (UNLOAD_X, max(UNLOAD_Y) + 1),
     })
-    walls.difference_update(EDITABLE_EDGE_CELLS | {REPAIR_STATION, TOW_DEPOT})
+    reload_approaches = {(x + 1, y) for x, y in reload_stations}
+    walls.difference_update(
+        EDITABLE_EDGE_CELLS
+        | set(reload_stations)
+        | reload_approaches
+        | {REPAIR_STATION, TOW_DEPOT}
+        | RECOVERY_APPROACH
+    )
     rows = [
         "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)
@@ -139,12 +146,12 @@ def main() -> None:
                 "repairStation": {
                     "x": REPAIR_STATION[0],
                     "y": REPAIR_STATION[1],
-                    "accessSide": "north",
+                    "accessSide": "east",
                 },
                 "towDepot": {
                     "x": TOW_DEPOT[0],
                     "y": TOW_DEPOT[1],
-                    "accessSide": "north",
+                    "accessSide": "east",
                 },
             },
             indent=2,

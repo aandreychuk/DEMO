@@ -26,13 +26,14 @@ const UNLOAD_MIN_Z = 1;
 const UNLOAD_MAX_Z = MAP_DEPTH - 2;
 const UNLOAD_STATION_COUNT = UNLOAD_MAX_Z - UNLOAD_MIN_Z + 1;
 const RELOAD_X = 2;
-const RELOAD_MIN_Z = 1;
-const RELOAD_MAX_Z = MAP_DEPTH - 2;
+const RELOAD_MIN_Z = 0;
+const RELOAD_MAX_Z = MAP_DEPTH - 3;
 const RELOAD_STATION_COUNT = RELOAD_MAX_Z - RELOAD_MIN_Z + 1;
-const REPAIR_X = 22;
+const REPAIR_X = RELOAD_X;
 const REPAIR_Z = MAP_DEPTH - 1;
-const TOW_DEPOT_X = REPAIR_X - 1;
-const TOW_DEPOT_Z = REPAIR_Z;
+const TOW_DEPOT_X = RELOAD_X;
+const TOW_DEPOT_Z = MAP_DEPTH - 2;
+const RECOVERY_APPROACH_X = REPAIR_X + 1;
 const STORAGE_MIN_X = 4;
 const STORAGE_MAX_X = MAP_WIDTH - 5;
 const STORAGE_MIN_Z = 0;
@@ -544,14 +545,25 @@ function buildPalletCells(): PalletCell[] {
     for (let z = 0; z < MAP_DEPTH; z++) {
       const edgeStorageRow = z === 0 || z === MAP_DEPTH - 3 || z === MAP_DEPTH - 1;
       const pairedStorageRow = z >= 2 && z <= MAP_DEPTH - 5 && z % 3 !== 1;
-      const recoveryServiceCell = (z === REPAIR_Z || z === REPAIR_Z - 1)
-        && (x === TOW_DEPOT_X || x === REPAIR_X);
-      if ((edgeStorageRow || pairedStorageRow) && !recoveryServiceCell) {
+      if ((edgeStorageRow || pairedStorageRow) && !isRecoveryReservedCell(x, z)) {
         result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
       }
     }
   }
   return result;
+}
+
+function isRecoveryServiceCell(x: number, z: number): boolean {
+  return (x === REPAIR_X && z === REPAIR_Z)
+    || (x === TOW_DEPOT_X && z === TOW_DEPOT_Z);
+}
+
+function isRecoveryApproachCell(x: number, z: number): boolean {
+  return x === RECOVERY_APPROACH_X && (z === REPAIR_Z || z === TOW_DEPOT_Z);
+}
+
+function isRecoveryReservedCell(x: number, z: number): boolean {
+  return isRecoveryServiceCell(x, z) || isRecoveryApproachCell(x, z);
 }
 
 function createEditorCursor(): Mesh {
@@ -584,19 +596,18 @@ function parsePalletCellKey(key: string): { x: number; z: number } {
 function isEditablePalletCell(x: number, z: number): boolean {
   if (x < STORAGE_MIN_X || x > STORAGE_MAX_X) return false;
   if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) return false;
-  const recoveryServiceCell = (z === REPAIR_Z || z === REPAIR_Z - 1)
-    && (x === TOW_DEPOT_X || x === REPAIR_X);
-  return !recoveryServiceCell;
+  return !isRecoveryReservedCell(x, z);
 }
 
 function isEditorMapCellPassable(x: number, z: number): boolean {
   if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) return false;
   if (z === 0 || z === MAP_DEPTH - 1) {
-    if (x < STORAGE_MIN_X || x > STORAGE_MAX_X) return false;
+    const storageEdge = x >= STORAGE_MIN_X && x <= STORAGE_MAX_X;
+    if (!storageEdge && !isRecoveryApproachCell(x, z)) return false;
   } else if (x < STORAGE_MIN_X - 1 || x > STORAGE_MAX_X + 1) {
     return false;
   }
-  return !(z === REPAIR_Z && (x === TOW_DEPOT_X || x === REPAIR_X));
+  return !isRecoveryServiceCell(x, z);
 }
 
 function palletRecordsFromKeys(keys: Set<string>): PalletCell[] {
@@ -670,7 +681,9 @@ function validateEditorLayout(): { valid: boolean; message: string } {
     .map(parsePalletCellKey)
     .filter(({ z }) => z > 0 && z < MAP_DEPTH - 1)
     .length;
-  const reservedApproachCells = 2;
+  const reservedApproachCells = [REPAIR_Z, TOW_DEPOT_Z]
+    .filter((z) => z > 0 && z < MAP_DEPTH - 1)
+    .length;
   const availableStartCells = sideAisleCells
     + (STORAGE_MAX_X - STORAGE_MIN_X + 1) * interiorRows
     - reservedApproachCells
@@ -1685,22 +1698,26 @@ function createRepairStation(): void {
   accentMaterial.emissiveColor = Color3.FromHexString('#18a995');
   accentMaterial.disableLighting = true;
 
-  const center = worldAt((REPAIR_X + TOW_DEPOT_X) / 2, REPAIR_Z, 0);
-  const canopyWidth = CELL_SIZE * 2.08;
-  const canopyDepth = CELL_SIZE * 1.08;
+  const center = worldAt(
+    (REPAIR_X + TOW_DEPOT_X) / 2,
+    (REPAIR_Z + TOW_DEPOT_Z) / 2,
+    0,
+  );
+  const canopyWidth = CELL_SIZE * 1.08;
+  const canopyDepth = CELL_SIZE * 2.08;
   const roofY = 1.48;
   const roofHeight = 0.16;
   const postSize = 0.14;
   const postHeight = roofY - roofHeight / 2;
   const back = MeshBuilder.CreateBox('repair-shop-back', {
-    width: canopyWidth - postSize * 2,
+    width: postSize,
     height: postHeight,
-    depth: postSize,
+    depth: canopyDepth - postSize * 2,
   }, scene);
   back.position.set(
-    center.x,
+    center.x - canopyWidth / 2 + postSize / 2,
     postHeight / 2,
-    center.z + canopyDepth / 2 - postSize / 2,
+    center.z,
   );
   back.material = structureMaterial;
   const roof = MeshBuilder.CreateBox('repair-shop-roof', {
@@ -1729,11 +1746,11 @@ function createRepairStation(): void {
     }
   }
   const sign = MeshBuilder.CreateBox('repair-shop-sign', {
-    width: CELL_SIZE * 1.25,
+    width: 0.08,
     height: 0.18,
-    depth: 0.08,
+    depth: CELL_SIZE * 1.25,
   }, scene);
-  sign.position.set(center.x, 1.18, back.position.z - postSize / 2 - 0.045);
+  sign.position.set(back.position.x + postSize / 2 + 0.045, 1.18, center.z);
   sign.material = accentMaterial;
   const beacon = MeshBuilder.CreateCylinder('repair-shop-beacon', {
     height: 0.14,

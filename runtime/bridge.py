@@ -307,17 +307,30 @@ class Bridge:
         layout = dict(self.args.layout_data)
         width = int(layout["width"])
         height = int(layout["height"])
-        repair = (
-            int(layout["repairStation"]["x"]),
-            int(layout["repairStation"]["y"]),
-        )
+        repair_record = layout["repairStation"]
+        tow_depot_record = layout["towDepot"]
+        repair = (int(repair_record["x"]), int(repair_record["y"]))
         tow_depot = (
-            int(layout["towDepot"]["x"]),
-            int(layout["towDepot"]["y"]),
+            int(tow_depot_record["x"]),
+            int(tow_depot_record["y"]),
         )
+        access_offsets = {
+            "north": (0, -1),
+            "south": (0, 1),
+            "west": (-1, 0),
+            "east": (1, 0),
+        }
+
+        def approach_cell(record: dict[str, object]) -> tuple[int, int]:
+            side = str(record.get("accessSide", "north"))
+            if side not in access_offsets:
+                raise ValueError(f"invalid service access side: {side}")
+            dx, dy = access_offsets[side]
+            return int(record["x"]) + dx, int(record["y"]) + dy
+
         recovery_approach = {
-            (repair[0], repair[1] - 1),
-            (tow_depot[0], tow_depot[1] - 1),
+            approach_cell(repair_record),
+            approach_cell(tow_depot_record),
         }
         pallet_cells: set[tuple[int, int]] = set()
         for item in raw_pallets:

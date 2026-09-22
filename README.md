@@ -94,18 +94,19 @@ the native simulation.
 
 ## Verified 100-agent lifelong run
 
-The included 44×32 warehouse has 754 pallet cells, filling about two thirds of
+The included 44×32 warehouse has 756 pallet cells, filling about two thirds of
 the storage grid while preserving load-bearing aisles. It also has 30 unloading
-cells along one full inner edge and 30 batch-loading cells along the opposite
-edge. A deterministic FastDMM 0.8M + PIBT run on the current machine completed
+cells along one full inner edge and 30 batch-loading cells shifted to one end of
+the opposite edge. The two cells at the other end hold the tow depot and repair
+station. A deterministic FastDMM 0.8M + PIBT run on the current machine completed
 this 600-step horizon as follows:
 
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed tasks | 239 |
-| native runtime | 5.97 s |
-| mean AOTI inference | 6.56 ms |
+| completed tasks | 245 |
+| native runtime | 5.20 s |
+| mean AOTI inference | 5.04 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |
