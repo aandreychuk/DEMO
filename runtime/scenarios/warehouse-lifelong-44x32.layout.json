@@ -1331,12 +1331,12 @@
   ],
   "repairStation": {
     "x": 22,
-    "y": 30,
+    "y": 31,
     "accessSide": "north"
   },
   "towDepot": {
     "x": 21,
-    "y": 30,
+    "y": 31,
     "accessSide": "north"
   }
 }

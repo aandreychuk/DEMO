@@ -30,7 +30,7 @@ const RELOAD_MIN_Z = 1;
 const RELOAD_MAX_Z = MAP_DEPTH - 2;
 const RELOAD_STATION_COUNT = RELOAD_MAX_Z - RELOAD_MIN_Z + 1;
 const REPAIR_X = 22;
-const REPAIR_Z = MAP_DEPTH - 2;
+const REPAIR_Z = MAP_DEPTH - 1;
 const TOW_DEPOT_X = REPAIR_X - 1;
 const TOW_DEPOT_Z = REPAIR_Z;
 const PALLET_CAPACITY = 12;
@@ -1389,12 +1389,7 @@ function createRepairStation(): void {
   accentMaterial.emissiveColor = Color3.FromHexString('#18a995');
   accentMaterial.disableLighting = true;
 
-  // Keep the canopy at the warehouse boundary; only its footprint is 1x2.
-  const center = worldAt(
-    (REPAIR_X + TOW_DEPOT_X) / 2,
-    MAP_DEPTH - 0.75,
-    0,
-  );
+  const center = worldAt((REPAIR_X + TOW_DEPOT_X) / 2, REPAIR_Z, 0);
   const canopyWidth = CELL_SIZE * 2.08;
   const canopyDepth = CELL_SIZE * 1.08;
   const roofY = 1.48;

@@ -25,8 +25,8 @@ The first server message is JSON so integrations are easy to inspect:
     "pallets": [],
     "stations": [],
     "reloadStations": [],
-    "repairStation": { "x": 22, "y": 30 },
-    "towDepot": { "x": 21, "y": 30 }
+    "repairStation": { "x": 22, "y": 31 },
+    "towDepot": { "x": 21, "y": 31 }
   },
   "summary": { "status": "running" }
 }

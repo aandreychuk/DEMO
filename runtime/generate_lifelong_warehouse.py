@@ -20,8 +20,12 @@ RELOAD_X = 2
 RELOAD_Y = range(1, HEIGHT - 1)
 RELOAD_BACK_X = RELOAD_X - 1
 PALLET_CAPACITY = 12
-REPAIR_STATION = (WIDTH // 2, HEIGHT - 2)
-TOW_DEPOT = (WIDTH // 2 - 1, HEIGHT - 2)
+REPAIR_STATION = (WIDTH // 2, HEIGHT - 1)
+TOW_DEPOT = (WIDTH // 2 - 1, HEIGHT - 1)
+RECOVERY_APPROACH = {
+    (REPAIR_STATION[0], HEIGHT - 2),
+    (TOW_DEPOT[0], HEIGHT - 2),
+}
 
 
 def pallet_cells() -> list[tuple[int, int]]:
@@ -65,6 +69,7 @@ def main() -> None:
         (UNLOAD_X, min(UNLOAD_Y) - 1),
         (UNLOAD_X, max(UNLOAD_Y) + 1),
     })
+    walls.difference_update({REPAIR_STATION, TOW_DEPOT})
     rows = [
         "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)
@@ -74,6 +79,7 @@ def main() -> None:
         | set(stations)
         | set(reload_stations)
         | {REPAIR_STATION, TOW_DEPOT}
+        | RECOVERY_APPROACH
     )
     starts_pool = [
         (x, y)
