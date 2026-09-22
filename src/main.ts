@@ -2964,6 +2964,10 @@ document.querySelector('#editor-apply')!.addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    cameraKeys.clear();
+    return;
+  }
   const target = event.target as HTMLElement | null;
   if (target?.matches('input:not([type="range"]), select, textarea, [contenteditable="true"]')) return;
   const key = cameraKeyByCode[event.code];
@@ -2974,9 +2978,7 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('keyup', (event) => {
   const key = cameraKeyByCode[event.code];
-  if (!key) return;
-  cameraKeys.delete(key);
-  event.preventDefault();
+  if (key) cameraKeys.delete(key);
 });
 
 window.addEventListener('blur', () => cameraKeys.clear());
