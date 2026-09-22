@@ -66,8 +66,8 @@ pnpm install
 pnpm dev -- --host 127.0.0.1 --port 4173
 ```
 
-Open the local URL shown by Vite. The header reports FASTDMM // WEBGPU or
-FASTDMM // WASM after the selected execution provider is ready. Runs with up
+Open the local URL shown by Vite. The header reports DMM-0.8M // WEBGPU or
+DMM-0.8M // WASM after the selected execution provider is ready. Runs with up
 to 100 agents keep the original 100-slot ONNX graph. Selecting 101–1000 agents
 in the layout editor loads a separate 1000-slot graph on demand and pads unused
 slots. This increases inference time and GPU memory use at larger counts.

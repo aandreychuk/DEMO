@@ -2605,7 +2605,7 @@ function setConnection(state: string, label: string): void {
 
 function setRuntimeConnection(): void {
   const adapter = runtimeAdapter ? ` · ${runtimeAdapter}` : '';
-  setConnection('live', `FASTDMM // ${runtimeBackend}${adapter}`);
+  setConnection('live', `DMM-0.8M // ${runtimeBackend}${adapter}`);
 }
 
 function syncDocumentActivity(): void {

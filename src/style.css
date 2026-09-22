@@ -131,10 +131,13 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 #app.editor-mode #scene { cursor: crosshair; }
 
 .eyebrow { margin: 0; color: #5f7c90; font: 600 9px 'IBM Plex Mono', monospace; letter-spacing: 0.18em; }
+.demo-guide { padding-bottom: 16px; border-bottom: 1px solid rgba(143, 214, 255, .1); }
+.demo-guide p:not(.eyebrow) { margin: 9px 0 0; color: #a9c5d2; font-size: 10px; line-height: 1.5; }
+.demo-guide + .agent-inspector { margin-top: 16px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; }
 .clear-selection { width: 24px; height: 24px; border-radius: 6px; color: #67869a; background: rgba(92, 189, 225, .06); font-size: 16px; line-height: 1; }
 .clear-selection:hover { color: #e4f8ff; background: rgba(92, 189, 225, .14); }
-.agent-empty { min-height: 154px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #5f7c90; }
+.agent-empty { min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #5f7c90; }
 .target-glyph { color: #42dfff; font-size: 30px; line-height: 1; text-shadow: 0 0 18px rgba(66, 223, 255, .5); }
 .agent-empty strong { margin-top: 13px; color: #b9d4e2; font: 600 10px 'IBM Plex Mono', monospace; letter-spacing: .14em; }
 .agent-empty small { margin-top: 7px; color: #506b7d; font-size: 9px; }
