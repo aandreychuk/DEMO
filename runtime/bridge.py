@@ -617,7 +617,7 @@ class Bridge:
                         paused = True
                     elif action == "speed":
                         speed = min(
-                            3.0, max(0.25, float(message.get("value", 1)))
+                            5.0, max(0.25, float(message.get("value", 1)))
                         )
                     elif action == "fail":
                         agent = int(message.get("agent", -1))
@@ -698,7 +698,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="native step limit; 0 keeps the simulator running indefinitely",
     )
-    parser.add_argument("--tick-rate", type=float, default=10)
+    parser.add_argument("--tick-rate", type=float, default=5)
     parser.add_argument("--threads", type=int, default=6)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18765)

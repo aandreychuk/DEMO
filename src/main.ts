@@ -62,7 +62,7 @@ const MAX_RENDERED_GOODS = MAX_AGENTS * PALLET_CAPACITY
   + CONVEYOR_BOX_COUNT * CONVEYOR_BOX_CAPACITY
   + UNLOAD_STATION_COUNT
   + RELOAD_STATION_COUNT;
-const FALLBACK_STEP_SECONDS = 0.72;
+const FALLBACK_STEP_SECONDS = 1.44;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 const USE_SERVER_RUNTIME = import.meta.env.VITE_MAPF_RUNTIME === 'server';
@@ -214,7 +214,7 @@ let runtimeBackend = 'WASM';
 let runtimeAdapter = '';
 let live = false;
 let backgroundSuspended = document.visibilityState === 'hidden' || !document.hasFocus();
-let liveTickRate = 10;
+let liveTickRate = 5;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let towLoadingStartedStep = 0;
@@ -2669,7 +2669,7 @@ function handleRuntimeMessage(data: unknown): void {
     live = true;
     paused = false;
     syncPauseButton();
-    liveTickRate = Number(message.tickRate) || 10;
+    liveTickRate = Number(message.tickRate) || 5;
     lastInferenceMs = Number(message.inferenceMs) || 0;
     setAgentCount(Number(message.agents));
     sendControl('speed', { value: speed });

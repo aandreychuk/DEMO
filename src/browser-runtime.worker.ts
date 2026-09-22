@@ -14,7 +14,7 @@ const UNLOAD_DWELL = 5;
 const RELOAD_DWELL = 5;
 const REPAIR_DWELL = 8;
 const TOW_LOADING_DWELL = 3;
-const TICK_RATE = 10;
+const TICK_RATE = 5;
 const FRAME_MAGIC = 0x4d415046;
 const PROTOCOL = 5;
 
@@ -837,14 +837,14 @@ workerScope.onmessage = (event): void => {
   if (message.type !== 'control' || reconfiguring) return;
   if (!booted) {
     if (message.action === 'load') requestedAgentCount = Math.max(1, Math.min(MAX_AGENTS, Number(message.agents) || MAX_AGENTS));
-    else if (message.action === 'speed') speed = Math.max(0.25, Math.min(3, Number(message.value) || 1));
+    else if (message.action === 'speed') speed = Math.max(0.25, Math.min(5, Number(message.value) || 1));
     else if (message.action === 'pause' || message.action === 'stop') paused = true;
     else if (message.action === 'run') paused = false;
     return;
   }
   if (message.action === 'pause') { paused = true; schedule(); }
   else if (message.action === 'run') { paused = false; schedule(); }
-  else if (message.action === 'speed') { speed = Math.max(0.25, Math.min(3, Number(message.value) || 1)); schedule(); }
+  else if (message.action === 'speed') { speed = Math.max(0.25, Math.min(5, Number(message.value) || 1)); schedule(); }
   else if (message.action === 'step' && paused) { paused = false; void tick().finally(() => { paused = true; schedule(); }); }
   else if (message.action === 'stop') {
     paused = true; resetSimulation(agentCount); emitFrame();
