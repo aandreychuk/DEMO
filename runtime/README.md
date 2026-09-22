@@ -26,6 +26,19 @@ that previously produced infinities and allows the PyTorch ONNX optimizer to
 compact the fixed-size opset-20 graph. The optimized graph is still checked
 against eager PyTorch and must preserve every argmax action.
 
+`convert_fastdmm_fp16.py` creates the WebGPU FP16 variant while preserving the
+FP32 input/output contract. It checks nine deterministic input batches against
+the FP32 ONNX graph and requires at least 99.5% identical argmax actions. The
+browser selects this model only when the adapter exposes `shader-f16`; other
+WebGPU devices and the WASM fallback continue to use the FP32 graph.
+
+```bash
+python runtime/convert_fastdmm_fp16.py \
+  --input public/runtime/fastdmm-0.8m.onnx \
+  --output public/runtime/fastdmm-0.8m-fp16.onnx \
+  --agents 100
+```
+
 `export_fastdmm_aoti.py` turns a trusted FastDMM training checkpoint into a
 two-input AOTInductor package for the GPU in the current machine. The package
 contract matches the native runner published with `dmm-mapf-checkpoints`:

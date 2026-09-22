@@ -82,7 +82,8 @@ type BrowserGpuDevice = {
 type BrowserGpuAdapter = {
   info?: BrowserGpuAdapterInfo;
   isFallbackAdapter?: boolean;
-  requestDevice: () => Promise<BrowserGpuDevice>;
+  features?: { has: (feature: string) => boolean };
+  requestDevice: (descriptor?: { requiredFeatures?: string[] }) => Promise<BrowserGpuDevice>;
 };
 
 type BrowserGpu = {
@@ -271,7 +272,8 @@ async function loadWasm(): Promise<WasmCore> {
 async function loadPolicy(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
-  const modelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
+  const fp32ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
+  const fp16ModelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-fp16.onnx`, self.location.origin).href;
   const gpu = (navigator as Navigator & { gpu?: BrowserGpu }).gpu;
   if (gpu) {
     let device: BrowserGpuDevice | null = null;
@@ -281,24 +283,41 @@ async function loadPolicy(): Promise<ort.InferenceSession> {
         forceFallbackAdapter: false,
       });
       if (!adapter) throw new Error('No WebGPU adapter was returned by the browser.');
-      device = await adapter.requestDevice();
+      const supportsFp16 = adapter.features?.has('shader-f16') === true;
+      const requiredFeatures: string[] = [];
+      if (supportsFp16) requiredFeatures.push('shader-f16');
+      if (adapter.features?.has('subgroups')) requiredFeatures.push('subgroups');
+      device = await adapter.requestDevice({ requiredFeatures });
 
       // Supplying the exact device prevents ONNX Runtime from making a second,
       // opaque adapter choice. Browsers may otherwise honor powerPreference
       // differently and run the same build on different hardware.
       ort.env.webgpu.device = device;
-      const webgpuSession = await ort.InferenceSession.create(modelUrl, {
+      const sessionOptions = {
         executionProviders: [{
-          name: 'webgpu',
+          name: 'webgpu' as const,
           device,
-          preferredLayout: 'NHWC',
-          validationMode: 'wgpuOnly',
-          storageBufferCacheMode: 'simple',
+          preferredLayout: 'NHWC' as const,
+          validationMode: 'wgpuOnly' as const,
+          storageBufferCacheMode: 'simple' as const,
         }],
-      });
+      };
+      let precision = 'FP32';
+      let webgpuSession: ort.InferenceSession;
+      if (supportsFp16) {
+        try {
+          webgpuSession = await ort.InferenceSession.create(fp16ModelUrl, sessionOptions);
+          precision = 'FP16';
+        } catch (error) {
+          console.warn('FP16 WebGPU policy unavailable; retrying the FP32 graph.', error);
+          webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+        }
+      } else {
+        webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+      }
       backend = 'WEBGPU';
       const info = device.adapterInfo ?? adapter.info;
-      backendAdapter = formatAdapter(info, adapter.isFallbackAdapter === true);
+      backendAdapter = `${formatAdapter(info, adapter.isFallbackAdapter === true)} · ${precision}`;
       return webgpuSession;
     } catch (error) {
       device?.destroy?.();
@@ -307,7 +326,7 @@ async function loadPolicy(): Promise<ort.InferenceSession> {
   }
   backend = 'WASM';
   backendAdapter = '';
-  return ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] });
+  return ort.InferenceSession.create(fp32ModelUrl, { executionProviders: ['wasm'] });
 }
 
 function formatAdapter(info: BrowserGpuAdapterInfo | undefined, fallback: boolean): string {

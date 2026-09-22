@@ -1,0 +1,60 @@
+{
+  "schema": "fastdmm-browser-policy/v2",
+  "architecture": "FastDMM-0.8M",
+  "checkpoint": "fastdmm_grpo_stage2_step12800.pt",
+  "checkpoint_sha256": "c737bd43d12c7847582e433b1495cb7392d38491d36ac45b1dcf958a32c6f6d5",
+  "checkpoint_step": 12800,
+  "agent_slots": 100,
+  "inputs": [
+    {
+      "name": "observations",
+      "dtype": "int64",
+      "shape": [
+        1,
+        100,
+        256
+      ]
+    },
+    {
+      "name": "chat",
+      "dtype": "int64",
+      "shape": [
+        1,
+        100,
+        13
+      ]
+    },
+    {
+      "name": "neighbor_padding",
+      "dtype": "bool",
+      "shape": [
+        1,
+        100,
+        13
+      ]
+    }
+  ],
+  "output": {
+    "name": "action_probabilities",
+    "dtype": "float32",
+    "shape": [
+      100,
+      5
+    ]
+  },
+  "opset": 20,
+  "parameter_count": 763296,
+  "onnx_size_bytes": 2627732,
+  "onnx_sha256": "cd3eb97759919586317da330b007b3847ac24ee81f751959765e3e3d7f4c9ac5",
+  "validation": {
+    "provider": "CPUExecutionProvider",
+    "samples": 9,
+    "max_abs_error_vs_fp32": 0.9699584245681763,
+    "mean_abs_error_vs_fp32": 0.0008763095222497618,
+    "action_agreement_vs_fp32": 0.9977777777777778,
+    "max_probability_sum_error": 2.384185791015625e-07
+  },
+  "precision": "float16",
+  "source_onnx": "fastdmm-0.8m.onnx",
+  "source_onnx_sha256": "2448a213005136448d407a7d0c5328ceee45cd6981b9d5d3872f101df769b44d"
+}
