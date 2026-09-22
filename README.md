@@ -86,17 +86,18 @@ clearly labelled synthetic motion while it retries the loopback connection.
 
 ## Verified 100-agent lifelong run
 
-The included 44×32 warehouse has 160 pallet cells, 30 unloading cells along
-one full inner edge, and 30 batch-loading cells along the opposite edge. A deterministic FastDMM 0.8M + PIBT run on
-the current machine completed this
-600-step horizon as follows:
+The included 44×32 warehouse has 718 pallet cells, filling about two thirds of
+the storage grid while preserving load-bearing aisles. It also has 30 unloading
+cells along one full inner edge and 30 batch-loading cells along the opposite
+edge. A deterministic FastDMM 0.8M + PIBT run on the current machine completed
+this 600-step horizon as follows:
 
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed tasks | 602 |
-| native runtime | 5.22 s |
-| mean AOTI inference | 4.95 ms |
+| completed tasks | 204 |
+| native runtime | 4.86 s |
+| mean AOTI inference | 5.52 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

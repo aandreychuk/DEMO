@@ -489,12 +489,14 @@ function createGrid(): void {
 function buildPalletCells(): PalletCell[] {
   const result: PalletCell[] = [];
   let id = 0;
-  for (let gx = 5; gx < MAP_WIDTH - 4; gx += 8) {
-    for (let gz = 4; gz < MAP_DEPTH - 3; gz += 7) {
-      for (let x = gx; x < gx + 2; x++) {
-        for (let z = gz - 1; z < gz + 3; z++) {
-          result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
-        }
+  for (let x = 4; x < MAP_WIDTH - 4; x++) {
+    for (let z = 1; z < MAP_DEPTH - 1; z++) {
+      const edgeStorageRow = z === 1 || z === MAP_DEPTH - 2;
+      const pairedStorageRow = z >= 3 && z <= MAP_DEPTH - 4 && z % 3 !== 2;
+      const recoveryApproach = z === MAP_DEPTH - 2
+        && (x === TOW_DEPOT_X || x === REPAIR_X);
+      if ((edgeStorageRow || pairedStorageRow) && !recoveryApproach) {
+        result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
       }
     }
   }

@@ -11,8 +11,16 @@ from pathlib import Path
 
 WIDTH = 44
 HEIGHT = 32
-PALLET_X = range(5, WIDTH - 4, 8)
-PALLET_Y = range(4, HEIGHT - 3, 7)
+PALLET_X = range(4, WIDTH - 4)
+PALLET_Y = (
+    1,
+    *(
+        y
+        for y in range(3, HEIGHT - 3)
+        if y % 3 != 2
+    ),
+    HEIGHT - 2,
+)
 UNLOAD_X = WIDTH - 3
 UNLOAD_Y = range(1, HEIGHT - 1)
 UNLOAD_BACK_X = UNLOAD_X + 1
@@ -31,10 +39,9 @@ RECOVERY_APPROACH = {
 def pallet_cells() -> list[tuple[int, int]]:
     return [
         (x, y)
-        for gx in PALLET_X
-        for gy in PALLET_Y
-        for x in range(gx, gx + 2)
-        for y in range(gy - 1, gy + 3)
+        for x in PALLET_X
+        for y in PALLET_Y
+        if (x, y) not in RECOVERY_APPROACH
     ]
 
 
