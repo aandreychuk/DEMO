@@ -1389,44 +1389,62 @@ function createRepairStation(): void {
   accentMaterial.emissiveColor = Color3.FromHexString('#18a995');
   accentMaterial.disableLighting = true;
 
-  const center = worldAt((REPAIR_X + TOW_DEPOT_X) / 2, MAP_DEPTH - 0.35, 0);
+  const center = worldAt((REPAIR_X + TOW_DEPOT_X) / 2, REPAIR_Z, 0);
+  const canopyWidth = CELL_SIZE * 2.08;
+  const canopyDepth = CELL_SIZE * 1.08;
+  const roofY = 1.48;
+  const roofHeight = 0.16;
+  const postSize = 0.14;
+  const postHeight = roofY - roofHeight / 2;
   const back = MeshBuilder.CreateBox('repair-shop-back', {
-    width: CELL_SIZE * 2.2,
-    height: 1.45,
-    depth: 0.28,
+    width: canopyWidth - postSize * 2,
+    height: postHeight,
+    depth: postSize,
   }, scene);
-  back.position.set(center.x, 0.72, center.z);
+  back.position.set(
+    center.x,
+    postHeight / 2,
+    center.z + canopyDepth / 2 - postSize / 2,
+  );
   back.material = structureMaterial;
   const roof = MeshBuilder.CreateBox('repair-shop-roof', {
-    width: CELL_SIZE * 2.35,
-    height: 0.16,
-    depth: CELL_SIZE * 1.35,
+    width: canopyWidth,
+    height: roofHeight,
+    depth: canopyDepth,
   }, scene);
-  roof.position.set(center.x, 1.48, center.z - CELL_SIZE * 0.4);
+  roof.position.set(center.x, roofY, center.z);
   roof.material = structureMaterial;
-  for (const x of [TOW_DEPOT_X - 0.42, REPAIR_X + 0.42]) {
-    const post = MeshBuilder.CreateBox('repair-shop-post', {
-      width: 0.14,
-      height: 1.45,
-      depth: 0.14,
-    }, scene);
-    const position = worldAt(x, REPAIR_Z + 0.44, 0.72);
-    post.position.copyFrom(position);
-    post.material = structureMaterial;
+  const postInset = postSize / 2 + 0.035;
+  for (const x of [
+    center.x - canopyWidth / 2 + postInset,
+    center.x + canopyWidth / 2 - postInset,
+  ]) {
+    for (const z of [
+      center.z - canopyDepth / 2 + postInset,
+      center.z + canopyDepth / 2 - postInset,
+    ]) {
+      const post = MeshBuilder.CreateBox('repair-shop-post', {
+        width: postSize,
+        height: postHeight,
+        depth: postSize,
+      }, scene);
+      post.position.set(x, postHeight / 2, z);
+      post.material = structureMaterial;
+    }
   }
   const sign = MeshBuilder.CreateBox('repair-shop-sign', {
     width: CELL_SIZE * 1.25,
     height: 0.18,
     depth: 0.08,
   }, scene);
-  sign.position.set(center.x, 1.18, center.z - 0.18);
+  sign.position.set(center.x, 1.18, back.position.z - postSize / 2 - 0.045);
   sign.material = accentMaterial;
   const beacon = MeshBuilder.CreateCylinder('repair-shop-beacon', {
     height: 0.14,
     diameter: 0.22,
     tessellation: 14,
   }, scene);
-  beacon.position.set(center.x, 1.65, center.z - 0.25);
+  beacon.position.set(center.x, roofY + roofHeight / 2 + 0.07, center.z);
   beacon.material = accentMaterial;
   const glow = new GlowLayer('repair-shop-glow', scene, { blurKernelSize: 18 });
   glow.intensity = 0.55;
