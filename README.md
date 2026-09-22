@@ -84,15 +84,17 @@ speed, layout-independent WASD movement, mouse orbit, and wheel zoom remain
 browser-side. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
-The `LAYOUT` control opens a fixed-angle overhead pallet editor. Click or drag
-over storage cells to add and remove pallets; undo, reset, and clear tools make
-larger changes practical. The editor checks loaded-pallet access before enabling
-apply. Applying a valid layout saves it locally, regenerates 100 deterministic
-starts and 4,000 tasks, then restarts the native simulation.
+The `LAYOUT` control opens a fixed-angle overhead pallet editor aligned with one
+grid axis. WASD pans the view and the wheel zooms without changing its angle.
+Click or drag over storage cells, including the two outer rows, to add and remove
+pallets; undo, reset, and clear tools make larger changes practical. The editor
+checks loaded-pallet access before enabling apply. Applying a valid layout saves
+it locally, regenerates 100 deterministic starts and 4,000 tasks, then restarts
+the native simulation.
 
 ## Verified 100-agent lifelong run
 
-The included 44×32 warehouse has 718 pallet cells, filling about two thirds of
+The included 44×32 warehouse has 754 pallet cells, filling about two thirds of
 the storage grid while preserving load-bearing aisles. It also has 30 unloading
 cells along one full inner edge and 30 batch-loading cells along the opposite
 edge. A deterministic FastDMM 0.8M + PIBT run on the current machine completed
@@ -101,9 +103,9 @@ this 600-step horizon as follows:
 | Metric | Result |
 | --- | ---: |
 | status | lifelong horizon complete |
-| completed tasks | 204 |
-| native runtime | 4.86 s |
-| mean AOTI inference | 5.52 ms |
+| completed tasks | 239 |
+| native runtime | 5.97 s |
+| mean AOTI inference | 6.56 ms |
 | vertex collisions | 0 |
 | edge-swap collisions | 0 |
 | obstacle collisions | 0 |

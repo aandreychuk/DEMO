@@ -329,10 +329,10 @@ class Bridge:
                 raise ValueError("pallet coordinates must be integers")
             if not isinstance(x, int) or not isinstance(y, int):
                 raise ValueError("pallet coordinates must be integers")
-            if not (4 <= x <= width - 5 and 1 <= y <= height - 2):
+            if not (4 <= x <= width - 5 and 0 <= y < height):
                 raise ValueError(f"pallet ({x}, {y}) is outside the editable storage grid")
-            if (x, y) in recovery_approach:
-                raise ValueError("repair-station approach cells must remain clear")
+            if (x, y) in recovery_approach | {repair, tow_depot}:
+                raise ValueError("repair-station cells and their approaches must remain clear")
             if (x, y) in pallet_cells:
                 raise ValueError(f"duplicate pallet cell ({x}, {y})")
             pallet_cells.add((x, y))

@@ -127,7 +127,8 @@ clears the recovery queue and all failures.
 
 `layout` validates the edited pallet coordinates, saves the layout, regenerates
 100 deterministic start positions and 4,000 tasks, and restarts that browser's
-native simulation. Pallets are accepted only inside the storage grid. Every
+native simulation. Pallets are accepted only inside the storage grid, including
+its open top and bottom edge rows. Every
 pallet must retain a loaded route to the unloading side, both service sides must
 remain connected, and the repair-station approach stays reserved.
 

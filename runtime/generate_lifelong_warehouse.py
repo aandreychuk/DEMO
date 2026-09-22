@@ -13,13 +13,14 @@ WIDTH = 44
 HEIGHT = 32
 PALLET_X = range(4, WIDTH - 4)
 PALLET_Y = (
-    1,
+    0,
     *(
         y
-        for y in range(3, HEIGHT - 3)
-        if y % 3 != 2
+        for y in range(2, HEIGHT - 4)
+        if y % 3 != 1
     ),
-    HEIGHT - 2,
+    HEIGHT - 3,
+    HEIGHT - 1,
 )
 UNLOAD_X = WIDTH - 3
 UNLOAD_Y = range(1, HEIGHT - 1)
@@ -34,6 +35,11 @@ RECOVERY_APPROACH = {
     (REPAIR_STATION[0], HEIGHT - 2),
     (TOW_DEPOT[0], HEIGHT - 2),
 }
+EDITABLE_EDGE_CELLS = {
+    (x, y)
+    for x in PALLET_X
+    for y in (0, HEIGHT - 1)
+}
 
 
 def pallet_cells() -> list[tuple[int, int]]:
@@ -41,7 +47,7 @@ def pallet_cells() -> list[tuple[int, int]]:
         (x, y)
         for x in PALLET_X
         for y in PALLET_Y
-        if (x, y) not in RECOVERY_APPROACH
+        if (x, y) not in RECOVERY_APPROACH | {REPAIR_STATION, TOW_DEPOT}
     ]
 
 
@@ -76,7 +82,7 @@ def main() -> None:
         (UNLOAD_X, min(UNLOAD_Y) - 1),
         (UNLOAD_X, max(UNLOAD_Y) + 1),
     })
-    walls.difference_update({REPAIR_STATION, TOW_DEPOT})
+    walls.difference_update(EDITABLE_EDGE_CELLS | {REPAIR_STATION, TOW_DEPOT})
     rows = [
         "".join("@" if (x, y) in walls else "." for x in range(WIDTH))
         for y in range(HEIGHT)

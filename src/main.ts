@@ -35,8 +35,8 @@ const TOW_DEPOT_X = REPAIR_X - 1;
 const TOW_DEPOT_Z = REPAIR_Z;
 const STORAGE_MIN_X = 4;
 const STORAGE_MAX_X = MAP_WIDTH - 5;
-const STORAGE_MIN_Z = 1;
-const STORAGE_MAX_Z = MAP_DEPTH - 2;
+const STORAGE_MIN_Z = 0;
+const STORAGE_MAX_Z = MAP_DEPTH - 1;
 const STORAGE_CELL_COUNT = (STORAGE_MAX_X - STORAGE_MIN_X + 1)
   * (STORAGE_MAX_Z - STORAGE_MIN_Z + 1);
 const PALLET_CAPACITY = 12;
@@ -536,12 +536,12 @@ function buildPalletCells(): PalletCell[] {
   const result: PalletCell[] = [];
   let id = 0;
   for (let x = 4; x < MAP_WIDTH - 4; x++) {
-    for (let z = 1; z < MAP_DEPTH - 1; z++) {
-      const edgeStorageRow = z === 1 || z === MAP_DEPTH - 2;
-      const pairedStorageRow = z >= 3 && z <= MAP_DEPTH - 4 && z % 3 !== 2;
-      const recoveryApproach = z === MAP_DEPTH - 2
+    for (let z = 0; z < MAP_DEPTH; z++) {
+      const edgeStorageRow = z === 0 || z === MAP_DEPTH - 3 || z === MAP_DEPTH - 1;
+      const pairedStorageRow = z >= 2 && z <= MAP_DEPTH - 5 && z % 3 !== 1;
+      const recoveryServiceCell = (z === REPAIR_Z || z === REPAIR_Z - 1)
         && (x === TOW_DEPOT_X || x === REPAIR_X);
-      if ((edgeStorageRow || pairedStorageRow) && !recoveryApproach) {
+      if ((edgeStorageRow || pairedStorageRow) && !recoveryServiceCell) {
         result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
       }
     }
@@ -579,7 +579,19 @@ function parsePalletCellKey(key: string): { x: number; z: number } {
 function isEditablePalletCell(x: number, z: number): boolean {
   if (x < STORAGE_MIN_X || x > STORAGE_MAX_X) return false;
   if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) return false;
-  return !(z === MAP_DEPTH - 2 && (x === TOW_DEPOT_X || x === REPAIR_X));
+  const recoveryServiceCell = (z === REPAIR_Z || z === REPAIR_Z - 1)
+    && (x === TOW_DEPOT_X || x === REPAIR_X);
+  return !recoveryServiceCell;
+}
+
+function isEditorMapCellPassable(x: number, z: number): boolean {
+  if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) return false;
+  if (z === 0 || z === MAP_DEPTH - 1) {
+    if (x < STORAGE_MIN_X || x > STORAGE_MAX_X) return false;
+  } else if (x < STORAGE_MIN_X - 1 || x > STORAGE_MAX_X + 1) {
+    return false;
+  }
+  return !(z === REPAIR_Z && (x === TOW_DEPOT_X || x === REPAIR_X));
 }
 
 function palletRecordsFromKeys(keys: Set<string>): PalletCell[] {
@@ -647,20 +659,25 @@ function validateEditorLayout(): { valid: boolean; message: string } {
   if (editorLayout.size < MAX_AGENTS) {
     return { valid: false, message: `At least ${MAX_AGENTS} pallets are required for ${MAX_AGENTS} agents.` };
   }
-  const sideAisleCells = (STORAGE_MAX_Z - STORAGE_MIN_Z + 1) * 2;
+  const interiorRows = MAP_DEPTH - 2;
+  const sideAisleCells = interiorRows * 2;
+  const interiorPalletCount = [...editorLayout]
+    .map(parsePalletCellKey)
+    .filter(({ z }) => z > 0 && z < MAP_DEPTH - 1)
+    .length;
   const reservedApproachCells = 2;
   const availableStartCells = sideAisleCells
-    + STORAGE_CELL_COUNT
+    + (STORAGE_MAX_X - STORAGE_MIN_X + 1) * interiorRows
     - reservedApproachCells
-    - editorLayout.size;
+    - interiorPalletCount;
   if (availableStartCells < MAX_AGENTS) {
     return { valid: false, message: `The layout leaves only ${availableStartCells} robot start cells.` };
   }
   const reachable = new Set<string>();
   const queue: Array<{ x: number; z: number }> = [];
-  for (let z = STORAGE_MIN_Z; z <= STORAGE_MAX_Z; z++) {
+  for (let z = 1; z < MAP_DEPTH - 1; z++) {
     const key = palletCellKey(STORAGE_MAX_X + 1, z);
-    if (!editorLayout.has(key)) {
+    if (isEditorMapCellPassable(STORAGE_MAX_X + 1, z) && !editorLayout.has(key)) {
       reachable.add(key);
       queue.push({ x: STORAGE_MAX_X + 1, z });
     }
@@ -670,16 +687,15 @@ function validateEditorLayout(): { valid: boolean; message: string } {
     for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
       const x = cell.x + dx;
       const z = cell.z + dz;
-      if (x < STORAGE_MIN_X - 1 || x > STORAGE_MAX_X + 1) continue;
-      if (z < STORAGE_MIN_Z || z > STORAGE_MAX_Z) continue;
+      if (!isEditorMapCellPassable(x, z)) continue;
       const key = palletCellKey(x, z);
       if (editorLayout.has(key) || reachable.has(key)) continue;
       reachable.add(key);
       queue.push({ x, z });
     }
   }
-  const leftConnected = [...Array(STORAGE_MAX_Z - STORAGE_MIN_Z + 1)]
-    .some((_, index) => reachable.has(palletCellKey(STORAGE_MIN_X - 1, STORAGE_MIN_Z + index)));
+  const leftConnected = [...Array(interiorRows)]
+    .some((_, index) => reachable.has(palletCellKey(STORAGE_MIN_X - 1, index + 1)));
   if (!leftConnected) {
     return { valid: false, message: 'The loading and unloading sides are disconnected.' };
   }
@@ -736,10 +752,10 @@ function enterLayoutEditor(): void {
   };
   camera.detachControl();
   cameraKeys.clear();
-  camera.alpha = -Math.PI / 2.65;
-  camera.beta = 0.3;
-  camera.radius = 78;
-  camera.target.set(-2.6, 0, 0);
+  camera.alpha = -Math.PI / 2;
+  camera.beta = 0.34;
+  camera.radius = 72;
+  camera.target.set(3.8, 0, 0);
   document.querySelector('#app')!.classList.add('editor-mode');
   document.querySelector<HTMLElement>('#layout-editor')!.hidden = false;
   document.querySelector('#editor-message')!.textContent = 'Changes are applied to the local simulator.';
@@ -2636,7 +2652,7 @@ function mod(value: number, divisor: number): number {
 }
 
 function updateCameraMovement(dt: number): void {
-  if (editorActive || cameraKeys.size === 0) return;
+  if (cameraKeys.size === 0) return;
   const forward = camera.target.subtract(camera.position);
   forward.y = 0;
   if (forward.lengthSquared() < 1e-6) return;
@@ -2833,6 +2849,12 @@ window.addEventListener('keyup', (event) => {
 });
 
 window.addEventListener('blur', () => cameraKeys.clear());
+
+canvas.addEventListener('wheel', (event) => {
+  if (!editorActive) return;
+  event.preventDefault();
+  camera.radius = Math.max(38, Math.min(84, camera.radius + event.deltaY * 0.018));
+}, { passive: false });
 
 window.addEventListener('resize', () => engine.resize());
 connect();
