@@ -222,7 +222,7 @@ function rebuildScenarioForLayout(): void {
 }
 
 async function loadWasm(): Promise<WasmCore> {
-  const response = await fetch(new URL('/runtime/mapf-core.wasm', self.location.origin));
+  const response = await fetch(new URL(`${import.meta.env.BASE_URL}runtime/mapf-core.wasm`, self.location.origin));
   if (!response.ok) throw new Error(`WASM core download failed: ${response.status}`);
   const imports = { env: { abort: (): never => { throw new Error('MAPF WASM core aborted'); } } };
   const result = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
@@ -233,7 +233,7 @@ async function loadPolicy(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
   ort.env.webgpu.powerPreference = 'high-performance';
-  const modelUrl = new URL('/runtime/fastdmm-0.8m.onnx', self.location.origin).href;
+  const modelUrl = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m.onnx`, self.location.origin).href;
   if ('gpu' in navigator) {
     try {
       const webgpuSession = await ort.InferenceSession.create(modelUrl, {
