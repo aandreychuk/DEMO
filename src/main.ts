@@ -2709,7 +2709,7 @@ const loadedValue = document.querySelector('#loaded-value')!;
 const failedValue = document.querySelector('#failed-value')!;
 const recoveryValue = document.querySelector('#recovery-value')!;
 const towStatusValue = document.querySelector('#tow-status-value')!;
-const tasksValue = document.querySelector('#tasks-value')!;
+const taskThroughputValue = document.querySelector('#task-throughput-value')!;
 let telemetryElapsed = 0;
 
 engine.runRenderLoop(() => {
@@ -2749,7 +2749,10 @@ engine.runRenderLoop(() => {
     } else {
       towStatusValue.textContent = 'IDLE';
     }
-    tasksValue.textContent = String(liveCurrent?.completedTasks ?? 0);
+    const completedTasks = liveCurrent?.completedTasks ?? 0;
+    taskThroughputValue.textContent = step > 0
+      ? (completedTasks / step).toFixed(3)
+      : '0.000';
   }
 });
 
