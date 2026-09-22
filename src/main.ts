@@ -744,6 +744,10 @@ function enterLayoutEditor(): void {
   robotLoad.frame.thinInstanceCount = 0;
   robotLoad.deck.thinInstanceCount = 0;
   for (const cargo of robotLoad.cargo) cargo.thinInstanceCount = 0;
+  const editorInventory = new Uint8Array(palletCells.length);
+  editorInventory.fill(PALLET_CAPACITY);
+  palletScene.update(new Set(), editorInventory);
+  hiddenPalletKey = '';
   editorCameraState = {
     alpha: camera.alpha,
     beta: camera.beta,
