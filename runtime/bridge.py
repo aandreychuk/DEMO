@@ -19,7 +19,7 @@ from websockets.exceptions import ConnectionClosed
 
 
 MAGIC = 0x4D415046
-PROTOCOL = 4
+PROTOCOL = 5
 MAX_AGENTS = 100
 
 

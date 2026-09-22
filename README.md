@@ -43,13 +43,15 @@ physical pallet, assigned unloading bay, and the loading bay when the pallet is
 about to become empty.
 
 The inspector can break the selected robot. A separate recovery vehicle follows
-a shortest BFS route to the failure, carries the robot to the repair station,
-and returns to its depot. Both the failed robot and the moving recovery vehicle
-appear only as dynamic obstacles in FastDMM cost-to-go and PIBT constraints;
-neither participates in relational observations or `agent_chat_ids`. Repairs
-take eight ticks. The repaired robot keeps its assignment and task stage. If it
-failed while loaded, its pallet stays at the failure cell, and the robot returns
-to pick it up before resuming its original goal.
+a shortest BFS route to the failure and has right of way over live agents. It
+drives into the failed robot's cell, lifts the stationary robot onto its low
+platform over three ticks, carries it to the repair station, and returns to its
+depot. The failed robot and recovery vehicle appear only as dynamic obstacles in
+FastDMM cost-to-go and PIBT constraints; neither participates in relational
+observations or `agent_chat_ids`. Repairs take eight ticks. The repaired robot
+keeps its assignment and task stage. If it failed while loaded, its pallet stays
+at the failure cell, and the robot returns to pick it up before resuming its
+original goal.
 
 ## Run the live demo
 

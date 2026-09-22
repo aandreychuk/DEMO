@@ -35,6 +35,7 @@ const TOW_DEPOT_X = REPAIR_X - 1;
 const TOW_DEPOT_Z = REPAIR_Z;
 const PALLET_CAPACITY = 12;
 const PALLET_DWELL_TICKS = 2;
+const TOW_LOADING_TICKS = 3;
 const UNLOAD_DWELL_TICKS = 5;
 const RELOAD_DWELL_TICKS = 5;
 const GOODS_BASE_Y = 1.04;
@@ -192,6 +193,7 @@ let live = false;
 let liveTickRate = 10;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
+let towLoadingStartedStep = 0;
 let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let palletInventoryRevision = 0;
@@ -1433,7 +1435,7 @@ function createRepairStation(): void {
 }
 
 function createTowTruck(): {
-  update: (x: number, z: number, state: number, carrying: boolean, now: number) => void;
+  update: (x: number, z: number, state: number, lift: number, now: number) => void;
 } {
   const root = new TransformNode('tow-truck-root', scene);
   const bodyMaterial = new StandardMaterial('tow-truck-body-material', scene);
@@ -1449,46 +1451,57 @@ function createTowTruck(): {
   lightMaterial.disableLighting = true;
 
   const chassis = MeshBuilder.CreateBox('tow-truck-chassis', {
-    width: 0.72,
-    height: 0.16,
-    depth: 0.86,
+    width: 0.7,
+    height: 0.12,
+    depth: 0.8,
   }, scene);
-  chassis.position.y = 0.24;
+  chassis.position.y = 0.16;
   chassis.material = darkMaterial;
   chassis.parent = root;
   const bed = MeshBuilder.CreateBox('tow-truck-flatbed', {
-    width: 0.7,
-    height: 0.1,
-    depth: 0.72,
+    width: 0.64,
+    height: 0.08,
+    depth: 0.66,
   }, scene);
-  bed.position.set(0, 0.39, -0.08);
+  bed.position.set(0, 0.25, -0.03);
   bed.material = bodyMaterial;
   bed.parent = root;
-  const cab = MeshBuilder.CreateBox('tow-truck-cab', {
+  const nose = MeshBuilder.CreateBox('tow-truck-nose', {
     width: 0.62,
-    height: 0.4,
-    depth: 0.34,
+    height: 0.18,
+    depth: 0.18,
   }, scene);
-  cab.position.set(0, 0.55, 0.3);
-  cab.material = bodyMaterial;
-  cab.parent = root;
+  nose.position.set(0, 0.25, 0.39);
+  nose.material = bodyMaterial;
+  nose.parent = root;
   const window = MeshBuilder.CreateBox('tow-truck-window', {
     width: 0.48,
-    height: 0.17,
+    height: 0.07,
     depth: 0.025,
   }, scene);
-  window.position.set(0, 0.61, 0.48);
+  window.position.set(0, 0.3, 0.49);
   window.material = lightMaterial;
   window.parent = root;
+  const liftRails = [-0.22, 0.22].map((x) => {
+    const rail = MeshBuilder.CreateBox('tow-truck-lift-rail', {
+      width: 0.08,
+      height: 0.045,
+      depth: 0.62,
+    }, scene);
+    rail.position.set(x, 0.305, -0.04);
+    rail.material = darkMaterial;
+    rail.parent = root;
+    return rail;
+  });
   for (const x of [-0.37, 0.37]) {
     for (const z of [-0.28, 0.28]) {
       const wheel = MeshBuilder.CreateCylinder('tow-truck-wheel', {
         height: 0.12,
-        diameter: 0.25,
+        diameter: 0.21,
         tessellation: 14,
       }, scene);
       wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, 0.19, z);
+      wheel.position.set(x, 0.14, z);
       wheel.material = darkMaterial;
       wheel.parent = root;
     }
@@ -1498,7 +1511,7 @@ function createTowTruck(): {
     diameter: 0.14,
     tessellation: 12,
   }, scene);
-  beacon.position.set(0, 0.81, 0.29);
+  beacon.position.set(0, 0.42, 0.36);
   beacon.material = lightMaterial;
   beacon.parent = root;
   const glow = new GlowLayer('tow-truck-glow', scene, { blurKernelSize: 14 });
@@ -1510,7 +1523,7 @@ function createTowTruck(): {
   let previousX = TOW_DEPOT_X;
   let previousZ = TOW_DEPOT_Z;
   return {
-    update: (x, z, state, carrying, now) => {
+    update: (x, z, state, lift, now) => {
       const position = worldAt(x, z, state === 0 ? 0.015 : 0.025);
       root.position.copyFrom(position);
       const dx = x - previousX;
@@ -1520,7 +1533,9 @@ function createTowTruck(): {
       previousZ = z;
       const pulse = state === 0 ? 0.45 : 0.75 + Math.sin(now * 0.018) * 0.25;
       lightMaterial.emissiveColor.set(0.12 * pulse, 0.75 * pulse, pulse);
-      bed.scaling.y = carrying ? 1.16 : 1;
+      const platformLift = smoothstep(Math.max(0, Math.min(1, lift)));
+      bed.position.y = 0.25 + platformLift * 0.14;
+      for (const rail of liftRails) rail.position.y = 0.305 + platformLift * 0.14;
     },
   };
 }
@@ -1630,6 +1645,7 @@ function resetServiceAnimations(): void {
   unloadingScene.reset();
   reloadingScene.reset();
   conveyorScene.reset();
+  towLoadingStartedStep = 0;
 }
 
 function resetPalletInventory(): void {
@@ -1645,6 +1661,10 @@ function updateLive(now: number): void {
   const frameDurationMs = 1000 / Math.max(0.1, liveTickRate * speed);
   const alpha = Math.min(1, (now - liveCurrent.receivedAt) / frameDurationMs);
   const simulationStep = from.step + (liveCurrent.step - from.step) * alpha;
+  const towLoadingActive = from.tow.state === 4 || liveCurrent.tow.state === 4;
+  const towLoadingProgress = towLoadingActive
+    ? Math.max(0, Math.min(1, (simulationStep - towLoadingStartedStep) / TOW_LOADING_TICKS))
+    : 0;
   const transfers = [
     ...unloadingScene.update(simulationStep),
     ...reloadingScene.update(simulationStep),
@@ -1663,9 +1683,14 @@ function updateLive(now: number): void {
     const z1 = liveCurrent.positions[i * 2 + 1];
     const x = x0 + (x1 - x0) * alpha;
     const z = z0 + (z1 - z0) * alpha;
+    const towLoadingTarget =
+      (from.tow.state === 4 && from.tow.targetAgent === i)
+      || (liveCurrent.tow.state === 4 && liveCurrent.tow.targetAgent === i);
     const fromTransported = from.recoveryStates[i] === 2 ? 1 : 0;
     const toTransported = liveCurrent.recoveryStates[i] === 2 ? 1 : 0;
-    const transportLift = fromTransported + (toTransported - fromTransported) * alpha;
+    const transportLift = towLoadingTarget
+      ? smoothstep(towLoadingProgress)
+      : fromTransported + (toTransported - fromTransported) * alpha;
     writeTransform(matrices, i, x, z, 0.02 + transportLift * 0.55);
     if (i === selectedAgentId) {
       const position = worldAt(x, z, 0.045);
@@ -1764,11 +1789,16 @@ function updateLive(now: number): void {
   }
   const towX = from.tow.x + (liveCurrent.tow.x - from.tow.x) * alpha;
   const towZ = from.tow.z + (liveCurrent.tow.z - from.tow.z) * alpha;
+  const fromTowLift = from.tow.state === 2 ? 1 : 0;
+  const toTowLift = liveCurrent.tow.state === 2 ? 1 : 0;
+  const towLift = towLoadingActive
+    ? towLoadingProgress
+    : fromTowLift + (toTowLift - fromTowLift) * alpha;
   towTruckScene.update(
     towX,
     towZ,
     liveCurrent.tow.state,
-    liveCurrent.tow.state === 2,
+    towLift,
     now,
   );
 }
@@ -1798,8 +1828,8 @@ function parseFrame(buffer: ArrayBuffer): void {
   const view = new DataView(buffer);
   if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC) return;
   const protocol = view.getUint16(4, true);
-  if (protocol !== 1 && protocol !== 2 && protocol !== 3 && protocol !== 4) return;
-  const recordSize = protocol === 4 ? 36 : protocol === 3 ? 32 : protocol === 2 ? 24 : 16;
+  if (protocol < 1 || protocol > 5) return;
+  const recordSize = protocol >= 4 ? 36 : protocol === 3 ? 32 : protocol === 2 ? 24 : 16;
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
   if (liveCurrent && step < liveCurrent.step) {
@@ -1881,6 +1911,10 @@ function parseFrame(buffer: ArrayBuffer): void {
       targetAgent: view.getUint16(towOffset + 10, true),
       queuedRescues: view.getUint16(towOffset + 12, true),
     };
+  }
+  if (tow.state === 4
+      && (priorFrame?.tow.state !== 4 || priorFrame.tow.targetAgent !== tow.targetAgent)) {
+    towLoadingStartedStep = step;
   }
   if (count !== agentCount) setAgentCount(count);
   const receivedAt = performance.now();
@@ -2116,7 +2150,12 @@ function renderAgentPanel(): void {
   const atReloadingBay = nativeStage >= 2 && agentX === reloadX && agentZ === reloadZ;
   const stage = atUnloadingBay ? 1 : atReloadingBay ? 2 : nativeStage;
   const palletMotion = palletMotions[id];
-  const stateLabel = recoveryState === 1
+  const loadingOntoTow = recoveryState === 1
+    && frame.tow.state === 4
+    && frame.tow.targetAgent === id;
+  const stateLabel = loadingOntoTow
+    ? 'LOADING ONTO TOW'
+    : recoveryState === 1
     ? 'WAITING FOR TOW'
     : recoveryState === 2
       ? 'EVACUATING'
@@ -2348,7 +2387,7 @@ engine.runRenderLoop(() => {
       ? liveCurrent.recoveryStates.reduce((sum, state) => sum + (state !== 0 ? 1 : 0), 0)
       : 0);
     if (liveCurrent) {
-      const towLabels = ['IDLE', 'TO AGENT', 'TRANSPORT', 'RETURNING'];
+      const towLabels = ['IDLE', 'TO AGENT', 'TRANSPORT', 'RETURNING', 'LOADING'];
       const target = liveCurrent.tow.targetAgent === 0xffff
         ? ''
         : ` · A${String(liveCurrent.tow.targetAgent).padStart(3, '0')}`;

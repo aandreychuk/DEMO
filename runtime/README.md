@@ -64,11 +64,14 @@ precomputed or replayed by the browser bridge.
 Supported demo sizes are 25, 50, and 100 agents. The bridge uses an unbounded
 native horizon by default. Pass a positive `--max-steps` only for diagnostics.
 The browser can also send `fail <agent>` through the bridge. The native runner
-queues the failure for a single external recovery vehicle, which replans a
-shortest BFS route around current agents, pallets, and service cells on every
-tick. Its current cell and the failed robot are included in every live agent's
-dynamic obstacle mask, cost-to-go recomputation, and PIBT constraints, while
-both remain outside relational observation records and `agent_chat_ids`.
+queues the failure for a single external recovery vehicle. Its shortest BFS
+route ignores live-agent occupancy, giving the vehicle right of way; live agents
+instead reserve both its current cell and the cell it just traversed through
+their dynamic obstacle masks, cost-to-go recomputation, and PIBT constraints.
+The vehicle enters the failed robot's cell, waits three ticks while its platform
+lifts the stationary robot, and only then moves the robot toward repair. The
+vehicle and failed robot remain outside relational observations and
+`agent_chat_ids`.
 After eight repair ticks, the robot resumes the same assignment and stage. A
 carried pallet is left at the failure cell and becomes the repaired robot's
 temporary recovery goal before its saved task goal is restored.

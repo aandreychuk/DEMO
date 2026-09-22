@@ -186,6 +186,7 @@ constexpr int kPalletHandlingDwellSteps = 2;
 constexpr int kUnloadingDwellSteps = 5;
 constexpr int kReloadingDwellSteps = 5;
 constexpr int kRepairDwellSteps = 8;
+constexpr int kTowLoadingDwellSteps = 3;
 
 enum class RecoveryState : uint8_t {
   Normal = 0,
@@ -200,6 +201,7 @@ enum class TowState : uint8_t {
   ToAgent = 1,
   ToRepair = 2,
   ToDepot = 3,
+  Loading = 4,
 };
 
 Vertex* bfs_next_vertex(Vertex* start, const std::vector<Vertex*>& goals,
@@ -455,8 +457,10 @@ int main(int argc, char** argv)
     Vertex* repair_station = nullptr;
     Vertex* tow_depot = nullptr;
     Vertex* tow_position = nullptr;
+    Vertex* tow_previous_position = nullptr;
     TowState tow_state = TowState::Idle;
     int tow_target = -1;
+    int tow_loading_dwell_remaining = 0;
     long long completed_tasks = 0;
     long long goal_updates = 0;
     long long next_task_id = 0;
@@ -641,10 +645,13 @@ int main(int argc, char** argv)
           ids.push_back(vertex_id);
           blocked_mask[vertex_id] = true;
         }
-        if (tow_position != nullptr && tow_position != positions[i] &&
-            !blocked_mask[tow_position->id]) {
-          ids.push_back(tow_position->id);
-          blocked_mask[tow_position->id] = true;
+        for (auto* tow_cell : {tow_previous_position, tow_position}) {
+          if (tow_cell == nullptr || tow_cell == positions[i] ||
+              blocked_mask[tow_cell->id]) {
+            continue;
+          }
+          ids.push_back(tow_cell->id);
+          blocked_mask[tow_cell->id] = true;
         }
         distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
@@ -673,8 +680,7 @@ int main(int argc, char** argv)
       return false;
     };
 
-    auto tow_next = [&](const std::vector<Vertex*>& goals,
-                        int ignored_agent) -> Vertex* {
+    auto tow_next = [&](const std::vector<Vertex*>& goals) -> Vertex* {
       std::vector<char> blocked(ins.G->size(), false);
       for (auto* station : station_vertices) blocked[station->id] = true;
       for (int pallet_id = 0;
@@ -684,18 +690,16 @@ int main(int argc, char** argv)
           blocked[pallet_positions[pallet_id]->id] = true;
         }
       }
-      for (int i = 0; i < static_cast<int>(ins.N); ++i) {
-        if (i != ignored_agent) blocked[current[i]->id] = true;
-      }
       blocked[tow_position->id] = false;
       for (auto* goal : goals) {
-        if (goal == repair_station || goal == tow_depot) blocked[goal->id] = false;
+        if (goal != nullptr) blocked[goal->id] = false;
       }
       return bfs_next_vertex(tow_position, goals, blocked);
     };
 
     auto advance_recovery = [&]() {
       bool changed = false;
+      tow_previous_position = nullptr;
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
         if (recovery_state[i] != RecoveryState::Repairing) continue;
         if (repair_dwell_remaining[i] > 0) {
@@ -720,36 +724,23 @@ int main(int argc, char** argv)
 
       changed = dispatch_tow() || changed;
       if (tow_state == TowState::ToAgent && tow_target >= 0) {
-        std::vector<Vertex*> pickup_cells;
-        for (auto* neighbor : current[tow_target]->neighbor) {
-          bool occupied = false;
-          for (int i = 0; i < static_cast<int>(ins.N); ++i) {
-            if (i != tow_target && current[i] == neighbor) {
-              occupied = true;
-              break;
-            }
-          }
-          if (!occupied && !station_mask[neighbor->id]) {
-            bool pallet_blocked = false;
-            for (int pallet_id = 0;
-                 pallet_id < static_cast<int>(pallet_positions.size());
-                 ++pallet_id) {
-              if (pallet_present[pallet_id] &&
-                  pallet_positions[pallet_id] == neighbor) {
-                pallet_blocked = true;
-                break;
-              }
-            }
-            if (!pallet_blocked) pickup_cells.push_back(neighbor);
-          }
-        }
-        auto* next_tow = tow_next(pickup_cells, -1);
+        auto* pickup_cell = current[tow_target];
+        auto* next_tow = tow_next({pickup_cell});
         if (next_tow != tow_position) {
+          tow_previous_position = tow_position;
           tow_position = next_tow;
           changed = true;
         }
-        if (std::find(pickup_cells.begin(), pickup_cells.end(), tow_position) !=
-            pickup_cells.end()) {
+        if (tow_position == pickup_cell) {
+          tow_state = TowState::Loading;
+          tow_loading_dwell_remaining = kTowLoadingDwellSteps;
+          changed = true;
+        }
+      } else if (tow_state == TowState::Loading && tow_target >= 0) {
+        if (tow_loading_dwell_remaining > 0) {
+          --tow_loading_dwell_remaining;
+        }
+        if (tow_loading_dwell_remaining == 0) {
           current[tow_target] = tow_position;
           ins.goals[tow_target] = tow_position;
           recovery_state[tow_target] = RecoveryState::InTransit;
@@ -757,8 +748,9 @@ int main(int argc, char** argv)
           changed = true;
         }
       } else if (tow_state == TowState::ToRepair && tow_target >= 0) {
-        auto* next_tow = tow_next({repair_station}, tow_target);
+        auto* next_tow = tow_next({repair_station});
         if (next_tow != tow_position) {
+          tow_previous_position = tow_position;
           tow_position = next_tow;
           current[tow_target] = tow_position;
           ins.goals[tow_target] = tow_position;
@@ -774,8 +766,9 @@ int main(int argc, char** argv)
           changed = true;
         }
       } else if (tow_state == TowState::ToDepot) {
-        auto* next_tow = tow_next({tow_depot}, -1);
+        auto* next_tow = tow_next({tow_depot});
         if (next_tow != tow_position) {
+          tow_previous_position = tow_position;
           tow_position = next_tow;
           changed = true;
         }
@@ -1076,10 +1069,12 @@ int main(int argc, char** argv)
                 forbidden.push_back(vertex_id);
               }
             }
-            if (tow_position != nullptr && tow_position != current[i] &&
-                std::find(forbidden.begin(), forbidden.end(),
-                          tow_position->id) == forbidden.end()) {
-              forbidden.push_back(tow_position->id);
+            for (auto* tow_cell : {tow_previous_position, tow_position}) {
+              if (tow_cell != nullptr &&
+                  std::find(forbidden.begin(), forbidden.end(),
+                            tow_cell->id) == forbidden.end()) {
+                forbidden.push_back(tow_cell->id);
+              }
             }
             if (service_dwell_remaining[i] > 0) {
               for (auto* neighbor : current[i]->neighbor) {
