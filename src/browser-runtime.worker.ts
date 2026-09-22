@@ -120,8 +120,11 @@ let step = 0;
 let completedTasks = 0;
 let nextTaskId = 0;
 let lastInferenceMs = 0;
-let inferenceTotalMs = 0;
-let inferenceSamples = 0;
+const INFERENCE_WINDOW_SIZE = 32;
+const inferenceWindow = new Float64Array(INFERENCE_WINDOW_SIZE);
+let inferenceWindowIndex = 0;
+let inferenceWindowCount = 0;
+let inferenceWindowTotal = 0;
 
 // The model shape is fixed at 100 agents. Reuse the CPU-side input tensors for
 // every tick instead of allocating three typed arrays and three Tensor wrappers
@@ -432,8 +435,10 @@ function resetSimulation(count: number): void {
   step = 0;
   completedTasks = 0;
   lastInferenceMs = 0;
-  inferenceTotalMs = 0;
-  inferenceSamples = 0;
+  inferenceWindow.fill(0);
+  inferenceWindowIndex = 0;
+  inferenceWindowCount = 0;
+  inferenceWindowTotal = 0;
   previousFramePositions = null;
   previousFrameStages = null;
   previousFramePalletIds = null;
@@ -577,9 +582,15 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
     if (generation !== expectedGeneration) return false;
     const elapsed = performance.now() - started;
     if (step >= 5) {
-      inferenceTotalMs += elapsed;
-      inferenceSamples++;
-      lastInferenceMs = inferenceTotalMs / inferenceSamples;
+      if (inferenceWindowCount === INFERENCE_WINDOW_SIZE) {
+        inferenceWindowTotal -= inferenceWindow[inferenceWindowIndex];
+      } else {
+        inferenceWindowCount++;
+      }
+      inferenceWindow[inferenceWindowIndex] = elapsed;
+      inferenceWindowTotal += elapsed;
+      inferenceWindowIndex = (inferenceWindowIndex + 1) % INFERENCE_WINDOW_SIZE;
+      lastInferenceMs = inferenceWindowTotal / inferenceWindowCount;
     } else {
       lastInferenceMs = elapsed;
     }
