@@ -14,6 +14,7 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
+import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 
 const MAP_WIDTH = 44;
@@ -64,6 +65,7 @@ const MAX_RENDERED_GOODS = MAX_AGENTS * PALLET_CAPACITY
 const FALLBACK_STEP_SECONDS = 0.72;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
+const USE_SERVER_RUNTIME = import.meta.env.VITE_MAPF_RUNTIME === 'server';
 
 type LiveFrame = {
   positions: Float32Array;
@@ -197,6 +199,8 @@ let paused = false;
 let speed = 1;
 let simTime = 0;
 let socket: WebSocket | null = null;
+let browserWorker: Worker | null = null;
+let runtimeBackend = 'WASM';
 let live = false;
 let liveTickRate = 10;
 let livePrevious: LiveFrame | null = null;
@@ -2513,7 +2517,7 @@ function renderAgentPanel(): void {
   statePill.textContent = stateLabel;
   statePill.className = `state-pill${failed ? ' failed' : recoveryState === 4 ? ' recovery' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
   const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
-  failButton.disabled = recoveryState !== 0 || socket?.readyState !== WebSocket.OPEN;
+  failButton.disabled = recoveryState !== 0 || !transportReady();
   document.querySelector('#fail-agent-label')!.textContent = recoveryState !== 0
     ? 'RECOVERY IN PROGRESS'
     : 'BREAK AGENT';
@@ -2590,69 +2594,79 @@ function setAgentCount(count: number): void {
 }
 
 function sendControl(action: string, extra: Record<string, unknown> = {}): void {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'control', action, ...extra }));
+  const message = { type: 'control', action, ...extra };
+  if (browserWorker) browserWorker.postMessage(message);
+  else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }
 
-function connect(): void {
-  setConnection('connecting', 'CONNECTING // LOCAL');
+function transportReady(): boolean {
+  return browserWorker !== null || socket?.readyState === WebSocket.OPEN;
+}
+
+function handleRuntimeMessage(data: unknown): void {
+  if (data instanceof ArrayBuffer) {
+    live = true;
+    parseFrame(data);
+    setConnection('live', `FASTDMM // ${runtimeBackend}`);
+    return;
+  }
+  const message = typeof data === 'string' ? JSON.parse(data) : data as Record<string, any>;
+  if (message.type === 'hello') {
+    runtimeBackend = String(message.backend ?? (message.browserRuntime ? 'WASM' : 'SIMULATOR'));
+    if (Array.isArray(message.layout?.pallets)) {
+      replacePalletCells(message.layout.pallets.map((pallet: { x: number; y: number; cargoType?: number }) => {
+        const cargoType = Number(pallet.cargoType);
+        return {
+          x: Number(pallet.x),
+          z: Number(pallet.y),
+          cargoType: Number.isFinite(cargoType) ? cargoType : undefined,
+        };
+      }));
+    }
+    live = true;
+    paused = false;
+    syncPauseButton();
+    liveTickRate = Number(message.tickRate) || 10;
+    lastInferenceMs = Number(message.inferenceMs) || 0;
+    setAgentCount(Number(message.agents));
+    sendControl('speed', { value: speed });
+    setConnection('live', `FASTDMM // ${runtimeBackend}`);
+  } else if (message.type === 'layout-applied') {
+    closeLayoutEditor(false, false);
+  } else if (message.type === 'layout-error') {
+    editorAwaitingApply = false;
+    const editorMessage = document.querySelector('#editor-message')!;
+    editorMessage.textContent = String(message.message ?? 'The layout could not be applied.');
+    editorMessage.classList.add('error');
+    updateEditorPanel();
+  } else if (message.type === 'status' && message.state === 'planning') {
+    livePrevious = null;
+    liveCurrent = null;
+    resetServiceAnimations();
+    resetPalletInventory();
+    resetAgentStats();
+    clearAgentSelection();
+    setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
+  } else if (message.type === 'status' && message.state === 'stopped') {
+    paused = true;
+    syncPauseButton();
+    setConnection('stopped', 'SIMULATION // STOPPED');
+  } else if (message.type === 'metrics') {
+    runtimeBackend = String(message.backend ?? runtimeBackend);
+    lastInferenceMs = Number(message.inferenceMs) || 0;
+  } else if (message.type === 'error') {
+    setConnection('error', `ERROR // ${String(message.message ?? 'RUNTIME')}`);
+    console.error(message.message);
+  }
+}
+
+function connectServer(): void {
+  setConnection('connecting', 'CONNECTING // LOCAL SERVER');
   const ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
   socket = ws;
   ws.addEventListener('open', () => setConnection('planning', 'LIFELONG // PLANNING'));
-  ws.addEventListener('message', (event) => {
-    if (event.data instanceof ArrayBuffer) {
-      live = true;
-      parseFrame(event.data);
-      setConnection('live', 'FASTDMM // SIMULATOR');
-      return;
-    }
-    const message = JSON.parse(String(event.data));
-    if (message.type === 'hello') {
-      if (Array.isArray(message.layout?.pallets)) {
-        replacePalletCells(message.layout.pallets.map((pallet: { x: number; y: number; cargoType?: number }) => {
-          const cargoType = Number(pallet.cargoType);
-          return {
-            x: Number(pallet.x),
-            z: Number(pallet.y),
-            cargoType: Number.isFinite(cargoType) ? cargoType : undefined,
-          };
-        }));
-      }
-      live = true;
-      paused = false;
-      syncPauseButton();
-      liveTickRate = Number(message.tickRate) || 10;
-      lastInferenceMs = Number(message.inferenceMs) || 0;
-      setAgentCount(Number(message.agents));
-      sendControl('speed', { value: speed });
-      setConnection('live', 'FASTDMM // SIMULATOR');
-    } else if (message.type === 'layout-applied') {
-      closeLayoutEditor(false, false);
-    } else if (message.type === 'layout-error') {
-      editorAwaitingApply = false;
-      const editorMessage = document.querySelector('#editor-message')!;
-      editorMessage.textContent = String(message.message ?? 'The layout could not be applied.');
-      editorMessage.classList.add('error');
-      updateEditorPanel();
-    } else if (message.type === 'status' && message.state === 'planning') {
-      livePrevious = null;
-      liveCurrent = null;
-      resetServiceAnimations();
-      resetPalletInventory();
-      resetAgentStats();
-      clearAgentSelection();
-      setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
-    } else if (message.type === 'status' && message.state === 'stopped') {
-      paused = true;
-      syncPauseButton();
-      setConnection('stopped', 'SIMULATION // STOPPED');
-    } else if (message.type === 'metrics') {
-      lastInferenceMs = Number(message.inferenceMs) || 0;
-    } else if (message.type === 'error') {
-      setConnection('error', 'RUNTIME // ERROR');
-      console.error(message.message);
-    }
-  });
+  ws.addEventListener('message', (event) => handleRuntimeMessage(event.data));
   ws.addEventListener('close', () => {
     if (socket !== ws) return;
     live = false;
@@ -2663,9 +2677,24 @@ function connect(): void {
     resetAgentStats();
     clearAgentSelection();
     setConnection('fallback', 'DEMO // RECONNECTING');
-    window.setTimeout(connect, 2000);
+    window.setTimeout(connectServer, 2000);
   });
   ws.addEventListener('error', () => ws.close());
+}
+
+function connect(): void {
+  if (USE_SERVER_RUNTIME) {
+    connectServer();
+    return;
+  }
+  setConnection('connecting', 'LOADING // ONNX + WASM');
+  const worker = new BrowserRuntimeWorker();
+  browserWorker = worker;
+  worker.addEventListener('message', (event) => handleRuntimeMessage(event.data));
+  worker.addEventListener('error', (event) => {
+    setConnection('error', `ERROR // ${event.message || 'WORKER LOAD'}`);
+    console.error(event.message);
+  });
 }
 
 function smoothstep(t: number): number {
@@ -2790,7 +2819,7 @@ failAgentButton.addEventListener('click', () => {
 
 document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('change', (event) => {
   const count = Number((event.currentTarget as HTMLSelectElement).value);
-  if (socket?.readyState === WebSocket.OPEN) {
+  if (transportReady()) {
     paused = false;
     syncPauseButton();
     setConnection('planning', `PLANNING // ${count.toLocaleString('en-US')}`);
@@ -2843,17 +2872,17 @@ document.querySelector('#editor-cancel')!.addEventListener('click', () => {
 
 document.querySelector('#editor-apply')!.addEventListener('click', () => {
   const validation = validateEditorLayout();
-  if (!validation.valid || socket?.readyState !== WebSocket.OPEN) {
+  if (!validation.valid || !transportReady()) {
     const editorMessage = document.querySelector('#editor-message')!;
-    editorMessage.textContent = socket?.readyState === WebSocket.OPEN
+    editorMessage.textContent = transportReady()
       ? validation.message
-      : 'The local runtime is not connected.';
+      : 'The browser runtime is not ready.';
     editorMessage.classList.add('error');
     return;
   }
   editorAwaitingApply = true;
   const editorMessage = document.querySelector('#editor-message')!;
-  editorMessage.textContent = 'Saving the layout and rebuilding the task queue…';
+  editorMessage.textContent = 'Applying the layout and rebuilding the in-browser task queue…';
   editorMessage.classList.remove('error');
   updateEditorPanel();
   sendControl('layout', {

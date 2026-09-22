@@ -1,10 +1,13 @@
 # MAPF Operations Deck
 
-A browser-based 2.5D demonstration of the trained FastDMM policy. CUDA/AOTI
-inference, observation construction, PIBT shielding, and collision checks run
-locally in the native process. The browser receives compact state frames over a
-loopback WebSocket and renders the 100-agent lifelong warehouse with Babylon.js
-thin instances.
+A browser-based 2.5D demonstration of the trained FastDMM policy. The default
+runtime is fully self-contained: ONNX Runtime Web executes the 0.8M policy with
+WebGPU, a compact WebAssembly core builds observations and performs BFS and
+PIBT collision shielding, and a Web Worker owns the lifelong simulation. The
+main thread receives the same compact binary frames used by the native runtime
+and renders the 100-agent warehouse with Babylon.js thin instances. When
+WebGPU is unavailable, ONNX Runtime automatically falls back to single-threaded
+WASM.
 
 The visual cell pitch is larger than the physical robot and pallet footprint.
 A pallet occupies about 75% of its cell, leaving visible clearance while two
@@ -53,15 +56,55 @@ keeps its assignment and task stage. If it failed while loaded, its pallet stays
 at the failure cell, and the robot returns to pick it up before resuming its
 original goal.
 
-## Run the live demo
+## Run entirely in the browser
 
-The checked-in native runtime targets Linux; on Windows, run it in WSL. Activate
-the Python environment containing PyTorch `2.13.0+cu126`, then build and start
-the local bridge:
+Building requires Node.js 22 or newer and pnpm. End users need only a current
+browser; there is no Python, PyTorch, CUDA, or local bridge to install.
+
+```powershell
+pnpm install
+pnpm dev -- --host 127.0.0.1 --port 4173
+```
+
+Open `http://127.0.0.1:4173/`. The first load downloads the 5.3 MiB ONNX model;
+the header reports `FASTDMM // WEBGPU` or `FASTDMM // WASM` after the selected
+execution provider is ready. The 25, 50, and 100 agent presets share a fixed
+100-slot ONNX graph, padding inactive slots so changing the active count does
+not re-export or reload the policy.
+
+For a static self-hosted build:
+
+```powershell
+pnpm build
+pnpm preview -- --host 127.0.0.1 --port 4173
+```
+
+The generated `dist/` directory contains only static files and can be served by
+Nginx, Caddy, Cloudflare Pages, S3, or any equivalent static host.
+The runtime uses one WASM thread, so it does not require COOP/COEP headers. HTTPS
+is required for WebGPU on non-localhost deployments; the WASM provider remains
+the compatibility fallback.
+
+Every visible tick is calculated on demand. Pause suspends stepping; Stop
+creates a fresh simulation and holds it at step zero. No trajectory is
+precomputed or replayed.
+
+The `LAYOUT` control opens a fixed-angle overhead pallet editor aligned with one
+grid axis. WASD pans the view and the wheel zooms without changing its angle.
+Click or drag over storage cells, including the two outer rows, to add and remove
+pallets; undo, reset, and clear tools make larger changes practical. The editor
+checks loaded-pallet access before enabling apply. Applying a valid layout keeps
+it in the current browser session, regenerates 100 deterministic starts and
+4,000 tasks, then restarts the Worker simulation.
+
+## Optional native AOTI runtime
+
+The original CUDA/AOTI simulator remains available for performance comparison
+and native validation. On Windows, run it in WSL, then start Vite with
+`VITE_MAPF_RUNTIME=server` so the UI uses the loopback WebSocket transport:
 
 ```bash
 source /home/ubuntu/codex-mapf-export/.venv/bin/activate
-python -m ensurepip --upgrade
 python -m pip install -r runtime/requirements.txt
 runtime/build_native.sh
 runtime/run_demo.sh \
@@ -69,28 +112,10 @@ runtime/run_demo.sh \
   --agents 100
 ```
 
-In a second terminal, start the browser client (Node.js 20.19 or newer):
-
 ```powershell
-npm install
-npm run dev -- --host 127.0.0.1 --port 4173
+$env:VITE_MAPF_RUNTIME='server'
+pnpm dev -- --host 127.0.0.1 --port 4173
 ```
-
-Open `http://127.0.0.1:4173/`. The agent selector starts a local simulator for
-25, 50, or 100 agents. Every visible tick is computed on demand by the native
-FastDMM + PIBT process. Pause suspends native stepping; Stop terminates the
-current process, creates a fresh simulation, and holds it at step zero. Playback
-speed, layout-independent WASD movement, mouse orbit, and wheel zoom remain
-browser-side. If the bridge is unavailable, the page uses
-clearly labelled synthetic motion while it retries the loopback connection.
-
-The `LAYOUT` control opens a fixed-angle overhead pallet editor aligned with one
-grid axis. WASD pans the view and the wheel zooms without changing its angle.
-Click or drag over storage cells, including the two outer rows, to add and remove
-pallets; undo, reset, and clear tools make larger changes practical. The editor
-checks loaded-pallet access before enabling apply. Applying a valid layout saves
-it locally, regenerates 100 deterministic starts and 4,000 tasks, then restarts
-the native simulation.
 
 ## Verified 100-agent lifelong run
 
@@ -121,7 +146,11 @@ documented in [docs/protocol.md](docs/protocol.md).
 - `runtime/generate_lifelong_warehouse.py`: compact warehouse, starts, layout,
   and deterministic random task queue;
 - `runtime/export_fastdmm_aoti.py`: machine-specific AOTI exporter;
+- `runtime/export_fastdmm_onnx.py`: fixed-slot browser ONNX exporter and parity check;
+- `assembly/mapf-core.ts`: WebAssembly BFS, observation tokenizer, and PIBT shield;
+- `src/browser-runtime.worker.ts`: ONNX inference and lifelong browser simulation;
 - `src/main.ts`: Babylon.js renderer, interpolation, controls, and telemetry.
 
 Generated checkpoints and `.pt2` packages stay in ignored `artifacts/`. The
-Hugging Face token is never sent to Vite or the browser.
+Hugging Face token is never sent to Vite or the browser. The browser loads only
+the checked-in, inference-only ONNX artifact.

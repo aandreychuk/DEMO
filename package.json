@@ -2,16 +2,25 @@
   "name": "mapf-visualizer",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:wasm": "asc assembly/mapf-core.ts --config asconfig.json --target release",
+    "build": "pnpm run build:wasm && tsc && vite build",
+    "test:browser-core": "node scripts/validate_browser_core.mjs",
+    "test:browser-model": "node scripts/validate_browser_model.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@babylonjs/core": "9.27.1"
+    "@babylonjs/core": "9.27.1",
+    "onnxruntime-web": "1.30.0"
   },
   "devDependencies": {
+    "assemblyscript": "^0.28.20",
     "typescript": "5.9.3",
     "vite": "8.3.0"
   }

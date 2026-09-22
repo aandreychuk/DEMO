@@ -1,9 +1,11 @@
 # MAPF live protocol
 
-The renderer and the algorithm process communicate over a local WebSocket
-(`ws://127.0.0.1:18765` by default). The
-browser is a passive consumer: planning, inference, collision checks, and metrics
-remain in the native process.
+The renderer consumes one transport-neutral message stream. By default a Web
+Worker produces it locally: ONNX Runtime Web performs policy inference and the
+WebAssembly core builds observations and shields collisions. The optional
+native mode sends the same JSON and binary messages over a loopback WebSocket
+(`ws://127.0.0.1:18765` by default). This keeps rendering and interpolation
+independent from the selected execution backend.
 
 ## Bootstrap message
 
@@ -21,6 +23,8 @@ The first server message is JSON so integrations are easy to inspect:
   "lifelong": true,
   "simulator": true,
   "streaming": true,
+  "browserRuntime": true,
+  "backend": "WEBGPU",
   "layout": {
     "pallets": [],
     "stations": [],
@@ -32,10 +36,10 @@ The first server message is JSON so integrations are easy to inspect:
 }
 ```
 
-After the initial state, the bridge asks the native process to compute exactly
-one FastDMM + PIBT transition per simulation tick and forwards the resulting
-state immediately. It emits `metrics` messages as live inference timing becomes
-available. Model paths and environment details are omitted.
+After the initial state, the selected runtime computes exactly one FastDMM +
+PIBT transition per simulation tick and emits the resulting state immediately.
+It emits `metrics` messages as live inference timing becomes available. Model
+paths and environment details are omitted.
 
 ## State frame
 
@@ -114,10 +118,10 @@ Commands are infrequent JSON messages:
 { "type": "control", "action": "layout", "pallets": [{ "x": 4, "y": 1 }] }
 ```
 
-`pause` preserves the native simulator state and stops requesting steps. `stop`
-terminates that native process, starts a fresh simulation at frame zero, and
-holds it there; `run` resumes live computation from that state.
-`fail` queues one agent for recovery. The native process preserves its task and
+`pause` preserves the simulator state and stops requesting steps. `stop` starts
+a fresh simulation at frame zero and holds it there; `run` resumes live
+computation from that state.
+`fail` queues one agent for recovery. The simulator preserves its task and
 stage, removes it from relational agent records and `agent_chat_ids`, and sends
 the external recovery vehicle along a shortest BFS route. The vehicle is a
 dynamic obstacle but never an algorithm-controlled agent. After transport and
@@ -125,9 +129,10 @@ eight repair ticks, the robot resumes its saved goal. A pallet carried during
 failure remains at that cell and is recovered first. Starting a fresh simulation
 clears the recovery queue and all failures.
 
-`layout` validates the edited pallet coordinates, saves the layout, regenerates
-100 deterministic start positions and 4,000 tasks, and restarts that browser's
-native simulation. Pallets are accepted only inside the storage grid, including
+`layout` validates the edited pallet coordinates, regenerates 100 deterministic
+start positions and 4,000 tasks, and restarts the simulation. The browser
+runtime retains the edit for the current page session; the native bridge also
+writes the scenario files. Pallets are accepted only inside the storage grid, including
 its open top and bottom edge rows. Every
 pallet must retain a loaded route to the unloading side, both service sides must
 remain connected, and the repair-station approach stays reserved.

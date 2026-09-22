@@ -1,5 +1,26 @@
 # Local FastDMM runtime assets
 
+## Browser ONNX export
+
+`export_fastdmm_onnx.py` exports the same trusted checkpoint as a fixed
+100-agent ONNX graph for ONNX Runtime Web. The fixed shape keeps WebGPU graph
+creation predictable; the browser pads unused slots for the 25 and 50 agent
+presets. The exporter writes an inference-only model and a metadata sidecar,
+then compares ONNX Runtime CPU output with PyTorch and requires identical
+argmax actions.
+
+```bash
+python runtime/export_fastdmm_onnx.py \
+  --checkpoint .cache/hf/fastdmm-0.8m/fastdmm_grpo_stage2_step12800.pt \
+  --output public/runtime/fastdmm-0.8m.onnx \
+  --agents 100
+```
+
+The export intentionally disables the PyTorch ONNX optimizer. With this model,
+the optimizer folds the stabilized one-hot logarithm into `log(one_hot)`, which
+introduces infinities and NaNs. The unoptimized opset-20 graph preserves the
+PyTorch values exactly and is the graph validated by the exporter.
+
 `export_fastdmm_aoti.py` turns a trusted FastDMM training checkpoint into a
 two-input AOTInductor package for the GPU in the current machine. The package
 contract matches the native runner published with `dmm-mapf-checkpoints`:
