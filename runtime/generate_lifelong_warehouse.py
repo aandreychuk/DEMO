@@ -28,6 +28,7 @@ RELOAD_X = 2
 RELOAD_Y = range(0, HEIGHT - 2)
 RELOAD_BACK_X = RELOAD_X - 1
 PALLET_CAPACITY = 12
+MAX_AGENTS = 1000
 REPAIR_STATION = (RELOAD_X, HEIGHT - 1)
 TOW_DEPOT = (RELOAD_X, HEIGHT - 2)
 RECOVERY_APPROACH = {
@@ -53,7 +54,7 @@ def pallet_cells() -> list[tuple[int, int]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "scenarios")
-    parser.add_argument("--agents", type=int, default=100)
+    parser.add_argument("--agents", type=int, default=MAX_AGENTS)
     parser.add_argument("--tasks", type=int, default=4000)
     parser.add_argument("--seed", type=int, default=800_000)
     args = parser.parse_args()
@@ -94,8 +95,7 @@ def main() -> None:
         for y in range(HEIGHT)
     ]
     excluded = (
-        set(pallets)
-        | set(stations)
+        set(stations)
         | set(reload_stations)
         | {REPAIR_STATION, TOW_DEPOT}
         | RECOVERY_APPROACH
@@ -106,12 +106,23 @@ def main() -> None:
         for x in range(1, WIDTH - 1)
         if (x, y) not in excluded and (x, y) not in walls
     ]
-    if args.agents > len(starts_pool) or args.agents > len(pallets):
-        raise SystemExit("warehouse does not have enough starts or pallets")
+    if not 1 <= args.agents <= MAX_AGENTS or args.agents > len(starts_pool):
+        raise SystemExit(f"agents must be between 1 and {min(MAX_AGENTS, len(starts_pool))}")
 
+    # Keep the historic first 100 starts and task sequence stable while allowing
+    # additional empty robots to begin under parked pallets.
     rng = random.Random(args.seed)
-    starts = rng.sample(starts_pool, args.agents)
-    goals = starts[1:] + starts[:1]
+    pallet_set = set(pallets)
+    open_starts = [cell for cell in starts_pool if cell not in pallet_set]
+    base_count = min(args.agents, 100)
+    starts = rng.sample(open_starts, base_count)
+    if args.agents > base_count:
+        used = set(starts)
+        extra_pool = [cell for cell in starts_pool if cell not in used]
+        starts.extend(random.Random(args.seed + 1).sample(extra_pool, args.agents - base_count))
+    goals = starts[1:base_count] + starts[:1]
+    if args.agents > base_count:
+        goals += starts[base_count + 1:] + starts[base_count:base_count + 1]
 
     map_path.write_text(
         f"type octile\nheight {HEIGHT}\nwidth {WIDTH}\nmap\n" + "\n".join(rows) + "\n",

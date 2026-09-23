@@ -15,7 +15,7 @@ The first server message is JSON so integrations are easy to inspect:
   "protocol": 5,
   "map": { "width": 44, "height": 33, "cellSize": 1 },
   "agents": 100,
-  "tickRate": 10,
+  "tickRate": 5,
   "planningSeconds": 6.1,
   "inferenceMs": 0.0,
   "lifelong": true,
@@ -111,7 +111,7 @@ Commands are infrequent JSON messages:
 { "type": "control", "action": "speed", "value": 2.0 }
 { "type": "control", "action": "load", "agents": 100 }
 { "type": "control", "action": "fail", "agent": 21 }
-{ "type": "control", "action": "layout", "pallets": [{ "x": 4, "y": 1 }] }
+{ "type": "control", "action": "layout", "agents": 250, "pallets": [{ "x": 4, "y": 1 }] }
 ```
 
 `pause` preserves the native simulator state and stops requesting steps. `stop`
@@ -126,9 +126,11 @@ failure remains at that cell and is recovered first. Starting a fresh simulation
 clears the recovery queue and all failures.
 
 `layout` validates the edited pallet coordinates, saves the layout, regenerates
-100 deterministic start positions and 4,000 tasks, and restarts that browser's
-native simulation. Pallets are accepted only inside the storage grid, including
-its open top and bottom edge rows. Every
+1,000 deterministic start positions and 4,000 tasks, and restarts that browser's
+native simulation with the requested 1–1,000 agents. Empty robots may start
+under parked pallets, so the agent count is independent of pallet count. Pallets
+are accepted only inside the storage grid, including its open top and bottom
+edge rows. Every
 pallet must retain a loaded route to the unloading side, both service sides must
 remain connected, and the repair-station approach stays reserved.
 

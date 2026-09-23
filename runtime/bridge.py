@@ -21,7 +21,7 @@ from websockets.exceptions import ConnectionClosed
 
 MAGIC = 0x4D415046
 PROTOCOL = 5
-MAX_AGENTS = 100
+MAX_AGENTS = 1000
 LAYOUT_SEED = 800_000
 TASK_COUNT = 4_000
 
@@ -349,8 +349,8 @@ class Bridge:
             if (x, y) in pallet_cells:
                 raise ValueError(f"duplicate pallet cell ({x}, {y})")
             pallet_cells.add((x, y))
-        if len(pallet_cells) < MAX_AGENTS:
-            raise ValueError(f"at least {MAX_AGENTS} pallets are required")
+        if not pallet_cells:
+            raise ValueError("at least one pallet is required")
 
         rows = self.args.map.read_text(encoding="ascii").splitlines()
         try:
@@ -404,7 +404,8 @@ class Bridge:
                 f"{len(unreachable_pallets)} pallet cells have no loaded route to an aisle"
             )
 
-        excluded = pallet_cells | service_cells | recovery_approach
+        # Empty robots can begin under parked pallets.
+        excluded = service_cells | recovery_approach
         starts_pool = [
             (x, y)
             for y in range(1, height - 1)
@@ -412,7 +413,7 @@ class Bridge:
             if (x, y) in passable and (x, y) not in excluded
         ]
         if len(starts_pool) < MAX_AGENTS:
-            raise ValueError("layout leaves fewer than 100 valid robot start cells")
+            raise ValueError(f"layout leaves fewer than {MAX_AGENTS} valid robot start cells")
 
         pallets = sorted(pallet_cells)
         pallet_records = [
@@ -617,7 +618,7 @@ class Bridge:
                         paused = True
                     elif action == "speed":
                         speed = min(
-                            3.0, max(0.25, float(message.get("value", 1)))
+                            5.0, max(0.25, float(message.get("value", 1)))
                         )
                     elif action == "fail":
                         agent = int(message.get("agent", -1))
@@ -627,9 +628,12 @@ class Bridge:
                             previous = frame.states
                     elif action == "load":
                         requested = int(message.get("agents", count))
-                        reload_count = min(MAX_AGENTS, max(2, requested))
+                        reload_count = min(MAX_AGENTS, max(1, requested))
                     elif action == "layout":
                         try:
+                            requested = int(message.get("agents", count))
+                            if not 1 <= requested <= MAX_AGENTS:
+                                raise ValueError(f"agent count must be between 1 and {MAX_AGENTS}")
                             async with self.start_lock:
                                 pallet_count = self.apply_layout(message.get("pallets"))
                             await socket.send(
@@ -640,7 +644,7 @@ class Bridge:
                                     }
                                 )
                             )
-                            reload_count = count
+                            reload_count = requested
                         except (OSError, TypeError, ValueError) as error:
                             await socket.send(
                                 json.dumps(
@@ -688,14 +692,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=root / "scenarios" / "warehouse-lifelong-44x33.layout.json",
     )
-    parser.add_argument("--agents", type=int, choices=(25, 50, 100), default=100)
+    parser.add_argument("--agents", type=int, default=100)
     parser.add_argument(
         "--max-steps",
         type=int,
         default=0,
         help="native step limit; 0 keeps the simulator running indefinitely",
     )
-    parser.add_argument("--tick-rate", type=float, default=10)
+    parser.add_argument("--tick-rate", type=float, default=5)
     parser.add_argument("--threads", type=int, default=6)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18765)
@@ -704,6 +708,8 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     args = parse_args()
+    if not 1 <= args.agents <= MAX_AGENTS:
+        raise SystemExit(f"--agents must be between 1 and {MAX_AGENTS}")
     for path in (
         args.runner,
         args.model,

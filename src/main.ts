@@ -20,7 +20,7 @@ const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
 const CELL_SIZE = 1.056;
 const PALLET_FOOTPRINT = 0.792;
-const MAX_AGENTS = 100;
+const MAX_AGENTS = 1000;
 const UNLOAD_X = MAP_WIDTH - 3;
 const UNLOAD_MIN_Z = 1;
 const UNLOAD_MAX_Z = MAP_DEPTH - 2;
@@ -61,7 +61,7 @@ const MAX_RENDERED_GOODS = MAX_AGENTS * PALLET_CAPACITY
   + CONVEYOR_BOX_COUNT * CONVEYOR_BOX_CAPACITY
   + UNLOAD_STATION_COUNT
   + RELOAD_STATION_COUNT;
-const FALLBACK_STEP_SECONDS = 0.72;
+const FALLBACK_STEP_SECONDS = 1.44;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 
@@ -198,7 +198,7 @@ let speed = 1;
 let simTime = 0;
 let socket: WebSocket | null = null;
 let live = false;
-let liveTickRate = 10;
+let liveTickRate = 5;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let towLoadingStartedStep = 0;
@@ -211,6 +211,7 @@ let editorAwaitingApply = false;
 let editorWasPaused = false;
 let editorOriginal = new Set<string>();
 let editorLayout = new Set<string>();
+let editorAgentCount = agentCount;
 let editorHistory: Set<string>[] = [];
 let editorPaintMode: 'add' | 'remove' | null = null;
 let editorLastPainted = '';
@@ -672,24 +673,24 @@ function paintEditorCell(cell: { x: number; z: number }): void {
 }
 
 function validateEditorLayout(): { valid: boolean; message: string } {
-  if (editorLayout.size < MAX_AGENTS) {
-    return { valid: false, message: `At least ${MAX_AGENTS} pallets are required for ${MAX_AGENTS} agents.` };
+  const agentInput = document.querySelector<HTMLInputElement>('#editor-agent-number')!;
+  const requestedAgents = Number(agentInput.value);
+  if (!agentInput.validity.valid || !Number.isInteger(requestedAgents) || requestedAgents < 1 || requestedAgents > MAX_AGENTS) {
+    return { valid: false, message: 'Enter a whole number of agents from 1 to ' + MAX_AGENTS + '.' };
+  }
+  if (editorLayout.size === 0) {
+    return { valid: false, message: 'Add at least one pallet to generate delivery tasks.' };
   }
   const interiorRows = MAP_DEPTH - 2;
   const sideAisleCells = interiorRows * 2;
-  const interiorPalletCount = [...editorLayout]
-    .map(parsePalletCellKey)
-    .filter(({ z }) => z > 0 && z < MAP_DEPTH - 1)
-    .length;
   const reservedApproachCells = [REPAIR_Z, TOW_DEPOT_Z]
     .filter((z) => z > 0 && z < MAP_DEPTH - 1)
     .length;
   const availableStartCells = sideAisleCells
     + (STORAGE_MAX_X - STORAGE_MIN_X + 1) * interiorRows
-    - reservedApproachCells
-    - interiorPalletCount;
-  if (availableStartCells < MAX_AGENTS) {
-    return { valid: false, message: `The layout leaves only ${availableStartCells} robot start cells.` };
+    - reservedApproachCells;
+  if (availableStartCells < editorAgentCount) {
+    return { valid: false, message: 'The map has only ' + availableStartCells + ' robot start cells.' };
   }
   const reachable = new Set<string>();
   const queue: Array<{ x: number; z: number }> = [];
@@ -734,6 +735,7 @@ function updateEditorPanel(): void {
   const count = editorLayout.size;
   document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
   document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
+  document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' MAX';
   const validation = validateEditorLayout();
   const card = document.querySelector<HTMLElement>('#editor-validation')!;
   card.classList.toggle('invalid', !validation.valid);
@@ -750,6 +752,9 @@ function enterLayoutEditor(): void {
   editorAwaitingApply = false;
   editorOriginal = new Set(palletCells.map(({ x, z }) => palletCellKey(x, z)));
   editorLayout = new Set(editorOriginal);
+  editorAgentCount = agentCount;
+  document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(editorAgentCount);
+  document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
   editorHistory = [];
   editorWasPaused = paused;
   if (!paused) sendControl('pause');
@@ -807,7 +812,7 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
     syncPauseButton();
     sendControl('run');
   }
-  setConnection(live ? 'live' : 'fallback', live ? 'FASTDMM // SIMULATOR' : 'DEMO // RECONNECTING');
+  setConnection(live ? 'live' : 'fallback', live ? 'DMM-0.8M // SIMULATOR' : 'DEMO // RECONNECTING');
 }
 
 function goodsSlotOffset(slot: number): { x: number; z: number } {
@@ -2586,7 +2591,14 @@ function setAgentCount(count: number): void {
   setThinInstanceCount(agentPicker, agentCount);
   agentsValue.textContent = agentCount.toLocaleString('en-US');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
-  if ([...select.options].some((option) => Number(option.value) === agentCount)) select.value = String(agentCount);
+  let option = [...select.options].find((item) => Number(item.value) === agentCount);
+  if (!option) {
+    select.querySelector('option[data-custom]')?.remove();
+    option = new Option(String(agentCount), String(agentCount));
+    option.dataset.custom = 'true';
+    select.add(option);
+  }
+  select.value = String(agentCount);
 }
 
 function sendControl(action: string, extra: Record<string, unknown> = {}): void {
@@ -2603,7 +2615,7 @@ function connect(): void {
     if (event.data instanceof ArrayBuffer) {
       live = true;
       parseFrame(event.data);
-      setConnection('live', 'FASTDMM // SIMULATOR');
+      setConnection('live', 'DMM-0.8M // SIMULATOR');
       return;
     }
     const message = JSON.parse(String(event.data));
@@ -2621,11 +2633,11 @@ function connect(): void {
       live = true;
       paused = false;
       syncPauseButton();
-      liveTickRate = Number(message.tickRate) || 10;
+      liveTickRate = Number(message.tickRate) || 5;
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
-      setConnection('live', 'FASTDMM // SIMULATOR');
+      setConnection('live', 'DMM-0.8M // SIMULATOR');
     } else if (message.type === 'layout-applied') {
       closeLayoutEditor(false, false);
     } else if (message.type === 'layout-error') {
@@ -2815,6 +2827,22 @@ document.querySelector('#reset-camera')!.addEventListener('click', () => {
 
 document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
 
+document.querySelector<HTMLInputElement>('#editor-agent-count')!.addEventListener('input', (event) => {
+  editorAgentCount = Number((event.currentTarget as HTMLInputElement).value);
+  document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
+  updateEditorPanel();
+});
+
+document.querySelector<HTMLInputElement>('#editor-agent-number')!.addEventListener('input', (event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const value = Number(input.value);
+  if (input.validity.valid && Number.isInteger(value) && value >= 1 && value <= MAX_AGENTS) {
+    editorAgentCount = value;
+    document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(value);
+  }
+  updateEditorPanel();
+});
+
 document.querySelector('#editor-undo')!.addEventListener('click', () => {
   const previous = editorHistory.pop();
   if (!previous) return;
@@ -2857,11 +2885,16 @@ document.querySelector('#editor-apply')!.addEventListener('click', () => {
   editorMessage.classList.remove('error');
   updateEditorPanel();
   sendControl('layout', {
+    agents: editorAgentCount,
     pallets: palletRecordsFromKeys(editorLayout).map(({ x, z }) => ({ x, y: z })),
   });
 });
 
 window.addEventListener('keydown', (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    cameraKeys.clear();
+    return;
+  }
   const target = event.target as HTMLElement | null;
   if (target?.matches('input:not([type="range"]), select, textarea, [contenteditable="true"]')) return;
   const key = cameraKeyByCode[event.code];
@@ -2874,7 +2907,6 @@ window.addEventListener('keyup', (event) => {
   const key = cameraKeyByCode[event.code];
   if (!key) return;
   cameraKeys.delete(key);
-  event.preventDefault();
 });
 
 window.addEventListener('blur', () => cameraKeys.clear());

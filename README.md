@@ -1,9 +1,9 @@
-# MAPF Operations Deck
+# MAPF Operations Demo
 
-A browser-based 2.5D demonstration of the trained FastDMM policy. CUDA/AOTI
+A browser-based 2.5D demonstration of the trained DMM-0.8M policy. CUDA/AOTI
 inference, observation construction, PIBT shielding, and collision checks run
 locally in the native process. The browser receives compact state frames over a
-loopback WebSocket and renders the 100-agent lifelong warehouse with Babylon.js
+loopback WebSocket and renders the lifelong warehouse with Babylon.js
 thin instances.
 
 The visual cell pitch is larger than the physical robot and pallet footprint.
@@ -76,21 +76,26 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-Open `http://127.0.0.1:4173/`. The agent selector starts a local simulator for
-25, 50, or 100 agents. Every visible tick is computed on demand by the native
-FastDMM + PIBT process. Pause suspends native stepping; Stop terminates the
+Open `http://127.0.0.1:4173/`. The simulator starts with 100 agents. The
+quick selector offers 25, 50, or 100 agents; the layout editor accepts any
+whole number from 1 to 1,000. Every visible tick is computed on demand by
+the native FastDMM + PIBT process. Pause suspends native stepping; Stop terminates the
 current process, creates a fresh simulation, and holds it at step zero. Playback
-speed, layout-independent WASD movement, mouse orbit, and wheel zoom remain
-browser-side. If the bridge is unavailable, the page uses
+speed ranges from 0.25× to 5× around a five-tick-per-second base rate.
+Layout-independent WASD movement, mouse orbit, and wheel zoom remain
+browser-side; keyboard shortcuts using Ctrl, Alt, or Command retain their
+normal browser behavior. If the bridge is unavailable, the page uses
 clearly labelled synthetic motion while it retries the loopback connection.
 
 The `LAYOUT` control opens a fixed-angle overhead pallet editor aligned with one
 grid axis. WASD pans the view and the wheel zooms without changing its angle.
 Click or drag over storage cells, including the two outer rows, to add and remove
 pallets; undo, reset, and clear tools make larger changes practical. The editor
-checks loaded-pallet access before enabling apply. Applying a valid layout saves
-it locally, regenerates 100 deterministic starts and 4,000 tasks, then restarts
-the native simulation.
+checks loaded-pallet access before enabling apply. Its slider and numeric field
+set the agent count independently of pallet occupancy, because empty robots can
+start under pallets. Applying a valid layout saves it locally, regenerates
+1,000 deterministic start positions and 4,000 tasks, then restarts the native
+simulation with the selected count.
 
 ## Verified 100-agent lifelong run
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b13" />
-    <title>MAPF // Operations Deck</title>
+    <title>MAPF // Operations Demo</title>
   </head>
   <body>
     <main id="app">
@@ -15,13 +15,18 @@
           <span class="brand-mark"><i></i><i></i><i></i></span>
           <div>
             <strong>MAPF // OPERATIONS</strong>
-            <small>Multi-agent pathfinding laboratory</small>
+            <small>Multi-agent pathfinding demo</small>
           </div>
         </div>
         <div class="connection"><span class="pulse"></span><span id="source-label">DEMO SOURCE</span></div>
       </header>
 
       <aside class="inspector glass">
+        <section class="demo-guide" aria-label="About this demo">
+          <p class="eyebrow">WHAT TO WATCH</p>
+          <p>Robots carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
+          <p>Select a robot to inspect its task or trigger a breakdown. Change speed below; use LAYOUT to edit pallets and agent count.</p>
+        </section>
         <section class="agent-inspector">
           <div class="section-heading">
             <p class="eyebrow">AGENT INSPECTOR</p>
@@ -104,6 +109,14 @@
           <div><small>PALLETS</small><strong id="editor-pallet-count">792</strong></div>
           <div><small>DENSITY</small><strong id="editor-density">66.7%</strong></div>
         </div>
+        <div class="editor-agent-control">
+          <div class="editor-agent-header">
+            <label for="editor-agent-number">AGENTS</label>
+            <input id="editor-agent-number" type="number" min="1" max="1000" value="100" step="1" required aria-label="Number of agents">
+          </div>
+          <input id="editor-agent-count" type="range" min="1" max="1000" value="100" step="1" aria-label="Number of agents slider">
+          <small>1 <span id="editor-agent-limit">1000 MAX</span></small>
+        </div>
         <div id="editor-validation" class="editor-validation valid">
           <span></span><strong>LAYOUT VALID</strong>
           <small>Every pallet has a route to the service aisles.</small>
@@ -138,7 +151,7 @@
         </label>
         <label class="speed-control">
           <span>SPEED <output id="speed-value">1.0×</output></span>
-          <input id="speed" type="range" min="0.25" max="3" value="1" step="0.25" />
+          <input id="speed" type="range" min="0.25" max="5" value="1" step="0.25" />
         </label>
         <button id="layout-editor-button" class="layout-button" type="button"><span>▦</span><span>LAYOUT</span></button>
         <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
