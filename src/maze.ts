@@ -217,7 +217,7 @@ function renderInspector(frame: Snapshot, round: number): void {
     const id = frame.chat[selectedAgent * 13 + slot];
     if (id >= 0 && id < AGENTS && id !== selectedAgent) sources.add(id);
   }
-  element('#maze-neighbor-count').textContent = `${sources.size} agents`;
+  element('#maze-neighbor-count').textContent = `${sources.size} ${sources.size === 1 ? 'agent' : 'agents'}`;
   neighbors.innerHTML = sources.size
     ? [...sources].map((id) => `<span style="--agent-color:${MAZE_COLORS[id]}">Agent ${String(id + 1).padStart(2, '0')}</span>`).join('')
     : '<span>No agents in range</span>';
