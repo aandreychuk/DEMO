@@ -1,4 +1,4 @@
-import * as ort from 'onnxruntime-web/webgpu';
+import * as ort from 'onnxruntime-web';
 import { MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, defaultMazeConfig, validateMazeConfig, type MazeConfig } from './maze-scenario';
 
 const ROUNDS = 4;
@@ -34,7 +34,7 @@ let positions = new Int32Array(0);
 let goals = new Int32Array(0);
 let finished = new Uint8Array(0);
 let action = 0;
-let backend = 'WASM';
+const backend = 'WASM';
 let lastExecuted = new Int32Array(0);
 let initialized = false;
 let pending: Promise<void> = Promise.resolve();
@@ -62,18 +62,7 @@ async function loadModel(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
   const url = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-comm-trace.onnx`, self.location.origin);
-  if ((navigator as Navigator & { gpu?: unknown }).gpu) {
-    try {
-      const webgpuSession = await ort.InferenceSession.create(url.href, {
-        executionProviders: ['webgpu'],
-      });
-      backend = 'WebGPU';
-      return webgpuSession;
-    } catch (error) {
-      console.warn('Maze trace WebGPU unavailable; using WASM.', error);
-    }
-  }
-  backend = 'WASM';
+  post({ type: 'status', text: 'Loading DMM-0.8M trace on WASM…' });
   return ort.InferenceSession.create(url.href, { executionProviders: ['wasm'] });
 }
 
@@ -192,6 +181,7 @@ async function handle(type: 'start' | 'advance' | 'reset' | 'configure', nextCon
     [core, session] = await Promise.all([loadCore(), loadModel()]);
     initialized = true;
     resetScenario();
+    post({ type: 'status', text: 'Computing the first communication trace…' });
     await infer();
     return;
   }
