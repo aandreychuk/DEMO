@@ -88,13 +88,20 @@ the compatibility fallback.
 ## Communication maze
 
 Open `maze.html` directly or use the **Communication maze** link in the warehouse
-header, which opens it in a separate browser tab. This independent eight-agent
-mini-maze uses the same observation tokenizer, FastDMM weights, and PIBT shield
+header, which opens it in a separate browser tab. This independent mini-maze
+uses the same observation tokenizer, FastDMM weights, and PIBT shield
 as the browser warehouse. Its dedicated ONNX graph exposes the consensus intent
 after each of the four real communication rounds. The model runs again for each
 new maze action; the agents move only after round four. The selected agent's
 chart and action bars show the normalized consensus vector, while the map shows
 every agent's current intent and its communication links.
+
+Use **Edit maze** to paint or erase walls, add or remove agents (1–16), and
+set each agent's start and goal. The outer border stays closed, and the editor
+checks for overlapping starts or goals and unreachable goals before running.
+With **Lifelong** checked, agents receive a new reachable goal after arrival.
+When unchecked, each agent stops at its goal; the task is solved once all
+agents have arrived. **Default** restores the original eight-agent layout.
 
 The maze player defaults to 1.3 seconds per communication round, slower than
 the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,
@@ -108,7 +115,7 @@ To regenerate the trace model from the local checkpoint with Python/PyTorch:
 python runtime/export_comm_trace_onnx.py \
   --checkpoint /path/to/fastdmm_grpo_stage2_step12800.pt \
   --output public/runtime/fastdmm-0.8m-comm-trace.onnx \
-  --agents 8
+  --agents 16
 ```
 
 The exporter verifies every ONNX round against PyTorch and checks that the
