@@ -17,6 +17,7 @@
       <main class="maze-main">
         <section class="maze-stage glass" aria-label="Mini maze and communicating agents">
           <div class="maze-stage-heading"><div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Each colored arrow is an agent’s current intent. Connections show which agents can exchange messages. Positions change after round four.</p></div><div class="maze-stage-counter"><small>Action</small><strong id="maze-action">001</strong><small>Round</small><strong id="maze-round">0 / 4</strong></div></div>
+          <div id="maze-solved" class="maze-solved" hidden>✓ Solved — every agent reached its goal</div>
           <div class="maze-viewport"><div id="maze-board" class="maze-board" aria-label="15 by 11 cell maze"><svg id="maze-links" class="maze-links" viewBox="0 0 15 11" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>
           <div class="maze-stage-footer"><span><i class="maze-legend-wall"></i>Wall</span><span><i class="maze-legend-goal"></i>Agent goal</span><span><i class="maze-legend-link"></i>Communication</span><span id="maze-changed">0 changed intents this round</span></div>
         </section>
@@ -30,6 +31,22 @@
           <section class="maze-all-section"><div class="maze-section-title"><h3>All agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
           <p class="maze-model-note">The bars show the actual DMM-0.8M consensus vector after each communication round. Movement uses the final intent with collision shielding.</p>
         </aside>
+
+        <aside id="maze-editor" class="maze-editor glass" hidden>
+          <p class="maze-kicker">Scenario editor</p>
+          <h2>Build your maze</h2>
+          <p class="maze-editor-intro">Choose a tool, then click cells on the board. Drag to paint walls or erase them. Select an agent to move its start or goal.</p>
+          <div class="maze-editor-tools" role="group" aria-label="Maze editing tools">
+            <button type="button" data-tool="wall">Wall</button><button type="button" data-tool="erase">Erase</button>
+            <button type="button" data-tool="agent">Add agent</button><button type="button" data-tool="start">Move start</button><button type="button" data-tool="goal">Set goal</button>
+          </div>
+          <div class="maze-editor-agent-head"><h3>Agents</h3><span id="maze-editor-count">8 / 16</span></div>
+          <div id="maze-editor-agents" class="maze-editor-agents"></div>
+          <button id="maze-editor-remove" type="button" class="maze-editor-remove">Remove selected agent</button>
+          <label class="maze-editor-lifelong"><input id="maze-lifelong" type="checkbox" checked><span><strong>Lifelong</strong><small>Generate a new goal when an agent arrives</small></span></label>
+          <p id="maze-editor-message" class="maze-editor-message" role="status"></p>
+          <div class="maze-editor-actions"><button id="maze-editor-default" type="button">Default</button><button id="maze-editor-cancel" type="button">Cancel</button><button id="maze-editor-apply" type="button">Run scenario</button></div>
+        </aside>
       </main>
 
       <div class="maze-player glass" aria-label="Communication round player">
@@ -39,6 +56,7 @@
         <div class="maze-timeline"><div><strong id="maze-timeline-label">Before communication</strong><small id="maze-step-label">Step 0</small></div><input id="maze-scrub" type="range" min="0" max="4" value="0" aria-label="Recorded communication round"></div>
         <label class="maze-speed"><span>Playback <output id="maze-speed-value">1.0×</output></span><input id="maze-speed" type="range" min="0.5" max="2" step="0.25" value="1" /></label>
         <button id="maze-reset" class="maze-reset-button" type="button">Restart</button>
+        <button id="maze-edit" class="maze-reset-button" type="button">Edit maze</button>
       </div>
     </div>
     <script type="module" src="/src/maze.ts"></script>

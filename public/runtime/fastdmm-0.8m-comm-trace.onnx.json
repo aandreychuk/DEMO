@@ -3,11 +3,11 @@
   "checkpoint": "fastdmm_grpo_stage2_step12800.pt",
   "checkpoint_sha256": "c737bd43d12c7847582e433b1495cb7392d38491d36ac45b1dcf958a32c6f6d5",
   "checkpoint_step": 12800,
-  "agents": 8,
+  "agents": 16,
   "rounds": 4,
   "output": "round_intents[round, agent, action]",
   "max_abs_error": 2.9103830456733704e-11,
   "final_max_abs_error": 0.0,
   "final_action_agreement": 1.0,
-  "onnx_sha256": "cfd24ad89b7e0090cb55542515f5ae2a340b7eabcd87526a39bb109657424198"
+  "onnx_sha256": "b4040c91d6a96920f681998bc8dc396d3a4e05aeaaf4a10349b5d75eb43f2cd1"
 }

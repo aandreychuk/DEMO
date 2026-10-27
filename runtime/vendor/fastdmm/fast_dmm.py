@@ -58,13 +58,16 @@ class ExplicitSDPASelfAttention(nn.Module):
         )
         query, key, value = qkv.unbind(dim=2)
         allowed = (~padding_mask).unsqueeze(1).unsqueeze(1)
-        attended = F.scaled_dot_product_attention(
-            query.transpose(1, 2),
-            key.transpose(1, 2),
-            value.transpose(1, 2),
-            attn_mask=allowed,
-            dropout_p=0.0,
-        )
+        q = query.transpose(1, 2)
+        k = key.transpose(1, 2)
+        v = value.transpose(1, 2)
+        if getattr(self, "onnx_explicit_attention", False):
+            scores = torch.matmul(q, k.transpose(-2, -1)) * (self.head_width ** -0.5)
+            attended = torch.matmul(scores.masked_fill(~allowed, -1e4).softmax(-1), v)
+        else:
+            attended = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=allowed, dropout_p=0.0
+            )
         attended = attended.transpose(1, 2).reshape(batch, length, width)
         return self.output(attended)
 
@@ -253,9 +256,13 @@ class QueryCrossAttentionBlock(nn.Module):
         query = self.query(self.query_norm(query_token)).view(
             batch_agents, 1, self.heads, self.head_width
         ).transpose(1, 2)
-        attended = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=allowed, dropout_p=0.0
-        )
+        if getattr(self, "onnx_explicit_attention", False):
+            scores = torch.matmul(query, key.transpose(-2, -1)) * (self.head_width ** -0.5)
+            attended = torch.matmul(scores.masked_fill(~allowed, -1e4).softmax(-1), value)
+        else:
+            attended = F.scaled_dot_product_attention(
+                query, key, value, attn_mask=allowed, dropout_p=0.0
+            )
         attended = attended.transpose(1, 2).reshape(batch_agents, 1, width)
         feature = query_token + self.output(attended)
         normalized = self.attention_output_norm(feature)
