@@ -735,12 +735,12 @@ function updateEditorPanel(): void {
   const count = editorLayout.size;
   document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
   document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
-  document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' MAX';
+  document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' max';
   const validation = validateEditorLayout();
   const card = document.querySelector<HTMLElement>('#editor-validation')!;
   card.classList.toggle('invalid', !validation.valid);
   card.classList.toggle('valid', validation.valid);
-  card.querySelector('strong')!.textContent = validation.valid ? 'LAYOUT VALID' : 'LAYOUT BLOCKED';
+  card.querySelector('strong')!.textContent = validation.valid ? 'Layout valid' : 'Layout blocked';
   card.querySelector('small')!.textContent = validation.message;
   document.querySelector<HTMLButtonElement>('#editor-undo')!.disabled = editorHistory.length === 0;
   document.querySelector<HTMLButtonElement>('#editor-apply')!.disabled = !validation.valid || editorAwaitingApply;
@@ -787,7 +787,7 @@ function enterLayoutEditor(): void {
   document.querySelector<HTMLElement>('#layout-editor')!.hidden = false;
   document.querySelector('#editor-message')!.textContent = 'Changes are applied to the local simulator.';
   document.querySelector('#editor-message')!.classList.remove('error');
-  setConnection('editor', 'LAYOUT // EDITOR');
+  setConnection('editor', 'Layout editor');
   updateEditorPanel();
 }
 
@@ -812,7 +812,7 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
     syncPauseButton();
     sendControl('run');
   }
-  setConnection(live ? 'live' : 'fallback', live ? 'DMM-0.8M // SIMULATOR' : 'DEMO // RECONNECTING');
+  setConnection(live ? 'live' : 'fallback', live ? 'DMM-0.8M simulator' : 'Demo reconnecting');
 }
 
 function goodsSlotOffset(slot: number): { x: number; z: number } {
@@ -2490,56 +2490,56 @@ function renderAgentPanel(): void {
     && frame.tow.state === 4
     && frame.tow.targetAgent === id;
   const stateLabel = loadingOntoTow
-    ? 'LOADING ONTO TOW'
+    ? 'Loading onto tow'
     : recoveryState === 1
-    ? 'WAITING FOR TOW'
+    ? 'Waiting for tow'
     : recoveryState === 2
-      ? 'EVACUATING'
+      ? 'Evacuating'
       : recoveryState === 3
-        ? 'UNDER REPAIR'
+        ? 'Under repair'
         : recoveryState === 4
-          ? 'RECOVERING PALLET'
+          ? 'Recovering pallet'
     : palletMotion?.kind === 'pickup' && waiting
-    ? 'LOADING PALLET'
+    ? 'Loading pallet'
     : palletMotion?.kind === 'drop' && waiting
-      ? 'PARKING PALLET'
+      ? 'Parking pallet'
       : atReloadingBay && waiting
-        ? 'BATCH LOADING'
+        ? 'Batch loading'
       : transitioned && waiting && atUnloadingBay
-        ? 'HANDOFF'
+        ? 'Handoff'
     : atUnloadingBay && waiting
-      ? 'UNLOADING ITEM'
+      ? 'Unloading item'
       : waiting
-        ? 'WAITING'
+        ? 'Waiting'
         : loaded
-          ? 'LOADED'
-          : 'EMPTY';
+          ? 'Loaded'
+          : 'Empty';
   const statePill = document.querySelector<HTMLElement>('#selected-agent-state')!;
   statePill.textContent = stateLabel;
   statePill.className = `state-pill${failed ? ' failed' : recoveryState === 4 ? ' recovery' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
   const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
   failButton.disabled = recoveryState !== 0 || socket?.readyState !== WebSocket.OPEN;
   document.querySelector('#fail-agent-label')!.textContent = recoveryState !== 0
-    ? 'RECOVERY IN PROGRESS'
-    : 'BREAK AGENT';
+    ? 'Recovery in progress'
+    : 'Break agent';
 
-  document.querySelector('#selected-agent')!.textContent = `AGENT ${String(id).padStart(3, '0')}`;
+  document.querySelector('#selected-agent')!.textContent = `Agent ${String(id).padStart(3, '0')}`;
   document.querySelector('#agent-position')!.textContent =
     `${Math.round(frame.positions[id * 2])}, ${Math.round(frame.positions[id * 2 + 1])}`;
   document.querySelector('#agent-task')!.textContent = taskId === 0xffffffff ? '—' : `#${taskId}`;
-  const cargoNames = ['CRATE', 'CARTONS', 'DRUMS'];
+  const cargoNames = ['Crate', 'Cartons', 'Drums'];
   const physicalPalletX = frame.palletPositions[id * 2];
   const physicalPalletZ = frame.palletPositions[id * 2 + 1];
   const droppedLabel = recoveryState !== 0 && !loaded
       && physicalPalletX >= 0 && physicalPalletZ >= 0
       && pallet !== null
       && (physicalPalletX !== pallet.x || physicalPalletZ !== pallet.z)
-    ? ` · @ ${physicalPalletX},${physicalPalletZ}`
+    ? `, at ${physicalPalletX},${physicalPalletZ}`
     : '';
   document.querySelector('#agent-pallet')!.textContent = pallet
-    ? `P${String(palletId).padStart(3, '0')} · ${cargoNames[pallet.cargoType]} · ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
+    ? `P${String(palletId).padStart(3, '0')}, ${cargoNames[pallet.cargoType]}, ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
     : '—';
-  document.querySelector('#agent-task-age')!.textContent = `${Math.max(0, frame.step - stats.taskStartedAt)} TICKS`;
+  document.querySelector('#agent-task-age')!.textContent = `${Math.max(0, frame.step - stats.taskStartedAt)} ticks`;
 
   const formatCoordinate = (x: number, z: number): string => x >= 0 && z >= 0 ? `${x}, ${z}` : '—';
   document.querySelector('#pickup-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
@@ -2606,16 +2606,16 @@ function sendControl(action: string, extra: Record<string, unknown> = {}): void 
 }
 
 function connect(): void {
-  setConnection('connecting', 'CONNECTING // LOCAL');
+  setConnection('connecting', 'Connecting locally');
   const ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
   socket = ws;
-  ws.addEventListener('open', () => setConnection('planning', 'LIFELONG // PLANNING'));
+  ws.addEventListener('open', () => setConnection('planning', 'Planning lifelong run'));
   ws.addEventListener('message', (event) => {
     if (event.data instanceof ArrayBuffer) {
       live = true;
       parseFrame(event.data);
-      setConnection('live', 'DMM-0.8M // SIMULATOR');
+      setConnection('live', 'DMM-0.8M simulator');
       return;
     }
     const message = JSON.parse(String(event.data));
@@ -2637,7 +2637,7 @@ function connect(): void {
       lastInferenceMs = Number(message.inferenceMs) || 0;
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
-      setConnection('live', 'DMM-0.8M // SIMULATOR');
+      setConnection('live', 'DMM-0.8M simulator');
     } else if (message.type === 'layout-applied') {
       closeLayoutEditor(false, false);
     } else if (message.type === 'layout-error') {
@@ -2653,15 +2653,15 @@ function connect(): void {
       resetPalletInventory();
       resetAgentStats();
       clearAgentSelection();
-      setConnection('planning', `PLANNING // ${Number(message.agents).toLocaleString('en-US')}`);
+      setConnection('planning', `Planning ${Number(message.agents).toLocaleString('en-US')}`);
     } else if (message.type === 'status' && message.state === 'stopped') {
       paused = true;
       syncPauseButton();
-      setConnection('stopped', 'SIMULATION // STOPPED');
+      setConnection('stopped', 'Simulation stopped');
     } else if (message.type === 'metrics') {
       lastInferenceMs = Number(message.inferenceMs) || 0;
     } else if (message.type === 'error') {
-      setConnection('error', 'RUNTIME // ERROR');
+      setConnection('error', 'Runtime error');
       console.error(message.message);
     }
   });
@@ -2674,7 +2674,7 @@ function connect(): void {
     resetPalletInventory();
     resetAgentStats();
     clearAgentSelection();
-    setConnection('fallback', 'DEMO // RECONNECTING');
+    setConnection('fallback', 'Demo reconnecting');
     window.setTimeout(connect, 2000);
   });
   ws.addEventListener('error', () => ws.close());
@@ -2743,23 +2743,23 @@ engine.runRenderLoop(() => {
     throughputValue.textContent = paused
       ? '0'
       : Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
-    latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'DEMO';
+    latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'Demo';
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
     failedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) : 0);
     recoveryValue.textContent = String(liveCurrent
       ? liveCurrent.recoveryStates.reduce((sum, state) => sum + (state !== 0 ? 1 : 0), 0)
       : 0);
     if (liveCurrent) {
-      const towLabels = ['IDLE', 'TO AGENT', 'TRANSPORT', 'RETURNING', 'LOADING'];
+      const towLabels = ['Idle', 'To agent', 'Transporting', 'Returning', 'Loading'];
       const target = liveCurrent.tow.targetAgent === 0xffff
         ? ''
-        : ` · A${String(liveCurrent.tow.targetAgent).padStart(3, '0')}`;
+        : ` A${String(liveCurrent.tow.targetAgent).padStart(3, '0')}`;
       const queued = liveCurrent.tow.queuedRescues > 0
-        ? ` · Q${liveCurrent.tow.queuedRescues}`
+        ? `, queue ${liveCurrent.tow.queuedRescues}`
         : '';
-      towStatusValue.textContent = `${towLabels[liveCurrent.tow.state] ?? 'ACTIVE'}${target}${queued}`;
+      towStatusValue.textContent = `${towLabels[liveCurrent.tow.state] ?? 'Active'}${target}${queued}`;
     } else {
-      towStatusValue.textContent = 'IDLE';
+      towStatusValue.textContent = 'Idle';
     }
     const completedTasks = liveCurrent?.completedTasks ?? 0;
     taskThroughputValue.textContent = step > 0
@@ -2774,7 +2774,7 @@ const failAgentButton = document.querySelector<HTMLButtonElement>('#fail-agent-b
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
-  document.querySelector('#pause-label')!.textContent = paused ? 'RUN' : 'PAUSE';
+  document.querySelector('#pause-label')!.textContent = paused ? 'Run' : 'Pause';
 }
 pauseButton.addEventListener('click', () => {
   paused = !paused;
@@ -2789,14 +2789,14 @@ stopButton.addEventListener('click', () => {
   resetServiceAnimations();
   resetAgentStats();
   sendControl('stop');
-  setConnection('stopped', 'SIMULATION // STOPPED');
+  setConnection('stopped', 'Simulation stopped');
 });
 
 failAgentButton.addEventListener('click', () => {
   if (selectedAgentId < 0 || !liveCurrent) return;
   if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
   failAgentButton.disabled = true;
-  document.querySelector('#fail-agent-label')!.textContent = 'BREAKING…';
+  document.querySelector('#fail-agent-label')!.textContent = 'Breaking…';
   sendControl('fail', { agent: selectedAgentId });
 });
 
@@ -2805,7 +2805,7 @@ document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('cha
   if (socket?.readyState === WebSocket.OPEN) {
     paused = false;
     syncPauseButton();
-    setConnection('planning', `PLANNING // ${count.toLocaleString('en-US')}`);
+    setConnection('planning', `Planning ${count.toLocaleString('en-US')}`);
     sendControl('load', { agents: count });
   } else {
     setAgentCount(count);

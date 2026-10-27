@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b13" />
-    <title>MAPF // Operations Demo</title>
+    <title>MAPF Operations Demo</title>
   </head>
   <body>
     <main id="app">
@@ -14,81 +14,81 @@
         <div class="brand">
           <span class="brand-mark"><i></i><i></i><i></i></span>
           <div>
-            <strong>MAPF // OPERATIONS</strong>
+            <strong>MAPF Operations</strong>
             <small>Multi-agent pathfinding demo</small>
           </div>
         </div>
-        <div class="connection"><span class="pulse"></span><span id="source-label">DEMO SOURCE</span></div>
+        <div class="connection"><span class="pulse"></span><span id="source-label">Demo source</span></div>
       </header>
 
       <aside class="inspector glass">
         <section class="demo-guide" aria-label="About this demo">
-          <p class="eyebrow">WHAT TO WATCH</p>
+          <p class="eyebrow">What to watch</p>
           <p>Robots carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
-          <p>Select a robot to inspect its task or trigger a breakdown. Change speed below; use LAYOUT to edit pallets and agent count.</p>
+          <p>Select a robot to inspect its task or trigger a breakdown. Change speed below; use Layout to edit pallets and agent count.</p>
         </section>
         <section class="agent-inspector">
           <div class="section-heading">
-            <p class="eyebrow">AGENT INSPECTOR</p>
+            <p class="eyebrow">Agent inspector</p>
             <button id="clear-selection" class="clear-selection" type="button" aria-label="Clear agent selection">×</button>
           </div>
           <div id="agent-empty" class="agent-empty">
             <span class="target-glyph">◎</span>
-            <strong>SELECT AN AGENT</strong>
+            <strong>Select an agent</strong>
             <small>Click a robot or its carried pallet</small>
           </div>
           <div id="agent-details" class="agent-details" hidden>
             <div class="agent-title-row">
-              <strong id="selected-agent">AGENT 000</strong>
-              <span id="selected-agent-state" class="state-pill">EMPTY</span>
+              <strong id="selected-agent">Agent 000</strong>
+              <span id="selected-agent-state" class="state-pill">Empty</span>
             </div>
             <div class="stage-track" aria-label="Task progress">
-              <span id="stage-pickup">PICKUP</span>
+              <span id="stage-pickup">Pickup</span>
               <i></i>
-              <span id="stage-unload">UNLOAD</span>
+              <span id="stage-unload">Unload</span>
               <i></i>
-              <span id="stage-reload">RELOAD</span>
+              <span id="stage-reload">Reload</span>
               <i></i>
-              <span id="stage-return">RETURN</span>
+              <span id="stage-return">Return</span>
             </div>
             <div class="agent-facts">
-              <div><small>POSITION</small><strong id="agent-position">—</strong></div>
-              <div><small>CURRENT TASK</small><strong id="agent-task">—</strong></div>
-              <div><small>PALLET</small><strong id="agent-pallet">—</strong></div>
-              <div><small>TASK AGE</small><strong id="agent-task-age">—</strong></div>
+              <div><small>Position</small><strong id="agent-position">—</strong></div>
+              <div><small>Current task</small><strong id="agent-task">—</strong></div>
+              <div><small>Pallet</small><strong id="agent-pallet">—</strong></div>
+              <div><small>Task age</small><strong id="agent-task-age">—</strong></div>
             </div>
             <div class="route-card">
-              <div id="route-pickup"><span>01</span><small>PICKUP</small><strong id="pickup-coordinate">—</strong></div>
-              <div id="route-unload"><span>02</span><small>UNLOAD</small><strong id="unload-coordinate">—</strong></div>
-              <div id="route-reload"><span>03</span><small>RELOAD IF EMPTY</small><strong id="reload-coordinate">—</strong></div>
-              <div id="route-return"><span>04</span><small>RETURN</small><strong id="return-coordinate">—</strong></div>
+              <div id="route-pickup"><span>01</span><small>Pickup</small><strong id="pickup-coordinate">—</strong></div>
+              <div id="route-unload"><span>02</span><small>Unload</small><strong id="unload-coordinate">—</strong></div>
+              <div id="route-reload"><span>03</span><small>Reload if empty</small><strong id="reload-coordinate">—</strong></div>
+              <div id="route-return"><span>04</span><small>Return</small><strong id="return-coordinate">—</strong></div>
             </div>
             <div class="agent-metrics">
-              <div><strong id="agent-distance">0</strong><small>CELLS TRAVELLED</small></div>
-              <div><strong id="agent-waits">0</strong><small>WAIT TICKS</small></div>
-              <div><strong id="agent-handoffs">0</strong><small>UNLOADS</small></div>
-              <div><strong id="agent-completed">0</strong><small>TASKS DONE</small></div>
+              <div><strong id="agent-distance">0</strong><small>Cells travelled</small></div>
+              <div><strong id="agent-waits">0</strong><small>Wait ticks</small></div>
+              <div><strong id="agent-handoffs">0</strong><small>Unloads</small></div>
+              <div><strong id="agent-completed">0</strong><small>Tasks done</small></div>
             </div>
             <button id="fail-agent-button" class="fail-agent-button" type="button">
-              <span>⚠</span><span id="fail-agent-label">BREAK AGENT</span>
+              <span>⚠</span><span id="fail-agent-label">Break agent</span>
             </button>
           </div>
         </section>
 
         <section class="telemetry-panel">
-          <p class="eyebrow">LIVE TELEMETRY</p>
+          <p class="eyebrow">Live telemetry</p>
           <div class="telemetry-grid">
-            <div class="metric"><span id="agents-value">100</span><small>AGENTS</small></div>
+            <div class="metric"><span id="agents-value">100</span><small>Agents</small></div>
             <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
-            <div class="metric"><span id="step-value">0</span><small>STEP</small></div>
-            <div class="metric"><span id="throughput-value">--</span><small>MOVES / S</small></div>
-            <div class="metric"><span id="latency-value">--</span><small>INFERENCE</small></div>
-            <div class="metric"><span id="loaded-value">0</span><small>LOADED</small></div>
-            <div class="metric"><span id="failed-value">0</span><small>FAILED</small></div>
-            <div class="metric"><span id="recovery-value">0</span><small>RECOVERY</small></div>
+            <div class="metric"><span id="step-value">0</span><small>Step</small></div>
+            <div class="metric"><span id="throughput-value">--</span><small>Moves/s</small></div>
+            <div class="metric"><span id="latency-value">--</span><small>Inference</small></div>
+            <div class="metric"><span id="loaded-value">0</span><small>Loaded</small></div>
+            <div class="metric"><span id="failed-value">0</span><small>Failed</small></div>
+            <div class="metric"><span id="recovery-value">0</span><small>Recovery</small></div>
           </div>
-          <div class="tasks-total"><small>THROUGHPUT · TASKS / STEP</small><strong id="task-throughput-value">0.000</strong></div>
-          <div class="tow-status"><small>RECOVERY UNIT</small><strong id="tow-status-value">IDLE</strong></div>
+          <div class="tasks-total"><small>Throughput: tasks/step</small><strong id="task-throughput-value">0.000</strong></div>
+          <div class="tow-status"><small>Recovery unit</small><strong id="tow-status-value">Idle</strong></div>
         </section>
 
         <section class="legend">
@@ -102,47 +102,47 @@
       </aside>
 
       <aside id="layout-editor" class="layout-editor glass" hidden>
-        <p class="eyebrow">WAREHOUSE CONFIGURATION</p>
-        <h2>PALLET LAYOUT</h2>
+        <p class="eyebrow">Warehouse configuration</p>
+        <h2>Pallet layout</h2>
         <p class="editor-copy">Click a cell to add or remove a pallet. Drag to paint. Use WASD to move and the wheel to zoom.</p>
         <div class="editor-stats">
-          <div><small>PALLETS</small><strong id="editor-pallet-count">792</strong></div>
-          <div><small>DENSITY</small><strong id="editor-density">66.7%</strong></div>
+          <div><small>Pallets</small><strong id="editor-pallet-count">792</strong></div>
+          <div><small>Density</small><strong id="editor-density">66.7%</strong></div>
         </div>
         <div class="editor-agent-control">
           <div class="editor-agent-header">
-            <label for="editor-agent-number">AGENTS</label>
+            <label for="editor-agent-number">Agents</label>
             <input id="editor-agent-number" type="number" min="1" max="1000" value="100" step="1" required aria-label="Number of agents">
           </div>
           <input id="editor-agent-count" type="range" min="1" max="1000" value="100" step="1" aria-label="Number of agents slider">
-          <small>1 <span id="editor-agent-limit">1000 MAX</span></small>
+          <small>1 <span id="editor-agent-limit">1000 max</span></small>
         </div>
         <div id="editor-validation" class="editor-validation valid">
-          <span></span><strong>LAYOUT VALID</strong>
+          <span></span><strong>Layout valid</strong>
           <small>Every pallet has a route to the service aisles.</small>
         </div>
         <div class="editor-legend">
-          <span><i class="pallet-cell"></i>PALLET</span>
-          <span><i class="aisle-cell"></i>AISLE</span>
-          <span><i class="locked-cell"></i>SERVICE ZONE</span>
+          <span><i class="pallet-cell"></i>Pallet</span>
+          <span><i class="aisle-cell"></i>Aisle</span>
+          <span><i class="locked-cell"></i>Service zone</span>
         </div>
         <div class="editor-tools">
-          <button id="editor-undo" type="button">↶ UNDO</button>
-          <button id="editor-reset" type="button">RESET</button>
-          <button id="editor-clear" type="button">CLEAR</button>
+          <button id="editor-undo" type="button">↶ Undo</button>
+          <button id="editor-reset" type="button">Reset</button>
+          <button id="editor-clear" type="button">Clear</button>
         </div>
         <p id="editor-message" class="editor-message">Changes are applied to the local simulator.</p>
         <div class="editor-actions">
-          <button id="editor-cancel" type="button">CANCEL</button>
-          <button id="editor-apply" class="primary" type="button">APPLY &amp; RESTART</button>
+          <button id="editor-cancel" type="button">Cancel</button>
+          <button id="editor-apply" class="primary" type="button">Apply &amp; restart</button>
         </div>
       </aside>
 
       <section class="controls glass">
-        <button id="pause-button" class="primary" type="button"><span id="pause-icon">Ⅱ</span><span id="pause-label">PAUSE</span></button>
-        <button id="stop-button" class="stop-button" type="button"><span>■</span><span>STOP</span></button>
+        <button id="pause-button" class="primary" type="button"><span id="pause-icon">Ⅱ</span><span id="pause-label">Pause</span></button>
+        <button id="stop-button" class="stop-button" type="button"><span>■</span><span>Stop</span></button>
         <label>
-          <span>AGENTS</span>
+          <span>Agents</span>
           <select id="agent-count">
             <option value="25">25</option>
             <option value="50">50</option>
@@ -150,14 +150,14 @@
           </select>
         </label>
         <label class="speed-control">
-          <span>SPEED <output id="speed-value">1.0×</output></span>
+          <span>Speed <output id="speed-value">1.0×</output></span>
           <input id="speed" type="range" min="0.25" max="5" value="1" step="0.25" />
         </label>
-        <button id="layout-editor-button" class="layout-button" type="button"><span>▦</span><span>LAYOUT</span></button>
+        <button id="layout-editor-button" class="layout-button" type="button"><span>▦</span><span>Layout</span></button>
         <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
       </section>
 
-      <div class="hint">WASD TO MOVE · DRAG TO ORBIT · SCROLL TO ZOOM</div>
+      <div class="hint">WASD to move, drag to orbit, scroll to zoom</div>
       <div class="scanline"></div>
     </main>
     <script type="module" src="/src/main.ts"></script>
