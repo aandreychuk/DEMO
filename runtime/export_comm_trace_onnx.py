@@ -44,7 +44,7 @@ class CommunicationTrace(nn.Module):
             # 1e-8 before Log and turning four actions into -inf.
             target = (torch.nn.functional.one_hot(vote, 5).to(dtype) - 0.2) * 18.420680743952367
             z = z + model.config.dt * (target - z)
-            rounds.append(torch.softmax(z.reshape(batch, agents, 5)[0], dim=-1))
+            rounds.append(z.reshape(batch, agents, 5)[0])
         return torch.stack(rounds)
 
 
@@ -62,9 +62,7 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model, checkpoint = load_model(checkpoint_path, torch.device("cpu"))
     observations, chat = sample_inputs(args.agents, torch.device("cpu"))
-    reference = torch.softmax(
-        model.deterministic_zero_act(observations, chat)[0], dim=-1
-    ).detach().numpy()
+    reference = model.deterministic_zero_act(observations, chat)[0].detach().numpy()
     for module in model.modules():
         if isinstance(module, (ExplicitSDPASelfAttention, QueryCrossAttentionBlock)):
             module.onnx_explicit_attention = True
@@ -76,7 +74,7 @@ def main() -> None:
             (observations, chat),
             output_path,
             input_names=("observations", "chat"),
-            output_names=("round_intents",),
+            output_names=("round_z",),
             opset_version=20,
             dynamo=True,
             external_data=False,
@@ -102,13 +100,13 @@ def main() -> None:
         )
     output_path.with_suffix(output_path.suffix + ".json").write_text(
         json.dumps({
-            "schema": "fastdmm-communication-trace/v1",
+            "schema": "fastdmm-communication-z-trace/v2",
             "checkpoint": checkpoint_path.name,
             "checkpoint_sha256": sha256(checkpoint_path),
             "checkpoint_step": checkpoint.get("val_step", checkpoint.get("iter_num")),
             "agents": args.agents,
             "rounds": model.config.n_comm_rounds,
-            "output": "round_intents[round, agent, action]",
+            "output": "round_z[round, agent, action]",
             "max_abs_error": max_abs,
             "final_max_abs_error": final_max_abs,
             "final_action_agreement": agreement,

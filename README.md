@@ -112,10 +112,11 @@ With **Lifelong** checked, agents receive a new reachable goal after arrival.
 When unchecked, each agent stops at its goal; the task is solved once all
 agents have arrived. **Default** restores the original eight-agent layout.
 
-The dedicated ONNX graph exposes the real consensus intent after each of the
+The dedicated ONNX graph exposes the raw accumulated `z` after each of the
 four communication rounds. The agents move only after round four. The selected
-agent's chart and action bars show the normalized consensus vector, while the
-map shows every agent's current intent and communication links.
+agent's chart and action bars show signed `z` scores, while the map shows the
+highest-scoring action and communication links. The WASM planner receives
+`softmax(z)` for collision-aware action selection.
 
 The maze player defaults to 1.3 seconds per communication round, slower than
 the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,

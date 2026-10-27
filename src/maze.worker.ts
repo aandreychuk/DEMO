@@ -114,7 +114,7 @@ async function infer(): Promise<void> {
   const output = await session.run(feeds);
   let trace: number[];
   try {
-    const tensor = output.round_intents;
+    const tensor = output.round_z;
     if (!tensor || tensor.dims.join(',') !== `${ROUNDS},${MODEL_SLOTS},${ACTIONS}`) {
       throw new Error('The model returned an unexpected communication trace.');
     }
@@ -124,8 +124,19 @@ async function infer(): Promise<void> {
       const start = round * MODEL_SLOTS * ACTIONS;
       trace.push(...all.subarray(start, start + positions.length * ACTIONS));
     }
+    if (!trace.every(Number.isFinite)) throw new Error('The model returned non-finite z values.');
     const final = trace.slice((ROUNDS - 1) * positions.length * ACTIONS);
-    new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS).set(final);
+    const probabilities = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS);
+    for (let agent = 0; agent < positions.length; agent++) {
+      const offset = agent * ACTIONS;
+      const maxZ = Math.max(...final.slice(offset, offset + ACTIONS));
+      let sum = 0;
+      for (let action = 0; action < ACTIONS; action++) {
+        probabilities[offset + action] = Math.exp(final[offset + action] - maxZ);
+        sum += probabilities[offset + action];
+      }
+      for (let action = 0; action < ACTIONS; action++) probabilities[offset + action] /= sum;
+    }
   } finally {
     for (const tensor of Object.values(output)) tensor.dispose();
   }
