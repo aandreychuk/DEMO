@@ -32,6 +32,7 @@ type Snapshot = {
   goals: number[];
   chat: number[];
   trace: number[];
+  votes: number[];
   previousActions: number[];
   finished: number[];
   solved: boolean;
@@ -54,7 +55,7 @@ const agentSummary = element('#maze-agent-summary');
 const roundStrip = element('#maze-round-strip');
 const chart = element('#maze-chart');
 const chartLegend = element('#maze-chart-legend');
-const bars = element('#maze-bars');
+const voteGrid = element('#maze-votes');
 const neighbors = element('#maze-neighbors');
 const allAgents = element('#maze-all-agents');
 const scrub = element<HTMLInputElement>('#maze-scrub');
@@ -345,15 +346,10 @@ function renderInspector(frame: Snapshot, round: number): void {
   }
 
   renderChart(frame, round);
-  element('#maze-bars-title').textContent = round === 0 ? 'Initial z' : `z after round ${round}`;
-  element('#maze-confidence').textContent = round === 0 ? 'All action scores start at zero' : `Leading: ${ACTIONS[intent].name.toLowerCase()} ${zLabel(leadingZ)}`;
-  const zero = -Z_MIN / (Z_MAX - Z_MIN) * 100;
-  bars.innerHTML = ACTIONS.map((action, index) => {
-    const endpoint = (current[index] - Z_MIN) / (Z_MAX - Z_MIN) * 100;
-    const left = Math.min(zero, endpoint);
-    const width = Math.abs(endpoint - zero);
-    return `<div class="maze-bar ${index === intent && round > 0 ? 'active' : ''}"><span>${actionIcon(index)} ${action.name}</span><span class="track"><span class="zero" style="left:${zero}%"></span><span class="fill" style="left:${left}%;width:${width}%;background:${action.color}"></span></span><output>${zLabel(current[index])}</output></div>`;
-  }).join('');
+  const agentVotes = Array.from({ length: ROUNDS }, (_, r) => frame.votes[r * frame.positions.length + selectedAgent]);
+  element('#maze-vote-summary').textContent = round === 0 ? 'Before the first vote' : `Round ${round}: ${ACTIONS[agentVotes[round - 1]].name}`;
+  voteGrid.innerHTML = `<div class="maze-vote-label"></div>${agentVotes.map((_, r) => `<div class="maze-vote-heading ${r + 1 === round ? 'current' : ''}">R${r + 1}</div>`).join('')}`
+    + ACTIONS.map((action, index) => `<div class="maze-vote-label" style="--vote-color:${action.color}">${actionIcon(index)} ${action.name}</div>${agentVotes.map((vote, r) => `<div class="maze-vote-cell ${vote === index ? 'voted' : ''} ${r + 1 === round ? 'current' : ''} ${r + 1 > round ? 'future' : ''}" style="--vote-color:${action.color}" ${vote === index ? `aria-label="Round ${r + 1} vote: ${action.name}"` : 'aria-hidden="true"'}>${vote === index ? actionIcon(index) : ''}</div>`).join('')}`).join('');
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {

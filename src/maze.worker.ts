@@ -113,18 +113,29 @@ async function infer(): Promise<void> {
   const started = performance.now();
   const output = await session.run(feeds);
   let trace: number[];
+  let votes: number[];
   try {
     const tensor = output.round_z;
+    const voteTensor = output.round_votes;
     if (!tensor || tensor.dims.join(',') !== `${ROUNDS},${MODEL_SLOTS},${ACTIONS}`) {
       throw new Error('The model returned an unexpected communication trace.');
     }
+    if (!voteTensor || voteTensor.dims.join(',') !== `${ROUNDS},${MODEL_SLOTS}`) {
+      throw new Error('The model returned an unexpected vote trace.');
+    }
     const all = tensor.data as Float32Array;
+    const allVotes = voteTensor.data as Float32Array;
     trace = [];
+    votes = [];
     for (let round = 0; round < ROUNDS; round++) {
       const start = round * MODEL_SLOTS * ACTIONS;
       trace.push(...all.subarray(start, start + positions.length * ACTIONS));
+      votes.push(...allVotes.subarray(round * MODEL_SLOTS, round * MODEL_SLOTS + positions.length));
     }
     if (!trace.every(Number.isFinite)) throw new Error('The model returned non-finite z values.');
+    if (!votes.every((vote) => Number.isInteger(vote) && vote >= 0 && vote < ACTIONS)) {
+      throw new Error('The model returned invalid communication votes.');
+    }
     const final = trace.slice((ROUNDS - 1) * positions.length * ACTIONS);
     const probabilities = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS);
     for (let agent = 0; agent < positions.length; agent++) {
@@ -142,7 +153,7 @@ async function infer(): Promise<void> {
   }
   post({
     type: 'snapshot', action, positions: Array.from(positions), goals: Array.from(goals),
-    chat: Array.from(chat32.subarray(0, positions.length * CHAT_SLOTS)), trace,
+    chat: Array.from(chat32.subarray(0, positions.length * CHAT_SLOTS)), trace, votes,
     previousActions: Array.from(lastExecuted), finished: Array.from(finished),
     solved: !config.lifelong && finished.every((value) => value !== 0),
     inferenceMs: performance.now() - started, backend,

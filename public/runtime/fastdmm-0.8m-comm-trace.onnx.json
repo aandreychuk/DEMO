@@ -1,13 +1,17 @@
 {
-  "schema": "fastdmm-communication-z-trace/v2",
+  "schema": "fastdmm-communication-z-and-votes/v3",
   "checkpoint": "fastdmm_grpo_stage2_step12800.pt",
   "checkpoint_sha256": "c737bd43d12c7847582e433b1495cb7392d38491d36ac45b1dcf958a32c6f6d5",
   "checkpoint_step": 12800,
   "agents": 16,
   "rounds": 4,
-  "output": "round_z[round, agent, action]",
+  "outputs": [
+    "round_z[round, agent, action]",
+    "round_votes[round, agent]"
+  ],
   "max_abs_error": 0.0,
   "final_max_abs_error": 2.384185791015625e-07,
   "final_action_agreement": 1.0,
-  "onnx_sha256": "4b824b4610e1502600efe7c047cdb3d102965b542fea0d73e4b7dfa45fdd86d9"
+  "round_vote_agreement": 1.0,
+  "onnx_sha256": "68aa1a93ea9d6f3ef1e040184029916428c338abe292a599d06980ff7cdd5836"
 }

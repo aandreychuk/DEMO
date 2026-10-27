@@ -93,8 +93,9 @@ uses the same observation tokenizer, FastDMM weights, and PIBT shield
 as the browser warehouse. Its dedicated ONNX graph exposes the raw accumulated
 `z` after each of the four communication rounds. The model runs again for each
 new maze action; the agents move only after round four. The selected agent's
-chart and action bars show signed `z` scores, while the map shows the
-highest-scoring action and communication links. The WASM planner receives
+chart shows signed `z` scores, while a vote matrix shows which discrete action
+each round added to that accumulated state. The map shows the highest-scoring
+action and communication links. The WASM planner receives
 `softmax(z)` for collision-aware action selection.
 
 Use **Edit maze** to paint or erase walls, add or remove agents (1–16), and

@@ -26,10 +26,10 @@
           <div class="maze-analysis-head"><p class="maze-kicker">Intent inspector</p><h2 id="maze-agent-title">Agent 01</h2><p id="maze-agent-summary">Select an agent to inspect its decision.</p></div>
           <div class="maze-round-strip" id="maze-round-strip" aria-label="Rounds for selected agent"></div>
           <section class="maze-chart-section"><div class="maze-section-title"><h3>How z changes</h3><small>Accumulated action scores</small></div><div id="maze-chart" class="maze-chart"></div><div id="maze-chart-legend" class="maze-chart-legend"></div></section>
-          <section class="maze-bars-section"><div class="maze-section-title"><h3 id="maze-bars-title">Current z</h3><small id="maze-confidence">Before communication</small></div><div id="maze-bars" class="maze-bars"></div></section>
+          <section class="maze-votes-section"><div class="maze-section-title"><h3>Votes that update z</h3><small id="maze-vote-summary">Four communication rounds</small></div><div id="maze-votes" class="maze-votes" aria-label="Selected agent's vote in each round"></div></section>
           <section class="maze-neighbors-section"><div class="maze-section-title"><h3>Message sources</h3><small id="maze-neighbor-count">0 agents</small></div><div id="maze-neighbors" class="maze-neighbors"></div></section>
           <section class="maze-all-section"><div class="maze-section-title"><h3>All agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
-          <p class="maze-model-note">These are the raw, accumulated z values after each communication round. Zero is the starting point; positive and negative scores are shown on the same scale. The final z drives movement with collision shielding.</p>
+          <p class="maze-model-note">The line chart shows accumulated z. Each filled cell below marks the action chosen by that round's vote, which pushes z toward that action. The final z drives movement with collision shielding.</p>
         </aside>
 
         <aside id="maze-editor" class="maze-editor glass" hidden>
