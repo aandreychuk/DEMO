@@ -1,0 +1,12 @@
+{
+  "targets": {
+    "release": {
+      "outFile": "public/runtime/mapf-core.wasm",
+      "optimizeLevel": 3,
+      "shrinkLevel": 1,
+      "converge": true,
+      "noAssert": true
+    }
+  },
+  "entries": ["assembly/mapf-core.ts"]
+}

@@ -97,6 +97,37 @@ start under pallets. Applying a valid layout saves it locally, regenerates
 1,000 deterministic start positions and 4,000 tasks, then restarts the native
 simulation with the selected count.
 
+## Communication maze
+
+Open `maze.html` directly or use the **Communication maze** link in the warehouse
+header, which opens it in a separate browser tab. This independent eight-agent
+mini-maze uses the same FastDMM checkpoint as the native warehouse. Its browser
+worker uses ONNX Runtime Web and the bundled WebAssembly observation and PIBT
+core; the native warehouse process and its controls are unaffected.
+
+The dedicated ONNX graph exposes the real consensus intent after each of the
+four communication rounds. The agents move only after round four. The selected
+agent's chart and action bars show the normalized consensus vector, while the
+map shows every agent's current intent and communication links.
+
+The maze player defaults to 1.3 seconds per communication round, slower than
+the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,
+or the left/right arrow keys for manual stepping. Earlier rounds remain
+available for inspection; continuing beyond the newest round computes a new
+action. Pause, speed, and Restart affect only the maze tab.
+
+To regenerate the trace model from the local checkpoint with Python/PyTorch:
+
+```bash
+python runtime/export_comm_trace_onnx.py \
+  --checkpoint /path/to/fastdmm_grpo_stage2_step12800.pt \
+  --output public/runtime/fastdmm-0.8m-comm-trace.onnx \
+  --agents 8
+```
+
+The exporter verifies every ONNX round against PyTorch and checks that the
+fourth round agrees with the ordinary deployment output.
+
 ## Verified 100-agent lifelong run
 
 The included 44×33 warehouse has 792 pallet cells, filling exactly two thirds of
@@ -126,6 +157,8 @@ documented in [docs/protocol.md](docs/protocol.md).
 - `runtime/generate_lifelong_warehouse.py`: compact warehouse, starts, layout,
   and deterministic random task queue;
 - `runtime/export_fastdmm_aoti.py`: machine-specific AOTI exporter;
+- `runtime/export_comm_trace_onnx.py`: four-round consensus exporter for the maze;
+- `src/maze.worker.ts`: independent mini-maze inference and simulation;
 - `src/main.ts`: Babylon.js renderer, interpolation, controls, and telemetry.
 
 Generated checkpoints and `.pt2` packages stay in ignored `artifacts/`. The
