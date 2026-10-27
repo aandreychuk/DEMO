@@ -85,6 +85,36 @@ The runtime uses one WASM thread, so it does not require COOP/COEP headers. HTTP
 is required for WebGPU on non-localhost deployments; the WASM provider remains
 the compatibility fallback.
 
+## Communication maze
+
+Open `maze.html` directly or use the **Communication maze** link in the warehouse
+header, which opens it in a separate browser tab. This independent eight-agent
+mini-maze uses the same observation tokenizer, FastDMM weights, and PIBT shield
+as the browser warehouse. Its dedicated ONNX graph exposes the consensus intent
+after each of the four real communication rounds. The model runs again for each
+new maze action; the agents move only after round four. The selected agent's
+chart and action bars show the normalized consensus vector, while the map shows
+every agent's current intent and its communication links.
+
+The maze player defaults to 1.3 seconds per communication round, slower than
+the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,
+or the left/right arrow keys for manual stepping. Earlier rounds remain
+available for inspection; continuing beyond the newest round computes a new
+action. Pause, speed, and Restart affect only the maze tab.
+
+To regenerate the trace model from the local checkpoint with Python/PyTorch:
+
+```bash
+python runtime/export_comm_trace_onnx.py \
+  --checkpoint /path/to/fastdmm_grpo_stage2_step12800.pt \
+  --output public/runtime/fastdmm-0.8m-comm-trace.onnx \
+  --agents 8
+```
+
+The exporter verifies every ONNX round against PyTorch and checks that the
+fourth round agrees with the ordinary deployment output. The maze has its own
+Web Worker and does not change the warehouse simulation or its model.
+
 Every visible tick is calculated on demand. Pause suspends stepping; Stop
 creates a fresh simulation and holds it at step zero. No trajectory is
 precomputed or replayed.
@@ -149,8 +179,10 @@ documented in [docs/protocol.md](docs/protocol.md).
   and deterministic random task queue;
 - `runtime/export_fastdmm_aoti.py`: machine-specific AOTI exporter;
 - `runtime/export_fastdmm_onnx.py`: fixed-slot browser ONNX exporter and parity check;
+- `runtime/export_comm_trace_onnx.py`: four-round consensus exporter for the maze;
 - `assembly/mapf-core.ts`: WebAssembly BFS, observation tokenizer, and PIBT shield;
 - `src/browser-runtime.worker.ts`: ONNX inference and lifelong browser simulation;
+- `src/maze.worker.ts`: isolated mini-maze inference and simulation;
 - `src/main.ts`: Babylon.js renderer, interpolation, controls, and telemetry.
 
 Generated checkpoints and `.pt2` packages stay in ignored `artifacts/`. The

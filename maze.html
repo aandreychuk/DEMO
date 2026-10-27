@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050b13" />
+    <title>DMM Communication Maze</title>
+  </head>
+  <body>
+    <div id="maze-app">
+      <header class="maze-top glass">
+        <div class="maze-brand"><span class="maze-brand-icon">⌘</span><div><strong>DMM Communication Maze</strong><small>One action, four rounds of negotiation</small></div></div>
+        <nav class="maze-nav" aria-label="Demo views"><a href="./">Warehouse</a><span aria-current="page">Communication maze</span></nav>
+        <div id="maze-source" class="maze-source"><i></i><span>Loading model</span></div>
+      </header>
+
+      <main class="maze-main">
+        <section class="maze-stage glass" aria-label="Mini maze and communicating agents">
+          <div class="maze-stage-heading"><div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Each colored arrow is an agent’s current intent. Connections show which agents can exchange messages. Positions change after round four.</p></div><div class="maze-stage-counter"><small>Action</small><strong id="maze-action">001</strong><small>Round</small><strong id="maze-round">0 / 4</strong></div></div>
+          <div class="maze-viewport"><div id="maze-board" class="maze-board" aria-label="15 by 11 cell maze"><svg id="maze-links" class="maze-links" viewBox="0 0 15 11" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>
+          <div class="maze-stage-footer"><span><i class="maze-legend-wall"></i>Wall</span><span><i class="maze-legend-goal"></i>Agent goal</span><span><i class="maze-legend-link"></i>Communication</span><span id="maze-changed">0 changed intents this round</span></div>
+        </section>
+
+        <aside class="maze-analysis glass">
+          <div class="maze-analysis-head"><p class="maze-kicker">Intent inspector</p><h2 id="maze-agent-title">Agent 01</h2><p id="maze-agent-summary">Select an agent to inspect its decision.</p></div>
+          <div class="maze-round-strip" id="maze-round-strip" aria-label="Rounds for selected agent"></div>
+          <section class="maze-chart-section"><div class="maze-section-title"><h3>How the intent changes</h3><small>Consensus probability</small></div><div id="maze-chart" class="maze-chart"></div><div id="maze-chart-legend" class="maze-chart-legend"></div></section>
+          <section class="maze-bars-section"><div class="maze-section-title"><h3 id="maze-bars-title">Current intent</h3><small id="maze-confidence">Before communication</small></div><div id="maze-bars" class="maze-bars"></div></section>
+          <section class="maze-neighbors-section"><div class="maze-section-title"><h3>Message sources</h3><small id="maze-neighbor-count">0 agents</small></div><div id="maze-neighbors" class="maze-neighbors"></div></section>
+          <section class="maze-all-section"><div class="maze-section-title"><h3>All agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
+          <p class="maze-model-note">The bars show the actual DMM-0.8M consensus vector after each communication round. Movement uses the final intent with collision shielding.</p>
+        </aside>
+      </main>
+
+      <div class="maze-player glass" aria-label="Communication round player">
+        <button id="maze-prev" class="maze-step-button" type="button" aria-label="Previous communication round">←</button>
+        <button id="maze-play" class="maze-play-button" type="button">Ⅱ <span>Pause</span></button>
+        <button id="maze-next" class="maze-step-button" type="button" aria-label="Next communication round">→</button>
+        <div class="maze-timeline"><div><strong id="maze-timeline-label">Before communication</strong><small id="maze-step-label">Step 0</small></div><input id="maze-scrub" type="range" min="0" max="4" value="0" aria-label="Recorded communication round"></div>
+        <label class="maze-speed"><span>Playback <output id="maze-speed-value">1.0×</output></span><input id="maze-speed" type="range" min="0.5" max="2" step="0.25" value="1" /></label>
+        <button id="maze-reset" class="maze-reset-button" type="button">Restart</button>
+      </div>
+    </div>
+    <script type="module" src="/src/maze.ts"></script>
+  </body>
+</html>
