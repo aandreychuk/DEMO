@@ -1802,6 +1802,31 @@ function createTowTruck(): {
   bed.position.set(0, 0.25, -0.03);
   bed.material = bodyMaterial;
   bed.parent = root;
+  const badgeMaterial = new StandardMaterial('tow-truck-badge-material', scene);
+  badgeMaterial.diffuseColor = Color3.FromHexString('#f2fbfa');
+  badgeMaterial.emissiveColor = Color3.FromHexString('#426568');
+  const crossMaterial = new StandardMaterial('tow-truck-cross-material', scene);
+  crossMaterial.diffuseColor = Color3.FromHexString('#f4434b');
+  crossMaterial.emissiveColor = Color3.FromHexString('#9e1426');
+  crossMaterial.disableLighting = true;
+  const badge = MeshBuilder.CreateBox('tow-truck-badge', {
+    width: 0.3,
+    height: 0.018,
+    depth: 0.3,
+  }, scene);
+  badge.position.y = 0.051;
+  badge.material = badgeMaterial;
+  badge.parent = bed;
+  for (const [width, depth] of [[0.052, 0.22], [0.22, 0.052]]) {
+    const arm = MeshBuilder.CreateBox('tow-truck-red-cross', {
+      width,
+      height: 0.014,
+      depth,
+    }, scene);
+    arm.position.y = 0.066;
+    arm.material = crossMaterial;
+    arm.parent = bed;
+  }
   const nose = MeshBuilder.CreateBox('tow-truck-nose', {
     width: 0.62,
     height: 0.18,
