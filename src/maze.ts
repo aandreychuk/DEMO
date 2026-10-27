@@ -4,13 +4,21 @@ import { MAZE_COLORS, MAZE_HEIGHT, MAZE_ROUTES, MAZE_ROWS, MAZE_WIDTH, mazeX, ma
 const AGENTS = MAZE_ROUTES.length;
 const ROUNDS = 4;
 const ACTIONS = [
-  { name: 'Wait', glyph: '·', color: '#9bb8ca' },
-  { name: 'North', glyph: '↑', color: '#4fe1f6' },
-  { name: 'South', glyph: '↓', color: '#ffa95a' },
-  { name: 'West', glyph: '←', color: '#ad9eff' },
-  { name: 'East', glyph: '→', color: '#66e5aa' },
+  { name: 'Wait', color: '#9bb8ca' },
+  { name: 'North', color: '#4fe1f6' },
+  { name: 'South', color: '#ffa95a' },
+  { name: 'West', color: '#ad9eff' },
+  { name: 'East', color: '#66e5aa' },
 ] as const;
 const BASE_ROUND_MS = 1300;
+
+function actionIcon(action: number): string {
+  if (action === 0) {
+    return '<svg class="maze-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4.5" fill="currentColor" /></svg>';
+  }
+  const rotation = [0, 0, 180, -90, 90][action];
+  return `<svg class="maze-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2 21 11h-5v11H8V11H3z" transform="rotate(${rotation} 12 12)" fill="currentColor" /></svg>`;
+}
 
 type Snapshot = {
   type: 'snapshot';
@@ -87,7 +95,7 @@ function buildBoard(): void {
     agent.className = 'maze-agent';
     agent.setAttribute('aria-label', `Inspect agent ${String(i + 1).padStart(2, '0')}`);
     agent.style.setProperty('--agent-color', MAZE_COLORS[i]);
-    agent.innerHTML = `<span class="arrow">·</span><span class="agent-number">${i + 1}</span>`;
+    agent.innerHTML = `<span class="arrow">${actionIcon(0)}</span><span class="agent-number">${i + 1}</span>`;
     agent.addEventListener('click', () => { selectedAgent = i; render(); });
     board.append(agent);
     agentNodes.push(agent);
@@ -201,7 +209,8 @@ function renderInspector(frame: Snapshot, round: number): void {
     const r = index + 1;
     const values = probabilities(frame, r, selectedAgent);
     const action = winner(values);
-    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}"><small>Round ${r}</small><strong>${ACTIONS[action].glyph} ${Math.round(values[action] * 100)}%</strong></button>`;
+    const confidence = Math.round(values[action] * 100);
+    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="Round ${r}: ${ACTIONS[action].name}, ${confidence}%"><small>Round ${r}</small><strong>${actionIcon(action)} ${confidence}%</strong></button>`;
   }).join('');
   for (const chip of roundStrip.querySelectorAll<HTMLButtonElement>('button')) {
     chip.addEventListener('click', () => seek(frame.action * ROUNDS + Number(chip.dataset.round)));
@@ -210,7 +219,7 @@ function renderInspector(frame: Snapshot, round: number): void {
   renderChart(frame, round);
   element('#maze-bars-title').textContent = round === 0 ? 'Before communication' : `Intent after round ${round}`;
   element('#maze-confidence').textContent = round === 0 ? 'Uniform starting state' : `${Math.round(confidence * 100)}% ${ACTIONS[intent].name.toLowerCase()}`;
-  bars.innerHTML = ACTIONS.map((action, index) => `<div class="maze-bar ${index === intent && round > 0 ? 'active' : ''}"><span>${action.glyph} ${action.name}</span><span class="track"><span class="fill" style="width:${(current[index] * 100).toFixed(1)}%;background:${action.color}"></span></span><output>${Math.round(current[index] * 100)}%</output></div>`).join('');
+  bars.innerHTML = ACTIONS.map((action, index) => `<div class="maze-bar ${index === intent && round > 0 ? 'active' : ''}"><span>${actionIcon(index)} ${action.name}</span><span class="track"><span class="fill" style="width:${(current[index] * 100).toFixed(1)}%;background:${action.color}"></span></span><output>${Math.round(current[index] * 100)}%</output></div>`).join('');
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
@@ -223,7 +232,8 @@ function renderInspector(frame: Snapshot, round: number): void {
     : '<span>No agents in range</span>';
   allAgents.innerHTML = Array.from({ length: AGENTS }, (_, id) => {
     const values = probabilities(frame, round, id);
-    return `<button type="button" class="${id === selectedAgent ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}"><span>${String(id + 1).padStart(2, '0')}</span><b>${round === 0 ? '·' : ACTIONS[winner(values)].glyph}</b></button>`;
+    const action = round === 0 ? 0 : winner(values);
+    return `<button type="button" class="${id === selectedAgent ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-label="Agent ${String(id + 1).padStart(2, '0')}: ${round === 0 ? 'before communication' : ACTIONS[action].name}"><span>${String(id + 1).padStart(2, '0')}</span><b>${actionIcon(action)}</b></button>`;
   }).join('');
   for (const button of allAgents.querySelectorAll<HTMLButtonElement>('button')) {
     button.addEventListener('click', () => { selectedAgent = Number(button.dataset.agent); render(); });
@@ -256,7 +266,7 @@ function render(): void {
     agent.classList.toggle('selected', i === selectedAgent);
     agent.classList.remove('changed');
     if (changed) { void agent.offsetWidth; agent.classList.add('changed'); }
-    agent.querySelector('.arrow')!.textContent = round === 0 ? '·' : ACTIONS[currentAction].glyph;
+    agent.querySelector('.arrow')!.innerHTML = actionIcon(round === 0 ? 0 : currentAction);
     agent.title = `Agent ${i + 1}: ${round === 0 ? 'awaiting communication' : ACTIONS[currentAction].name.toLowerCase()} (${Math.round(current[currentAction] * 100)}%)`;
   }
   element('#maze-changed').textContent = round <= 1
