@@ -10,6 +10,12 @@ const ACTIONS = [
   { name: 'East', color: '#66e5aa' },
 ] as const;
 const BASE_ROUND_MS = 1300;
+const Z_MIN = -4;
+const Z_MAX = 15;
+
+function zLabel(value: number): string {
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+}
 
 function actionIcon(action: number): string {
   if (action === 0) {
@@ -226,8 +232,8 @@ function frameAt(step: number): { frame: Snapshot; round: number } {
   return { frame: frames[Math.floor(step / (ROUNDS + 1))], round: step % (ROUNDS + 1) };
 }
 
-function probabilities(frame: Snapshot, round: number, agent: number): number[] {
-  if (round === 0) return [0.2, 0.2, 0.2, 0.2, 0.2];
+function zValues(frame: Snapshot, round: number, agent: number): number[] {
+  if (round === 0) return [0, 0, 0, 0, 0];
   const start = ((round - 1) * frame.positions.length + agent) * ACTIONS.length;
   return frame.trace.slice(start, start + ACTIONS.length);
 }
@@ -295,24 +301,28 @@ function renderLinks(frame: Snapshot, round: number): void {
 }
 
 function renderChart(frame: Snapshot, round: number): void {
-  const x = (r: number) => 20 + r * 70;
-  const y = (value: number) => 106 - Math.min(1, Math.max(0, value)) * 88;
-  let svg = '<svg viewBox="0 0 320 120" role="img" aria-label="Selected agent intent probabilities over four communication rounds">';
-  for (const level of [0, .5, 1]) svg += `<line class="grid" x1="16" y1="${y(level)}" x2="302" y2="${y(level)}" />`;
-  svg += `<line class="marker" x1="${x(round)}" y1="14" x2="${x(round)}" y2="109" />`;
+  const x = (r: number) => 30 + r * 67;
+  const y = (value: number) => 108 - (value - Z_MIN) / (Z_MAX - Z_MIN) * 92;
+  let svg = '<svg viewBox="0 0 320 130" role="img" aria-label="Selected agent raw z values over four communication rounds">';
+  for (const level of [-4, 0, 5, 10, 15]) {
+    svg += `<line class="grid ${level === 0 ? 'zero' : ''}" x1="27" y1="${y(level)}" x2="304" y2="${y(level)}" />`;
+    svg += `<text class="axis" x="2" y="${y(level) + 3}">${level}</text>`;
+  }
+  svg += `<line class="marker" x1="${x(round)}" y1="14" x2="${x(round)}" y2="110" />`;
   for (let action = 0; action < ACTIONS.length; action++) {
-    const points = Array.from({ length: ROUNDS + 1 }, (_, r) => `${x(r)},${y(probabilities(frame, r, selectedAgent)[action])}`).join(' ');
+    const points = Array.from({ length: ROUNDS + 1 }, (_, r) => `${x(r)},${y(zValues(frame, r, selectedAgent)[action])}`).join(' ');
     svg += `<polyline class="trace" points="${points}" stroke="${ACTIONS[action].color}" />`;
-    const current = probabilities(frame, round, selectedAgent)[action];
+    const current = zValues(frame, round, selectedAgent)[action];
     svg += `<circle class="dot" cx="${x(round)}" cy="${y(current)}" r="3.5" fill="${ACTIONS[action].color}" />`;
   }
+  for (let r = 0; r <= ROUNDS; r++) svg += `<text class="axis round" x="${x(r)}" y="124">${r}</text>`;
   chart.innerHTML = svg + '</svg>';
 }
 
 function renderInspector(frame: Snapshot, round: number): void {
-  const current = probabilities(frame, round, selectedAgent);
+  const current = zValues(frame, round, selectedAgent);
   const intent = winner(current);
-  const confidence = current[intent];
+  const leadingZ = current[intent];
   agentTitle.textContent = `Agent ${String(selectedAgent + 1).padStart(2, '0')}`;
   agentTitle.style.color = MAZE_COLORS[selectedAgent];
   const goal = frame.goals[selectedAgent];
@@ -321,23 +331,29 @@ function renderInspector(frame: Snapshot, round: number): void {
     ? `Goal (${mazeX(goal)}, ${mazeY(goal)}) reached. The agent stays here while the others finish.`
     : round === 0
       ? `Goal (${mazeX(goal)}, ${mazeY(goal)}). Communication has not started.`
-      : `Goal (${mazeX(goal)}, ${mazeY(goal)}). Intent: ${ACTIONS[intent].name.toLowerCase()} at ${Math.round(confidence * 100)}%. Last executed move: ${previousMove}.`;
+      : `Goal (${mazeX(goal)}, ${mazeY(goal)}). Leading z: ${ACTIONS[intent].name.toLowerCase()} ${zLabel(leadingZ)}. Last executed move: ${previousMove}.`;
 
   roundStrip.innerHTML = Array.from({ length: ROUNDS }, (_, index) => {
     const r = index + 1;
-    const values = probabilities(frame, r, selectedAgent);
+    const values = zValues(frame, r, selectedAgent);
     const action = winner(values);
-    const confidence = Math.round(values[action] * 100);
-    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="Round ${r}: ${ACTIONS[action].name}, ${confidence}%"><small>Round ${r}</small><strong>${actionIcon(action)} ${confidence}%</strong></button>`;
+    const value = zLabel(values[action]);
+    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="Round ${r}: ${ACTIONS[action].name}, z ${value}"><small>Round ${r}</small><strong>${actionIcon(action)} ${value}</strong></button>`;
   }).join('');
   for (const chip of roundStrip.querySelectorAll<HTMLButtonElement>('button')) {
     chip.addEventListener('click', () => seek(frame.action * (ROUNDS + 1) + Number(chip.dataset.round)));
   }
 
   renderChart(frame, round);
-  element('#maze-bars-title').textContent = round === 0 ? 'Before communication' : `Intent after round ${round}`;
-  element('#maze-confidence').textContent = round === 0 ? 'Uniform starting state' : `${Math.round(confidence * 100)}% ${ACTIONS[intent].name.toLowerCase()}`;
-  bars.innerHTML = ACTIONS.map((action, index) => `<div class="maze-bar ${index === intent && round > 0 ? 'active' : ''}"><span>${actionIcon(index)} ${action.name}</span><span class="track"><span class="fill" style="width:${(current[index] * 100).toFixed(1)}%;background:${action.color}"></span></span><output>${Math.round(current[index] * 100)}%</output></div>`).join('');
+  element('#maze-bars-title').textContent = round === 0 ? 'Initial z' : `z after round ${round}`;
+  element('#maze-confidence').textContent = round === 0 ? 'All action scores start at zero' : `Leading: ${ACTIONS[intent].name.toLowerCase()} ${zLabel(leadingZ)}`;
+  const zero = -Z_MIN / (Z_MAX - Z_MIN) * 100;
+  bars.innerHTML = ACTIONS.map((action, index) => {
+    const endpoint = (current[index] - Z_MIN) / (Z_MAX - Z_MIN) * 100;
+    const left = Math.min(zero, endpoint);
+    const width = Math.abs(endpoint - zero);
+    return `<div class="maze-bar ${index === intent && round > 0 ? 'active' : ''}"><span>${actionIcon(index)} ${action.name}</span><span class="track"><span class="zero" style="left:${zero}%"></span><span class="fill" style="left:${left}%;width:${width}%;background:${action.color}"></span></span><output>${zLabel(current[index])}</output></div>`;
+  }).join('');
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
@@ -349,7 +365,7 @@ function renderInspector(frame: Snapshot, round: number): void {
     ? [...sources].map((id) => `<span style="--agent-color:${MAZE_COLORS[id]}">Agent ${String(id + 1).padStart(2, '0')}</span>`).join('')
     : '<span>No agents in range</span>';
   allAgents.innerHTML = Array.from({ length: frame.positions.length }, (_, id) => {
-    const values = probabilities(frame, round, id);
+    const values = zValues(frame, round, id);
     const action = round === 0 ? 0 : winner(values);
     return `<button type="button" class="${id === selectedAgent ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-label="Agent ${String(id + 1).padStart(2, '0')}: ${round === 0 ? 'before communication' : ACTIONS[action].name}"><span>${String(id + 1).padStart(2, '0')}</span><b>${actionIcon(action)}</b></button>`;
   }).join('');
@@ -382,9 +398,9 @@ function render(): void {
     agent.hidden = i >= frame.positions.length;
     goalNode.hidden = i >= frame.positions.length;
     if (i >= frame.positions.length) continue;
-    const current = probabilities(frame, round, i);
+    const current = zValues(frame, round, i);
     const currentAction = winner(current);
-    const priorAction = round > 1 ? winner(probabilities(frame, round - 1, i)) : -1;
+    const priorAction = round > 1 ? winner(zValues(frame, round - 1, i)) : -1;
     const changed = round > 1 && currentAction !== priorAction;
     if (changed) changes++;
     atCell(agent, frame.positions[i], .13);
@@ -396,7 +412,7 @@ function render(): void {
     agent.querySelector('.arrow')!.innerHTML = actionIcon(frame.finished[i] === 1 || round === 0 ? 0 : currentAction);
     agent.title = frame.finished[i] === 1
       ? `Agent ${i + 1}: goal reached`
-      : `Agent ${i + 1}: ${round === 0 ? 'awaiting communication' : ACTIONS[currentAction].name.toLowerCase()} (${Math.round(current[currentAction] * 100)}%)`;
+      : `Agent ${i + 1}: ${round === 0 ? 'awaiting communication' : `${ACTIONS[currentAction].name.toLowerCase()}, z ${zLabel(current[currentAction])}`}`;
   }
   element('#maze-changed').textContent = round <= 1
     ? round === 0 ? 'Intents begin in the next round' : `${frame.positions.length} intents formed`

@@ -90,11 +90,12 @@ the compatibility fallback.
 Open `maze.html` directly or use the **Communication maze** link in the warehouse
 header, which opens it in a separate browser tab. This independent mini-maze
 uses the same observation tokenizer, FastDMM weights, and PIBT shield
-as the browser warehouse. Its dedicated ONNX graph exposes the consensus intent
-after each of the four real communication rounds. The model runs again for each
+as the browser warehouse. Its dedicated ONNX graph exposes the raw accumulated
+`z` after each of the four communication rounds. The model runs again for each
 new maze action; the agents move only after round four. The selected agent's
-chart and action bars show the normalized consensus vector, while the map shows
-every agent's current intent and its communication links.
+chart and action bars show signed `z` scores, while the map shows the
+highest-scoring action and communication links. The WASM planner receives
+`softmax(z)` for collision-aware action selection.
 
 Use **Edit maze** to paint or erase walls, add or remove agents (1–16), and
 set each agent's start and goal. The outer border stays closed, and the editor
