@@ -114,7 +114,8 @@ agents have arrived. **Default** restores the original eight-agent layout.
 
 The dedicated ONNX graph exposes the raw accumulated `z` after each of the
 four communication rounds. The agents move only after round four. The selected
-agent's chart and action bars show signed `z` scores, while the map shows the
+agent's chart shows signed `z` scores, while a vote matrix shows which
+discrete action each round added to that accumulated state. The map shows the
 highest-scoring action and communication links. The WASM planner receives
 `softmax(z)` for collision-aware action selection.
 
