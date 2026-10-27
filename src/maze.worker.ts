@@ -86,7 +86,11 @@ function resetScenario(): void {
   positions = Int32Array.from(config.agents, (agent) => agent.start);
   goals = Int32Array.from(config.agents, (agent) => agent.goal!);
   finished = new Uint8Array(agents);
-  if (!config.lifelong) for (let i = 0; i < agents; i++) finished[i] = positions[i] === goals[i] ? 1 : 0;
+  for (let i = 0; i < agents; i++) {
+    if (positions[i] !== goals[i]) continue;
+    if (config.lifelong) goals[i] = nextGoal(i);
+    else finished[i] = 1;
+  }
   lastExecuted = new Int32Array(agents);
   action = 0;
 }
