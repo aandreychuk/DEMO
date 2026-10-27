@@ -328,7 +328,7 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
       if (supportsFp16) {
         try {
           webgpuSession = await ort.InferenceSession.create(fusedFp16ModelUrl, sessionOptions);
-          precision = 'FP16 FUSED';
+          precision = 'FP16 fused';
         } catch (error) {
           console.warn('Fused FP16 WebGPU policy unavailable; retrying the portable FP16 graph.', error);
           try {
@@ -342,7 +342,7 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
       } else {
         try {
           webgpuSession = await ort.InferenceSession.create(fusedFp32ModelUrl, sessionOptions);
-          precision = 'FP32 FUSED';
+          precision = 'FP32 fused';
         } catch (error) {
           console.warn('Fused FP32 WebGPU policy unavailable; retrying the portable graph.', error);
           webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
@@ -350,7 +350,7 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
       }
       backend = 'WEBGPU';
       const info = device.adapterInfo ?? adapter.info;
-      backendAdapter = `${formatAdapter(info, adapter.isFallbackAdapter === true)} · ${precision}`;
+      backendAdapter = `${formatAdapter(info, adapter.isFallbackAdapter === true)} (${precision})`;
       return webgpuSession;
     } catch (error) {
       device?.destroy?.();
@@ -365,8 +365,14 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
 function formatAdapter(info: BrowserGpuAdapterInfo | undefined, fallback: boolean): string {
   const name = info?.description?.trim()
     || [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' ').trim()
-    || 'GPU DETAILS HIDDEN';
-  return fallback ? `${name} · SOFTWARE` : name;
+    || 'GPU details unavailable';
+  const displayName = name
+    .replace(/\bnvidia\b/gi, 'NVIDIA')
+    .replace(/\bamd\b/gi, 'AMD')
+    .replace(/\bintel\b/gi, 'Intel')
+    .replace(/\bapple\b/gi, 'Apple')
+    .replace(/\bampere\b/gi, 'Ampere');
+  return fallback ? `${displayName} (software)` : displayName;
 }
 
 function initializePallets(): void {
