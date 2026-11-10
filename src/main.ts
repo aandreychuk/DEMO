@@ -17,6 +17,9 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 import './qr-links.css';
+import { fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage } from './i18n';
+
+initI18n();
 
 const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
@@ -756,17 +759,27 @@ function validateEditorLayout(): { valid: boolean; message: string } {
 
 function updateEditorPanel(): void {
   const count = editorLayout.size;
-  document.querySelector('#editor-pallet-count')!.textContent = count.toLocaleString('en-US');
-  document.querySelector('#editor-density')!.textContent = `${(count / STORAGE_CELL_COUNT * 100).toFixed(1)}%`;
-  document.querySelector('#editor-agent-limit')!.textContent = String(MAX_AGENTS) + ' max';
+  document.querySelector('#editor-pallet-count')!.textContent = formatNumber(count);
+  document.querySelector('#editor-density')!.textContent = `${formatFixed(count / STORAGE_CELL_COUNT * 100, 1)}%`;
+  document.querySelector('#editor-agent-limit')!.textContent = fmt('{max} max', { max: MAX_AGENTS });
   const validation = validateEditorLayout();
   const card = document.querySelector<HTMLElement>('#editor-validation')!;
   card.classList.toggle('invalid', !validation.valid);
   card.classList.toggle('valid', validation.valid);
-  card.querySelector('strong')!.textContent = validation.valid ? 'Layout valid' : 'Layout blocked';
-  card.querySelector('small')!.textContent = validation.message;
+  card.querySelector('strong')!.textContent = tr(validation.valid ? 'Layout valid' : 'Layout blocked');
+  card.querySelector('small')!.textContent = translateMessage(validation.message);
   document.querySelector<HTMLButtonElement>('#editor-undo')!.disabled = editorHistory.length === 0;
   document.querySelector<HTMLButtonElement>('#editor-apply')!.disabled = !validation.valid || editorAwaitingApply;
+}
+
+let editorMessageEnglish = 'Changes are applied to the local simulator.';
+let editorMessageIsError = false;
+function setEditorMessage(english: string, isError = false): void {
+  editorMessageEnglish = english;
+  editorMessageIsError = isError;
+  const message = document.querySelector('#editor-message')!;
+  message.textContent = translateMessage(english);
+  message.classList.toggle('error', isError);
 }
 
 function enterLayoutEditor(): void {
@@ -808,8 +821,7 @@ function enterLayoutEditor(): void {
   camera.target.set(3.8, 0, 0);
   document.querySelector('#app')!.classList.add('editor-mode');
   document.querySelector<HTMLElement>('#layout-editor')!.hidden = false;
-  document.querySelector('#editor-message')!.textContent = 'Changes are applied to the local simulator.';
-  document.querySelector('#editor-message')!.classList.remove('error');
+  setEditorMessage('Changes are applied to the local simulator.');
   setConnection('editor', 'Layout editor');
   updateEditorPanel();
 }
@@ -2564,15 +2576,15 @@ function renderAgentPanel(): void {
           ? 'Loaded'
           : 'Empty';
   const statePill = document.querySelector<HTMLElement>('#selected-agent-state')!;
-  statePill.textContent = stateLabel;
+  statePill.textContent = tr(stateLabel);
   statePill.className = `state-pill${failed ? ' failed' : recoveryState === 4 ? ' recovery' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
   const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
   failButton.disabled = recoveryState !== 0 || !transportReady();
-  document.querySelector('#fail-agent-label')!.textContent = recoveryState !== 0
+  document.querySelector('#fail-agent-label')!.textContent = tr(recoveryState !== 0
     ? 'Recovery in progress'
-    : 'Break agent';
+    : 'Break agent');
 
-  document.querySelector('#selected-agent')!.textContent = `Agent ${String(id).padStart(3, '0')}`;
+  document.querySelector('#selected-agent')!.textContent = fmt('Agent {id}', { id: String(id).padStart(3, '0') });
   document.querySelector('#agent-position')!.textContent =
     `${Math.round(frame.positions[id * 2])}, ${Math.round(frame.positions[id * 2 + 1])}`;
   document.querySelector('#agent-task')!.textContent = taskId === 0xffffffff ? '—' : `#${taskId}`;
@@ -2583,12 +2595,12 @@ function renderAgentPanel(): void {
       && physicalPalletX >= 0 && physicalPalletZ >= 0
       && pallet !== null
       && (physicalPalletX !== pallet.x || physicalPalletZ !== pallet.z)
-    ? `, at ${physicalPalletX},${physicalPalletZ}`
+    ? fmt(', at {x},{z}', { x: physicalPalletX, z: physicalPalletZ })
     : '';
   document.querySelector('#agent-pallet')!.textContent = pallet
-    ? `P${String(palletId).padStart(3, '0')}, ${cargoNames[pallet.cargoType]}, ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
+    ? `P${String(palletId).padStart(3, '0')}, ${tr(cargoNames[pallet.cargoType])}, ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
     : '—';
-  document.querySelector('#agent-task-age')!.textContent = `${Math.max(0, frame.step - stats.taskStartedAt)} ticks`;
+  document.querySelector('#agent-task-age')!.textContent = fmt('{count} ticks', { count: Math.max(0, frame.step - stats.taskStartedAt) });
 
   const formatCoordinate = (x: number, z: number): string => x >= 0 && z >= 0 ? `${x}, ${z}` : '—';
   document.querySelector('#pickup-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
@@ -2627,18 +2639,20 @@ function renderAgentPanel(): void {
   document.querySelector('#agent-completed')!.textContent = String(stats.completedTasks);
 }
 
-function setConnection(state: string, label: string): void {
+let currentConnection = { state: 'connecting', label: 'Demo source', values: {} as Record<string, string | number> };
+function setConnection(state: string, label: string, values: Record<string, string | number> = {}): void {
+  currentConnection = { state, label, values };
   const connection = document.querySelector<HTMLElement>('.connection')!;
   connection.dataset.state = state;
   const sourceLabel = document.querySelector<HTMLElement>('#source-label')!;
-  sourceLabel.textContent = label;
-  sourceLabel.title = label;
+  sourceLabel.textContent = fmt(label, values);
+  sourceLabel.title = sourceLabel.textContent;
 }
 
 function setRuntimeConnection(): void {
   const adapter = runtimeAdapter ? `, ${runtimeAdapter}` : '';
   const backendLabel = runtimeBackend === 'WEBGPU' ? 'WebGPU' : runtimeBackend === 'SIMULATOR' ? 'simulator' : runtimeBackend;
-  setConnection('live', `DMM-0.8M on ${backendLabel}${adapter}`);
+  setConnection('live', 'DMM-0.8M on {backend}{adapter}', { backend: tr(backendLabel), adapter });
 }
 
 function syncDocumentActivity(): void {
@@ -2657,7 +2671,7 @@ function setAgentCount(count: number): void {
   if (selectedAgentId >= agentCount) clearAgentSelection();
   setThinInstanceCount(robotMesh, agentCount);
   setThinInstanceCount(agentPicker, agentCount);
-  agentsValue.textContent = agentCount.toLocaleString('en-US');
+  agentsValue.textContent = formatNumber(agentCount);
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
   select.querySelector('option[data-custom-agent-count]')?.remove();
   if (![...select.options].some((option) => Number(option.value) === agentCount)) {
@@ -2712,9 +2726,7 @@ function handleRuntimeMessage(data: unknown): void {
     closeLayoutEditor(false, false);
   } else if (message.type === 'layout-error') {
     editorAwaitingApply = false;
-    const editorMessage = document.querySelector('#editor-message')!;
-    editorMessage.textContent = String(message.message ?? 'The layout could not be applied.');
-    editorMessage.classList.add('error');
+    setEditorMessage(String(message.message ?? 'The layout could not be applied.'), true);
     updateEditorPanel();
   } else if (message.type === 'status' && message.state === 'planning') {
     livePrevious = null;
@@ -2723,7 +2735,7 @@ function handleRuntimeMessage(data: unknown): void {
     resetPalletInventory();
     resetAgentStats();
     clearAgentSelection();
-    setConnection('planning', `Planning ${Number(message.agents).toLocaleString('en-US')}`);
+    setConnection('planning', 'Planning {count}', { count: Number(message.agents) });
   } else if (message.type === 'status' && message.state === 'stopped') {
     paused = true;
     syncPauseButton();
@@ -2733,7 +2745,7 @@ function handleRuntimeMessage(data: unknown): void {
     runtimeAdapter = String(message.backendAdapter ?? runtimeAdapter);
     lastInferenceMs = Number(message.inferenceMs) || 0;
   } else if (message.type === 'error') {
-    setConnection('error', `Error: ${String(message.message ?? 'runtime')}`);
+    setConnection('error', 'Error: {message}', { message: String(message.message ?? 'runtime') });
     console.error(message.message);
   }
 }
@@ -2770,7 +2782,7 @@ function connect(): void {
   browserWorker = worker;
   worker.addEventListener('message', (event) => handleRuntimeMessage(event.data));
   worker.addEventListener('error', (event) => {
-    setConnection('error', `Error: ${event.message || 'worker load'}`);
+    setConnection('error', 'Error: {message}', { message: event.message || 'worker load' });
     console.error(event.message);
   });
 }
@@ -2838,8 +2850,8 @@ engine.runRenderLoop(() => {
     throughputValue.textContent = paused
       || backgroundSuspended
       ? '0'
-      : Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed).toLocaleString('en-US');
-    latencyValue.textContent = live ? `${lastInferenceMs.toFixed(1)} ms` : 'Demo';
+      : formatNumber(Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed));
+    latencyValue.textContent = live ? `${formatFixed(lastInferenceMs, 1)} ${getLanguage() === 'ru' ? 'мс' : 'ms'}` : tr('Demo');
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
     failedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) : 0);
     recoveryValue.textContent = String(liveCurrent
@@ -2853,14 +2865,12 @@ engine.runRenderLoop(() => {
       const queued = liveCurrent.tow.queuedRescues > 0
         ? `, queue ${liveCurrent.tow.queuedRescues}`
         : '';
-      towStatusValue.textContent = `${towLabels[liveCurrent.tow.state] ?? 'Active'}${target}${queued}`;
+      towStatusValue.textContent = `${tr(towLabels[liveCurrent.tow.state] ?? 'Active')}${target}${queued ? fmt(', queue {count}', { count: liveCurrent.tow.queuedRescues }) : ''}`;
     } else {
-      towStatusValue.textContent = 'Idle';
+      towStatusValue.textContent = tr('Idle');
     }
     const completedTasks = liveCurrent?.completedTasks ?? 0;
-    taskThroughputValue.textContent = step > 0
-      ? (completedTasks / step).toFixed(3)
-      : '0.000';
+    taskThroughputValue.textContent = formatFixed(step > 0 ? completedTasks / step : 0, 3);
   }
 });
 
@@ -2880,7 +2890,7 @@ window.addEventListener('blur', handleDocumentActivityChange);
 
 function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
-  document.querySelector('#pause-label')!.textContent = paused ? 'Run' : 'Pause';
+  document.querySelector('#pause-label')!.textContent = tr(paused ? 'Run' : 'Pause');
 }
 pauseButton.addEventListener('click', () => {
   paused = !paused;
@@ -2902,7 +2912,7 @@ failAgentButton.addEventListener('click', () => {
   if (selectedAgentId < 0 || !liveCurrent) return;
   if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
   failAgentButton.disabled = true;
-  document.querySelector('#fail-agent-label')!.textContent = 'Breaking…';
+  document.querySelector('#fail-agent-label')!.textContent = tr('Breaking…');
   sendControl('fail', { agent: selectedAgentId });
 });
 
@@ -2911,7 +2921,7 @@ document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('cha
   if (transportReady()) {
     paused = false;
     syncPauseButton();
-    setConnection('planning', `Planning ${count.toLocaleString('en-US')}`);
+    setConnection('planning', 'Planning {count}', { count });
     sendControl('load', { agents: count });
   } else {
     setAgentCount(count);
@@ -2978,17 +2988,13 @@ document.querySelector('#editor-cancel')!.addEventListener('click', () => {
 document.querySelector('#editor-apply')!.addEventListener('click', () => {
   const validation = validateEditorLayout();
   if (!validation.valid || !transportReady()) {
-    const editorMessage = document.querySelector('#editor-message')!;
-    editorMessage.textContent = transportReady()
+    setEditorMessage(transportReady()
       ? validation.message
-      : 'The browser runtime is not ready.';
-    editorMessage.classList.add('error');
+      : 'The browser runtime is not ready.', true);
     return;
   }
   editorAwaitingApply = true;
-  const editorMessage = document.querySelector('#editor-message')!;
-  editorMessage.textContent = 'Applying the layout and rebuilding the in-browser task queue…';
-  editorMessage.classList.remove('error');
+  setEditorMessage('Applying the layout and rebuilding the in-browser task queue…');
   updateEditorPanel();
   sendControl('layout', {
     agents: editorAgentCount,
@@ -3023,4 +3029,13 @@ canvas.addEventListener('wheel', (event) => {
 }, { passive: false });
 
 window.addEventListener('resize', () => engine.resize());
+window.addEventListener('demo:languagechange', () => {
+  updateEditorPanel();
+  agentsValue.textContent = formatNumber(agentCount);
+  renderAgentPanel();
+  syncPauseButton();
+  if (currentConnection.state === 'live' && live) setRuntimeConnection();
+  else setConnection(currentConnection.state, currentConnection.label, currentConnection.values);
+  setEditorMessage(editorMessageEnglish, editorMessageIsError);
+});
 connect();
