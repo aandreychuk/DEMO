@@ -179,6 +179,8 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .route-card > div.done span { color: #58f2ad; }
 .route-card > div.skipped span { color: #71818d; }
 .route-card strong { color: #bcd6e3; font: 500 9px 'Inter', system-ui, sans-serif; }
+.route-card > .return-marked { opacity: 1; }
+.route-card > .return-marked :is(span, small, strong) { color: #58dcff; }
 
 .agent-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 10px; overflow: hidden; border: 1px solid rgba(126, 210, 240, .08); border-radius: 7px; background: rgba(126, 210, 240, .08); }
 .agent-metrics > div { padding: 9px; background: rgba(7, 21, 32, .88); }

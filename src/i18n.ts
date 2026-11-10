@@ -50,7 +50,7 @@ const RU: Record<string, string> = {
   'Break agent': 'Сломать агента',
   'Take control': 'Управлять',
   'Release control': 'Вернуть управление DMM',
-  'WASD moves along the grid. Esc returns control to DMM.': 'WASD — движение по сетке. Esc — вернуть управление DMM.',
+  'WASD follows the camera. Esc returns control to DMM.': 'WASD — движение относительно камеры. Esc — вернуть управление DMM.',
   'Live telemetry': 'Телеметрия',
   'Agents': 'Агенты',
   'Step': 'Шаг',
