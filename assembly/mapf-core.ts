@@ -45,8 +45,11 @@ let towPickupAgent: i32 = -1;
 let towSharedAgent: i32 = -1;
 let towCarrying: bool = false;
 let towDistances = new Int16Array(0);
+let manualAgent: i32 = -1;
+let manualAction: i32 = 0;
 
 export function configure(mapWidth: i32, mapHeight: i32, agentCount: i32): void {
+  manualAgent = -1;
   width = mapWidth;
   height = mapHeight;
   cells = width * height;
@@ -103,6 +106,11 @@ export function setTow(current: i32, goal: i32, pickupAgent: i32,
   towCarrying = carrying != 0;
 }
 export function resetHistory(): void { history.fill(-1); }
+
+export function setManualControl(agent: i32, action: i32): void {
+  manualAgent = agent >= 0 && agent < agents ? agent : -1;
+  manualAction = action >= 0 && action < ACTIONS ? action : 0;
+}
 
 function row(cell: i32): i32 { return cell / width; }
 function col(cell: i32): i32 { return cell % width; }
@@ -319,9 +327,13 @@ function assignPIBT(agent: i32, depth: i32): bool {
   if (nextPositions[agent] >= 0) return true;
   if (depth > agents + 1) return false;
   const origin = positions[agent];
-  const count = preferenceCount[agent];
-  for (let rank: i32 = 0; rank < count; ++rank) {
-    const action = preference[agent * ACTIONS + rank];
+  const manual = agent == manualAgent;
+  // Only an earlier reservation (from the tow chain) can force manual steering aside.
+  const count = manual && occupiedNext[origin] < 0 ? 0 : preferenceCount[agent];
+  for (let rank: i32 = manual ? -2 : 0; rank < count; ++rank) {
+    const action = rank == -2 ? manualAction : rank == -1 ? 0 : preference[agent * ACTIONS + rank];
+    if (rank == -2 && (action == 0 || forbidden(agent, neighbor(origin, action)))) continue;
+    if (manual && rank >= 0 && (action == manualAction || action == 0)) continue;
     const target = neighbor(origin, action);
     if (target < 0 || occupiedNext[target] >= 0) continue;
     const other = agentAt[target];
@@ -463,6 +475,7 @@ export function plan(): void {
     }
   }
   let valid = assignTow();
+  if (valid && manualAgent >= 0 && !assignPIBT(manualAgent, 0)) valid = false;
   for (let rank: i32 = 0; rank < agents; ++rank) {
     const agent = order[rank];
     if (nextPositions[agent] < 0 && !assignPIBT(agent, 0)) valid = false;

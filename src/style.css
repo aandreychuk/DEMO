@@ -186,6 +186,10 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .fail-agent-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 34px; margin-top: 10px; border: 1px solid rgba(255, 100, 76, .28); border-radius: 7px; color: #ff9b82; background: rgba(255, 75, 50, .08); font: 700 9px 'Inter', system-ui, sans-serif; letter-spacing: .02em; }
 .fail-agent-button:hover:not(:disabled) { color: #ffe1da; border-color: rgba(255, 117, 91, .52); background: rgba(255, 75, 50, .17); }
 .fail-agent-button:disabled { cursor: default; opacity: .42; }
+.control-agent-button { width: 100%; min-height: 32px; margin: 8px 0; border: 1px solid rgba(84, 216, 246, .32); border-radius: 7px; background: rgba(84, 216, 246, .08); color: #a6eafe; font: 700 10px 'Inter', system-ui, sans-serif; }
+.control-agent-button:hover:not(:disabled), .control-agent-button[aria-pressed="true"] { border-color: #54d8f6; background: rgba(84, 216, 246, .2); color: #e1f9ff; }
+.control-agent-button:disabled { cursor: default; opacity: .42; }
+.agent-control-hint { margin: 0 0 8px; color: #a7c4d5; font-size: 10px; line-height: 1.4; }
 
 .telemetry-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(143, 214, 255, .1); }
 .telemetry-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; margin-top: 14px; }

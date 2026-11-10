@@ -176,3 +176,33 @@ for (let tick = 0; tick < 40; tick++) {
 }
 if (crowdedTow === 0) throw new Error('tow never moved through the crowd');
 console.log('tow PIBT validation: 40 collision-free crowded ticks');
+
+// Both robots want the middle cell. Robot 1 must go first in manual mode,
+// even though its own model prefers east and robot 0 has the lower ID.
+core.configure(5, 3, 2);
+const left = at(1, 1);
+const middle = at(2, 1);
+const right = at(3, 1);
+function planManual(agent, direction, tow = -1, towGoal = -1) {
+  core.setTow(tow, towGoal, -1, -1, 0);
+  core.setAgentState(0, left, middle, 0, 0, 0);
+  core.setAgentState(1, right, at(4, 1), 0, 0, 0);
+  core.setManualControl(agent, direction);
+  core.buildInputs();
+  const scores = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), 10);
+  scores.fill(0);
+  scores[4] = scores[9] = 1; // Both model policies prefer east.
+  core.plan();
+  return [...new Int32Array(core.memory.buffer, core.nextPositionsPointer(), 2)];
+}
+let planned = planManual(1, 3);
+if (planned[1] !== middle || planned[0] === middle) throw new Error('manual priority or direction ignored');
+core.setWall(middle, 1);
+if (planManual(1, 3)[1] !== right) throw new Error('blocked manual direction did not wait');
+core.setWall(middle, 0);
+if (planManual(-1, 0)[1] !== at(4, 1)) throw new Error('model steering did not resume');
+planned = planManual(1, 3, at(2, 0), middle);
+if (core.getTowNext() !== middle || planned[1] !== right) throw new Error('tow lost its priority to manual control');
+planned = planManual(1, 0, at(3, 0), right);
+if (core.getTowNext() !== right || planned[1] !== at(4, 1)) throw new Error('manual robot did not yield to the tow chain');
+console.log('manual PIBT validation: direction, wait, release, and tow priority');

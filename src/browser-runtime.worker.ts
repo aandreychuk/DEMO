@@ -50,6 +50,7 @@ type WasmCore = {
   setPallet: (cell: number, value: number) => void;
   setAgentState: (index: number, position: number, goal: number, loaded: number, failed: number, pinned: number) => void;
   setTow: (current: number, goal: number, pickupAgent: number, sharedAgent: number, carrying: number) => void;
+  setManualControl: (agent: number, action: number) => void;
   resetHistory: () => void;
   buildInputs: () => void;
   plan: () => void;
@@ -181,6 +182,9 @@ let towState = 0;
 let towTarget = -1;
 let towLoadingDwell = 0;
 let rescueQueue: number[] = [];
+let controlledAgent = -1;
+let heldMove = 0;
+let pendingMove = 0;
 
 let previousFramePositions: Int32Array | null = null;
 let previousFrameStages: Uint8Array | null = null;
@@ -422,6 +426,7 @@ function assignTask(agent: number): boolean {
 
 function resetSimulation(count: number): void {
   generation++;
+  setControlledAgent(-1);
   agentCount = Math.max(1, Math.min(MAX_AGENTS, count));
   if (scenarioStarts.length < agentCount) throw new Error("Not enough robot start cells.");
   positions = new Int32Array(MAX_AGENTS);
@@ -597,6 +602,8 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
     // disposed. Omitting this in an endless simulation gradually slows WebGPU.
     for (const tensor of Object.values(output)) tensor.dispose();
   }
+  core.setManualControl(controlledAgent, pendingMove || heldMove);
+  pendingMove = 0;
   core.plan();
   const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), MAX_AGENTS);
   for (let i = 0; i < agentCount; i++) positions[i] = next[i];
@@ -747,8 +754,16 @@ function schedule(): void {
   if (!paused) timer = workerScope.setTimeout(() => void tick(), 1000 / (TICK_RATE * speed));
 }
 
+function setControlledAgent(agent: number): void {
+  controlledAgent = Number.isInteger(agent) && agent >= 0 && agent < agentCount && recovery[agent] === 0
+    ? agent : -1;
+  heldMove = 0;
+  pendingMove = 0;
+}
+
 function failAgent(agent: number): void {
   if (agent < 0 || agent >= agentCount || recovery[agent] !== 0) return;
+  if (agent === controlledAgent) setControlledAgent(-1);
   generation++;
   failed[agent] = 1; recovery[agent] = 1; resumeGoals[agent] = goals[agent];
   recoveringPallet[agent] = loaded[agent]; recoveryDwellStarted[agent] = 0; repairDwell[agent] = 0;
@@ -780,6 +795,7 @@ async function reconfigure(count: number, pallets: Array<{ x: number; y: number 
   const wasPaused = paused;
   paused = true;
   generation++;
+  setControlledAgent(-1);
   schedule();
   count = Number.isFinite(count) ? Math.max(1, Math.min(MAX_AGENTS, Math.floor(count))) : agentCount;
   post({ type: 'status', state: 'planning', agents: count });
@@ -831,6 +847,15 @@ workerScope.onmessage = (event): void => {
     paused = true; resetSimulation(agentCount); emitFrame();
     post({ type: 'metrics', inferenceMs: lastInferenceMs, backend, backendAdapter });
     post({ type: 'status', state: 'stopped' }); schedule();
+  } else if (message.action === 'control-agent') {
+    setControlledAgent(Number(message.agent));
+  } else if (message.action === 'drive-agent' && message.agent === controlledAgent && controlledAgent >= 0) {
+    const move = message.value ?? 0;
+    if (Number.isInteger(move) && move >= 0 && move < ACTIONS) {
+      heldMove = move;
+      // A quick tap still takes effect on the next simulation tick.
+      if (move !== 0) pendingMove = move;
+    }
   } else if (message.action === 'fail') failAgent(Number(message.agent));
   else if (message.action === 'load') {
     void reconfigure(Number(message.agents), null);

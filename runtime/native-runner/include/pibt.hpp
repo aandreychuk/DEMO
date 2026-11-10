@@ -22,6 +22,11 @@ struct TowPlan {
   bool carrying = false;
 };
 
+struct ManualMove {
+  int agent = -1;
+  Vertex* target = nullptr;
+};
+
 struct PIBT {
   const Instance *ins;
   std::mt19937 MT;
@@ -71,14 +76,17 @@ struct PIBT {
                       const std::vector<std::array<int, LC_MAPF_ACTION_HISTORY_LEN>> *action_history = nullptr,
                       const std::vector<std::vector<int>>
                           *forbidden_vertex_ids = nullptr,
-                      TowPlan* tow = nullptr);
+                      TowPlan* tow = nullptr,
+                      const ManualMove& manual = {});
   bool funcPIBT(const int i, const Config &Q_from, Config &Q_to,
                 const std::set<int> &default_policy_agents,
                 const std::vector<std::vector<int>>
-                    *forbidden_vertex_ids = nullptr);
+                    *forbidden_vertex_ids,
+                const ManualMove& manual);
   bool funcTowPIBT(const Config &Q_from, Config &Q_to, TowPlan& tow,
                    const std::set<int>& default_policy_agents,
-                   const std::vector<std::vector<int>>* forbidden_vertex_ids);
+                   const std::vector<std::vector<int>>* forbidden_vertex_ids,
+                   const ManualMove& manual);
 
   // Get recursion metrics
   int get_recursion_count() const { return recursion_count; }

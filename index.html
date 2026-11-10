@@ -40,7 +40,7 @@
         <section class="demo-guide" aria-label="About this demo">
           <p class="eyebrow">What to watch</p>
           <p>Robots carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
-          <p>Select a robot to inspect its task or trigger a breakdown. Change speed below; use Layout to edit pallets and agent count.</p>
+          <p>Select a robot to inspect its task, steer it, or trigger a breakdown. Use Layout to edit pallets and agent count.</p>
         </section>
         <section class="agent-inspector">
           <div class="section-heading">
@@ -57,6 +57,8 @@
               <strong id="selected-agent">Agent 000</strong>
               <span id="selected-agent-state" class="state-pill">Empty</span>
             </div>
+            <button id="control-agent-button" class="control-agent-button" type="button" aria-pressed="false">Take control</button>
+            <p id="agent-control-hint" class="agent-control-hint" hidden>WASD moves along the grid. Esc returns control to DMM.</p>
             <div class="stage-track" aria-label="Task progress">
               <span id="stage-pickup">Pickup</span>
               <i></i>

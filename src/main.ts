@@ -232,6 +232,7 @@ let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let palletInventoryRevision = 0;
 let selectedAgentId = -1;
+let controlledAgentId = -1;
 let editorActive = false;
 let editorAwaitingApply = false;
 let editorWasPaused = false;
@@ -265,6 +266,8 @@ const palletMotions: Array<PalletMotion | null> = Array.from(
 );
 const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
 const cameraKeys = new Set<string>();
+const driveKeys = new Set<string>();
+const driveActionByKey: Readonly<Record<string, number>> = { w: 1, s: 2, a: 3, d: 4 };
 const cameraKeyByCode: Readonly<Record<string, string>> = {
   KeyW: 'w',
   KeyA: 'a',
@@ -2477,6 +2480,7 @@ function resetAgentStats(): void {
 }
 
 function selectAgent(agent: number): void {
+  if (controlledAgentId >= 0 && controlledAgentId !== agent) setControlledAgent(-1);
   const previous = selectedAgentId;
   selectedAgentId = agent;
   if (previous >= 0) setAgentColor(
@@ -2495,6 +2499,7 @@ function selectAgent(agent: number): void {
 }
 
 function clearAgentSelection(): void {
+  if (controlledAgentId >= 0) setControlledAgent(-1);
   const previous = selectedAgentId;
   selectedAgentId = -1;
   selectionHalo.isVisible = false;
@@ -2541,6 +2546,13 @@ function renderAgentPanel(): void {
   const transitioned = (status & 4) !== 0;
   const failed = (status & 16) !== 0;
   const recoveryState = frame.recoveryStates[id];
+  if (controlledAgentId === id && (failed || recoveryState !== 0)) setControlledAgent(-1);
+  const controlling = controlledAgentId === id;
+  const controlButton = document.querySelector<HTMLButtonElement>('#control-agent-button')!;
+  controlButton.disabled = !transportReady() || failed || recoveryState !== 0;
+  controlButton.setAttribute('aria-pressed', String(controlling));
+  controlButton.textContent = tr(controlling ? 'Release control' : 'Take control');
+  document.querySelector<HTMLElement>('#agent-control-hint')!.hidden = !controlling;
   const agentX = Math.round(frame.positions[id * 2]);
   const agentZ = Math.round(frame.positions[id * 2 + 1]);
   const atUnloadingBay = nativeStage >= 2 && agentX === UNLOAD_X && agentZ === stationZ;
@@ -2686,6 +2698,24 @@ function sendControl(action: string, extra: Record<string, unknown> = {}): void 
   const message = { type: 'control', action, ...extra };
   if (browserWorker) browserWorker.postMessage(message);
   else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+function setControlledAgent(agent: number): void {
+  controlledAgentId = agent;
+  cameraKeys.clear();
+  driveKeys.clear();
+  sendControl('control-agent', { agent });
+}
+
+function clearMovementKeys(): void {
+  cameraKeys.clear();
+  if (controlledAgentId >= 0) setControlledAgent(controlledAgentId);
+}
+
+function sendDriveDirection(): void {
+  let direction = 0;
+  for (const key of driveKeys) direction = driveActionByKey[key];
+  sendControl('drive-agent', { agent: controlledAgentId, value: direction });
 }
 
 function transportReady(): boolean {
@@ -2878,6 +2908,11 @@ const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
 const failAgentButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
+document.querySelector<HTMLButtonElement>('#control-agent-button')!.addEventListener('click', (event) => {
+  if ((event.currentTarget as HTMLButtonElement).disabled || selectedAgentId < 0) return;
+  setControlledAgent(controlledAgentId === selectedAgentId ? -1 : selectedAgentId);
+  renderAgentPanel();
+});
 
 function handleDocumentActivityChange(): void {
   backgroundSuspended = document.visibilityState === 'hidden' || !document.hasFocus();
@@ -2894,12 +2929,14 @@ function syncPauseButton(): void {
 }
 pauseButton.addEventListener('click', () => {
   paused = !paused;
+  if (paused) clearMovementKeys();
   syncPauseButton();
   sendControl(paused ? 'pause' : 'run');
 });
 
 stopButton.addEventListener('click', () => {
   paused = true;
+  if (controlledAgentId >= 0) setControlledAgent(-1);
   simTime = 0;
   syncPauseButton();
   resetServiceAnimations();
@@ -2911,6 +2948,10 @@ stopButton.addEventListener('click', () => {
 failAgentButton.addEventListener('click', () => {
   if (selectedAgentId < 0 || !liveCurrent) return;
   if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
+  if (controlledAgentId === selectedAgentId) {
+    setControlledAgent(-1);
+    renderAgentPanel();
+  }
   failAgentButton.disabled = true;
   document.querySelector('#fail-agent-label')!.textContent = tr('Breaking…');
   sendControl('fail', { agent: selectedAgentId });
@@ -3004,23 +3045,38 @@ document.querySelector('#editor-apply')!.addEventListener('click', () => {
 
 window.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) {
-    cameraKeys.clear();
+    clearMovementKeys();
     return;
   }
   const target = event.target as HTMLElement | null;
   if (target?.matches('input:not([type="range"]), select, textarea, [contenteditable="true"]')) return;
+  if (event.code === 'Escape' && controlledAgentId >= 0) {
+    setControlledAgent(-1);
+    renderAgentPanel();
+    event.preventDefault();
+    return;
+  }
   const key = cameraKeyByCode[event.code];
   if (!key) return;
-  cameraKeys.add(key);
+  if (controlledAgentId < 0) cameraKeys.add(key);
+  else if (!paused && !event.repeat) {
+    driveKeys.add(key);
+    sendDriveDirection();
+  }
   event.preventDefault();
 });
 
 window.addEventListener('keyup', (event) => {
   const key = cameraKeyByCode[event.code];
-  if (key) cameraKeys.delete(key);
+  if (!key) return;
+  cameraKeys.delete(key);
+  if (driveKeys.delete(key) && controlledAgentId >= 0) sendDriveDirection();
 });
 
-window.addEventListener('blur', () => cameraKeys.clear());
+window.addEventListener('blur', clearMovementKeys);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearMovementKeys();
+});
 
 canvas.addEventListener('wheel', (event) => {
   if (!editorActive) return;
