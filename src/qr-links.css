@@ -6,6 +6,20 @@
   pointer-events: auto;
 }
 
+.lang-toggle {
+  flex: none;
+  min-width: 37px;
+  padding: 8px 7px;
+  border: 1px solid rgba(113, 202, 232, .22);
+  border-radius: 7px;
+  color: #b8deeb;
+  background: rgba(67, 183, 222, .1);
+  font: 700 11px Inter, system-ui, sans-serif;
+  cursor: pointer;
+}
+.lang-toggle:hover { color: #e8faff; background: rgba(67, 183, 222, .2); }
+.lang-toggle:focus-visible { outline: 2px solid #5ce1ff; outline-offset: 3px; }
+
 .qr-links { position: relative; flex: none; font-family: Inter, system-ui, sans-serif; }
 .qr-links summary {
   list-style: none;
