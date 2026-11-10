@@ -36,6 +36,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 
 .topbar {
   position: fixed;
+  z-index: 20;
   top: 20px;
   left: 20px;
   right: 20px;

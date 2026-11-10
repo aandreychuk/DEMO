@@ -7,7 +7,7 @@ button, input { font: inherit; }
 button { cursor: pointer; }
 .glass { border: 1px solid rgba(126, 211, 242, .15); background: linear-gradient(135deg, rgba(12, 30, 45, .92), rgba(5, 16, 28, .88)); box-shadow: 0 18px 52px rgba(0, 0, 0, .22), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(16px); }
 #maze-app { display: grid; grid-template-rows: 68px minmax(0, 1fr) 84px; gap: 16px; min-height: 100vh; height: 100vh; padding: 18px; }
-.maze-top { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-radius: 12px; }
+.maze-top { position: relative; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-radius: 12px; }
 .maze-brand { display: flex; align-items: center; gap: 12px; min-width: 235px; }
 .maze-brand-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: #082332; background: #54dcfb; box-shadow: 0 0 21px rgba(74, 217, 248, .35); font-size: 24px; font-weight: 700; }
 .maze-brand strong, .maze-brand small { display: block; }
