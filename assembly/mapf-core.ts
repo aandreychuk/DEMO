@@ -28,7 +28,7 @@ let priorities = new Float32Array(MAX_AGENTS);
 let observations = new Int32Array(MAX_AGENTS * OBS_TOKENS);
 let chat = new Int32Array(MAX_AGENTS * CHAT_SLOTS);
 let probabilities = new Float32Array(MAX_AGENTS * ACTIONS);
-let nextPositions = new Int32Array(MAX_AGENTS);
+let nextPositions = new Int32Array(MAX_AGENTS + 1);
 let executedActions = new Int32Array(MAX_AGENTS);
 
 let distances = new Int16Array(0);
@@ -40,7 +40,11 @@ let preference = new Int32Array(MAX_AGENTS * ACTIONS);
 let preferenceCount = new Int32Array(MAX_AGENTS);
 let order = new Int32Array(MAX_AGENTS);
 let towCell: i32 = -1;
-let towPreviousCell: i32 = -1;
+let towGoal: i32 = -1;
+let towPickupAgent: i32 = -1;
+let towSharedAgent: i32 = -1;
+let towCarrying: bool = false;
+let towDistances = new Int16Array(0);
 
 export function configure(mapWidth: i32, mapHeight: i32, agentCount: i32): void {
   width = mapWidth;
@@ -55,6 +59,7 @@ export function configure(mapWidth: i32, mapHeight: i32, agentCount: i32): void 
   agentAt = new Int32Array(cells);
   failedAt = new Int32Array(cells);
   occupiedNext = new Int32Array(cells);
+  towDistances = new Int16Array(cells);
   positions.fill(-1);
   goals.fill(-1);
   loaded.fill(0);
@@ -89,9 +94,13 @@ export function setAgentState(index: i32, position: i32, goal: i32,
   failed[index] = isFailed != 0 ? 1 : 0;
   pinned[index] = isPinned != 0 ? 1 : 0;
 }
-export function setTow(current: i32, previous: i32): void {
+export function setTow(current: i32, goal: i32, pickupAgent: i32,
+                       sharedAgent: i32, carrying: i32): void {
   towCell = current;
-  towPreviousCell = previous;
+  towGoal = goal;
+  towPickupAgent = pickupAgent;
+  towSharedAgent = sharedAgent;
+  towCarrying = carrying != 0;
 }
 export function resetHistory(): void { history.fill(-1); }
 
@@ -124,9 +133,6 @@ function blockedFor(agent: i32, cell: i32): bool {
   if (cell < 0 || cell >= cells || walls[cell] != 0) return true;
   if (stations[cell] != 0 && cell != goals[agent] && cell != positions[agent]) return true;
   if (loaded[agent] != 0 && pallets[cell] != 0) return true;
-  if (cell == towCell || cell == towPreviousCell) {
-    if (cell != positions[agent]) return true;
-  }
   if (failedAt[cell] >= 0 && failedAt[cell] != agent) return true;
   return false;
 }
@@ -214,7 +220,7 @@ export function buildInputs(): void {
   for (let i: i32 = 0; i < agents; ++i) {
     if (positions[i] >= 0 && positions[i] < cells) {
       agentAt[positions[i]] = i;
-      if (failed[i] != 0) failedAt[positions[i]] = i;
+      if (failed[i] != 0 && i != towSharedAgent) failedAt[positions[i]] = i;
     }
   }
   for (let i: i32 = 0; i < agents; ++i) computeDistance(i);
@@ -282,9 +288,9 @@ function forbidden(agent: i32, target: i32): bool {
   if (target < 0 || target >= cells || walls[target] != 0) return true;
   if (stations[target] != 0 && target != positions[agent] && target != goals[agent]) return true;
   if (loaded[agent] != 0 && pallets[target] != 0) return true;
-  if ((target == towCell || target == towPreviousCell) && target != positions[agent]) return true;
   for (let other: i32 = 0; other < agents; ++other) {
-    if (other != agent && failed[other] != 0 && positions[other] == target) return true;
+    if (other != agent && other != towSharedAgent &&
+        failed[other] != 0 && positions[other] == target) return true;
   }
   return false;
 }
@@ -311,7 +317,7 @@ function buildPreferences(agent: i32): void {
 
 function assignPIBT(agent: i32, depth: i32): bool {
   if (nextPositions[agent] >= 0) return true;
-  if (depth > agents) return false;
+  if (depth > agents + 1) return false;
   const origin = positions[agent];
   const count = preferenceCount[agent];
   for (let rank: i32 = 0; rank < count; ++rank) {
@@ -339,15 +345,107 @@ function assignPIBT(agent: i32, depth: i32): bool {
   return false;
 }
 
+function towPassable(target: i32): bool {
+  return target >= 0 && target < cells && walls[target] == 0 &&
+    (target == towCell || target == towGoal ||
+     (stations[target] == 0 && pallets[target] == 0));
+}
+
+function buildTowDistances(): void {
+  towDistances.fill(-1);
+  if (towGoal < 0 || towGoal >= cells || !towPassable(towGoal)) return;
+  let head: i32 = 0;
+  let tail: i32 = 0;
+  queue[tail++] = towGoal;
+  towDistances[towGoal] = 0;
+  while (head < tail) {
+    const current = queue[head++];
+    for (let action: i32 = 1; action < ACTIONS; ++action) {
+      const target = neighbor(current, action);
+      if (target < 0 || !towPassable(target) || towDistances[target] >= 0) continue;
+      towDistances[target] = <i16>(towDistances[current] + 1);
+      queue[tail++] = target;
+    }
+  }
+}
+
+function assignTow(): bool {
+  if (towCell < 0 || towCell >= cells) return true;
+  buildTowDistances();
+  const candidates = new Int32Array(ACTIONS);
+  let count: i32 = 0;
+  for (let action: i32 = 1; action < ACTIONS && towCell != towGoal; ++action) {
+    const target = neighbor(towCell, action);
+    if (!towPassable(target)) continue;
+    const distance = towDistances[target] < 0 ? 32767 : towDistances[target];
+    let insert = count;
+    while (insert > 0) {
+      const prior = candidates[insert - 1];
+      const priorDistance = towDistances[prior] < 0 ? 32767 : towDistances[prior];
+      if (priorDistance <= distance) break;
+      candidates[insert] = prior;
+      --insert;
+    }
+    candidates[insert] = target;
+    ++count;
+  }
+  candidates[count++] = towCell;
+  for (let rank: i32 = 0; rank < count; ++rank) {
+    const target = candidates[rank];
+    const occupant = agentAt[target];
+    const reserved = occupiedNext[target];
+    const intentionalOverlap =
+      (towPickupAgent >= 0 && target == towGoal &&
+       occupant == towPickupAgent && reserved == towPickupAgent) ||
+      (target == towCell && reserved == towSharedAgent && towSharedAgent >= 0);
+    if (reserved >= 0 && !intentionalOverlap) continue;
+    if (occupant >= 0 && occupant != agents && !intentionalOverlap &&
+        nextPositions[occupant] == towCell) continue;
+    const beforeNext = nextPositions.slice();
+    const beforeOccupied = occupiedNext.slice();
+    occupiedNext[target] = agents;
+    nextPositions[agents] = target;
+    if (occupant >= 0 && occupant != agents && !intentionalOverlap &&
+        nextPositions[occupant] < 0 && !assignPIBT(occupant, 1)) {
+      nextPositions.set(beforeNext);
+      occupiedNext.set(beforeOccupied);
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function validJointPlan(): bool {
+  const seen = new Int32Array(cells);
+  seen.fill(-1);
+  const hasTow = towCell >= 0 && towCell < cells;
+  const towNext = nextPositions[agents];
+  if (hasTow && (towNext < 0 || towNext >= cells)) return false;
+  for (let i: i32 = 0; i < agents; ++i) {
+    const target = i == towSharedAgent && towCarrying ? towNext : nextPositions[i];
+    if (target < 0 || target >= cells || seen[target] >= 0) return false;
+    seen[target] = i;
+    if (i == towSharedAgent && towCarrying) continue;
+    const other = agentAt[target];
+    if (other >= 0 && other != i && nextPositions[other] == positions[i] &&
+        target != positions[i]) return false;
+  }
+  if (!hasTow) return true;
+  const overlap = seen[towNext];
+  return overlap < 0 || overlap == towPickupAgent || overlap == towSharedAgent;
+}
+
 export function plan(): void {
   agentAt.fill(-1);
   occupiedNext.fill(-1);
   nextPositions.fill(-1);
   for (let i: i32 = 0; i < agents; ++i) {
-    agentAt[positions[i]] = i;
+    if (i != towSharedAgent) agentAt[positions[i]] = i;
     buildPreferences(i);
     order[i] = i;
   }
+  if (towCell >= 0 && towCell < cells) agentAt[towCell] = agents;
   for (let i: i32 = 1; i < agents; ++i) {
     const value = order[i];
     let j = i - 1;
@@ -361,15 +459,20 @@ export function plan(): void {
   for (let i: i32 = 0; i < agents; ++i) {
     if (failed[i] != 0 || pinned[i] != 0) {
       nextPositions[i] = positions[i];
-      occupiedNext[positions[i]] = i;
+      if (i != towSharedAgent || !towCarrying) occupiedNext[positions[i]] = i;
     }
   }
+  let valid = assignTow();
   for (let rank: i32 = 0; rank < agents; ++rank) {
     const agent = order[rank];
-    if (nextPositions[agent] < 0 && !assignPIBT(agent, 0)) {
-      nextPositions[agent] = positions[agent];
-      occupiedNext[positions[agent]] = agent;
-    }
+    if (nextPositions[agent] < 0 && !assignPIBT(agent, 0)) valid = false;
+  }
+  if (valid && !validJointPlan()) valid = false;
+  if (!valid) {
+    // A blocked inheritance chain cannot be repaired by forcing its agent to
+    // wait: another agent may already have reserved that cell. Hold everyone.
+    for (let i: i32 = 0; i < agents; ++i) nextPositions[i] = positions[i];
+    nextPositions[agents] = towCell;
   }
   for (let i: i32 = 0; i < agents; ++i) {
     const action = actionBetween(positions[i], nextPositions[i]);
@@ -385,4 +488,5 @@ export function observationsPointer(): usize { return observations.dataStart; }
 export function chatPointer(): usize { return chat.dataStart; }
 export function probabilitiesPointer(): usize { return probabilities.dataStart; }
 export function nextPositionsPointer(): usize { return nextPositions.dataStart; }
+export function getTowNext(): i32 { return nextPositions[agents]; }
 export function executedActionsPointer(): usize { return executedActions.dataStart; }

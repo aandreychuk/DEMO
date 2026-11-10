@@ -12,7 +12,7 @@ type MazeCore = {
   configure: (width: number, height: number, agents: number) => void;
   setWall: (cell: number, value: number) => void;
   setAgentState: (agent: number, position: number, goal: number, loaded: number, failed: number, pinned: number) => void;
-  setTow: (current: number, previous: number) => void;
+  setTow: (current: number, goal: number, pickupAgent: number, sharedAgent: number, carrying: number) => void;
   buildInputs: () => void;
   plan: () => void;
   observationsPointer: () => number;
@@ -85,7 +85,7 @@ function resetScenario(): void {
 }
 
 function syncCore(): void {
-  core.setTow(-1, -1);
+  core.setTow(-1, -1, -1, -1, 0);
   for (let i = 0; i < positions.length; i++) {
     core.setAgentState(i, positions[i], goals[i], 0, 0, finished[i]);
   }

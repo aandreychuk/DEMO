@@ -49,7 +49,7 @@ type WasmCore = {
   clearPallets: () => void;
   setPallet: (cell: number, value: number) => void;
   setAgentState: (index: number, position: number, goal: number, loaded: number, failed: number, pinned: number) => void;
-  setTow: (current: number, previous: number) => void;
+  setTow: (current: number, goal: number, pickupAgent: number, sharedAgent: number, carrying: number) => void;
   resetHistory: () => void;
   buildInputs: () => void;
   plan: () => void;
@@ -57,6 +57,7 @@ type WasmCore = {
   chatPointer: () => number;
   probabilitiesPointer: () => number;
   nextPositionsPointer: () => number;
+  getTowNext: () => number;
   executedActionsPointer: () => number;
 };
 type ControlMessage = {
@@ -176,7 +177,6 @@ let pendingTasks: number[] = [];
 let pendingCursor = 0;
 
 let towPosition = -1;
-let towPrevious = -1;
 let towState = 0;
 let towTarget = -1;
 let towLoadingDwell = 0;
@@ -449,7 +449,6 @@ function resetSimulation(count: number): void {
     if (!assignTask(i)) goals[i] = positions[i];
   }
   towPosition = cell(layout.towDepot.x, layout.towDepot.y);
-  towPrevious = -1;
   towState = 0;
   towTarget = -1;
   towLoadingDwell = 0;
@@ -480,7 +479,18 @@ function syncCore(): void {
   for (let i = 0; i < agentCount; i++) {
     core.setAgentState(i, positions[i], goals[i], loaded[i], failed[i], failed[i] || dwell[i] > 0 ? 1 : 0);
   }
-  core.setTow(towPosition, towPrevious);
+  const towGoal = towState === 1 && towTarget >= 0 ? positions[towTarget]
+    : towState === 2 ? cell(layout.repairStation.x, layout.repairStation.y)
+    : towState === 3 ? cell(layout.towDepot.x, layout.towDepot.y)
+    : towPosition;
+  let sharedAgent = towState === 2 || towState === 4 ? towTarget : -1;
+  if (towState === 3) {
+    for (let i = 0; i < agentCount; i++) {
+      if (recovery[i] === 3 && positions[i] === towPosition) { sharedAgent = i; break; }
+    }
+  }
+  core.setTow(towPosition, towGoal, towState === 1 ? towTarget : -1,
+    sharedAgent, towState === 2 || towState === 4 ? 1 : 0);
 }
 
 function dispatchTow(): void {
@@ -495,44 +505,10 @@ function dispatchTow(): void {
   }
 }
 
-function towNext(start: number, goalsList: number[]): number {
-  const isGoal = new Uint8Array(map.blocked.length);
-  for (const goal of goalsList) if (goal >= 0) isGoal[goal] = 1;
-  if (isGoal[start]) return start;
-  const blocked = map.blocked.slice();
-  for (const service of serviceCells()) blocked[service] = 1;
-  for (let id = 0; id < palletPresent.length; id++) {
-    if (palletPresent[id] && palletPositions[id] >= 0) blocked[palletPositions[id]] = 1;
-  }
-  blocked[start] = 0;
-  for (const goal of goalsList) if (goal >= 0) blocked[goal] = 0;
-  const parent = new Int32Array(blocked.length); parent.fill(-1);
-  const queue = new Int32Array(blocked.length);
-  let head = 0; let tail = 0;
-  queue[tail++] = start; parent[start] = start;
-  let reached = -1;
-  const offsets = [-map.width, map.width, -1, 1];
-  while (head < tail && reached < 0) {
-    const current = queue[head++];
-    for (const offset of offsets) {
-      const next = current + offset;
-      if (next < 0 || next >= blocked.length) continue;
-      if ((offset === -1 || offset === 1) && yOf(next) !== yOf(current)) continue;
-      if (blocked[next] || parent[next] >= 0) continue;
-      parent[next] = current;
-      if (isGoal[next]) { reached = next; break; }
-      queue[tail++] = next;
-    }
-  }
-  if (reached < 0) return start;
-  while (parent[reached] !== start) reached = parent[reached];
-  return reached;
-}
-
-function advanceRecovery(): void {
-  towPrevious = -1;
+function advanceRepairs(): void {
   for (let i = 0; i < agentCount; i++) {
     if (recovery[i] !== 3) continue;
+    if (towState === 3 && positions[i] === towPosition) continue;
     if (repairDwell[i] > 0) { repairDwell[i]--; continue; }
     failed[i] = 0;
     if (recoveringPallet[i] && taskIndex[i] >= 0) {
@@ -547,10 +523,12 @@ function advanceRecovery(): void {
     }
   }
   dispatchTow();
+}
+
+function advanceTow(next: number): void {
   if (towState === 1 && towTarget >= 0) {
     const pickup = positions[towTarget];
-    const next = towNext(towPosition, [pickup]);
-    if (next !== towPosition) { towPrevious = towPosition; towPosition = next; }
+    towPosition = next;
     if (towPosition === pickup) { towState = 4; towLoadingDwell = TOW_LOADING_DWELL; }
   } else if (towState === 4 && towTarget >= 0) {
     if (towLoadingDwell > 0) towLoadingDwell--;
@@ -562,11 +540,8 @@ function advanceRecovery(): void {
     }
   } else if (towState === 2 && towTarget >= 0) {
     const repair = cell(layout.repairStation.x, layout.repairStation.y);
-    const next = towNext(towPosition, [repair]);
-    if (next !== towPosition) {
-      towPrevious = towPosition; towPosition = next;
-      positions[towTarget] = towPosition; goals[towTarget] = towPosition;
-    }
+    towPosition = next;
+    positions[towTarget] = towPosition; goals[towTarget] = towPosition;
     if (towPosition === repair) {
       positions[towTarget] = repair; goals[towTarget] = repair;
       recovery[towTarget] = 3; repairDwell[towTarget] = REPAIR_DWELL;
@@ -574,8 +549,7 @@ function advanceRecovery(): void {
     }
   } else if (towState === 3) {
     const depot = cell(layout.towDepot.x, layout.towDepot.y);
-    const next = towNext(towPosition, [depot]);
-    if (next !== towPosition) { towPrevious = towPosition; towPosition = next; }
+    towPosition = next;
     if (towPosition === depot) { towState = 0; dispatchTow(); }
   }
 }
@@ -626,6 +600,7 @@ async function inferAndPlan(expectedGeneration: number): Promise<boolean> {
   core.plan();
   const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), MAX_AGENTS);
   for (let i = 0; i < agentCount; i++) positions[i] = next[i];
+  advanceTow(core.getTowNext());
   return true;
 }
 
@@ -751,7 +726,7 @@ async function tick(): Promise<void> {
   stepping = true;
   const tickGeneration = generation;
   try {
-    advanceRecovery();
+    advanceRepairs();
     if (!await inferAndPlan(tickGeneration)) return;
     processTaskArrivals();
     step++;

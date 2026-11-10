@@ -457,7 +457,6 @@ int main(int argc, char** argv)
     Vertex* repair_station = nullptr;
     Vertex* tow_depot = nullptr;
     Vertex* tow_position = nullptr;
-    Vertex* tow_previous_position = nullptr;
     TowState tow_state = TowState::Idle;
     int tow_target = -1;
     int tow_loading_dwell_remaining = 0;
@@ -642,18 +641,13 @@ int main(int argc, char** argv)
         }
         for (int other = 0; other < static_cast<int>(ins.N); ++other) {
           if (!failed[other] || other == i) continue;
+          if (other == tow_target &&
+              (tow_state == TowState::Loading ||
+               tow_state == TowState::ToRepair)) continue;
           const int vertex_id = positions[other]->id;
           if (blocked_mask[vertex_id]) continue;
           ids.push_back(vertex_id);
           blocked_mask[vertex_id] = true;
-        }
-        for (auto* tow_cell : {tow_previous_position, tow_position}) {
-          if (tow_cell == nullptr || tow_cell == positions[i] ||
-              blocked_mask[tow_cell->id]) {
-            continue;
-          }
-          ids.push_back(tow_cell->id);
-          blocked_mask[tow_cell->id] = true;
         }
         distances.set_goal(i, ins.goals[i], &blocked_mask);
       }
@@ -701,9 +695,11 @@ int main(int argc, char** argv)
 
     auto advance_recovery = [&]() {
       bool changed = false;
-      tow_previous_position = nullptr;
       for (int i = 0; i < static_cast<int>(ins.N); ++i) {
         if (recovery_state[i] != RecoveryState::Repairing) continue;
+        if (tow_state == TowState::ToDepot && current[i] == tow_position) {
+          continue;
+        }
         if (repair_dwell_remaining[i] > 0) {
           --repair_dwell_remaining[i];
           continue;
@@ -725,11 +721,11 @@ int main(int argc, char** argv)
       }
 
       changed = dispatch_tow() || changed;
+      if (args.mode == "pibt") return changed;
       if (tow_state == TowState::ToAgent && tow_target >= 0) {
         auto* pickup_cell = current[tow_target];
         auto* next_tow = tow_next({pickup_cell});
         if (next_tow != tow_position) {
-          tow_previous_position = tow_position;
           tow_position = next_tow;
           changed = true;
         }
@@ -752,7 +748,6 @@ int main(int argc, char** argv)
       } else if (tow_state == TowState::ToRepair && tow_target >= 0) {
         auto* next_tow = tow_next({repair_station});
         if (next_tow != tow_position) {
-          tow_previous_position = tow_position;
           tow_position = next_tow;
           current[tow_target] = tow_position;
           ins.goals[tow_target] = tow_position;
@@ -770,7 +765,6 @@ int main(int argc, char** argv)
       } else if (tow_state == TowState::ToDepot) {
         auto* next_tow = tow_next({tow_depot});
         if (next_tow != tow_position) {
-          tow_previous_position = tow_position;
           tow_position = next_tow;
           changed = true;
         }
@@ -781,6 +775,82 @@ int main(int argc, char** argv)
         }
       }
       return changed;
+    };
+
+    auto tow_preferences = [&](Vertex* goal) {
+      std::vector<Vertex*> result;
+      if (goal == tow_position) {
+        result.push_back(tow_position);
+        return result;
+      }
+      std::vector<char> blocked(ins.G->size(), false);
+      for (auto* station : station_vertices) blocked[station->id] = true;
+      for (int pallet_id = 0;
+           pallet_id < static_cast<int>(pallet_positions.size());
+           ++pallet_id) {
+        if (pallet_present[pallet_id] && pallet_positions[pallet_id] != nullptr) {
+          blocked[pallet_positions[pallet_id]->id] = true;
+        }
+      }
+      blocked[tow_position->id] = false;
+      blocked[goal->id] = false;
+      std::vector<int> distance(ins.G->size(), -1);
+      std::deque<Vertex*> queue;
+      distance[goal->id] = 0;
+      queue.push_back(goal);
+      while (!queue.empty()) {
+        auto* vertex = queue.front();
+        queue.pop_front();
+        for (auto* neighbor : vertex->neighbor) {
+          if (blocked[neighbor->id] || distance[neighbor->id] >= 0) continue;
+          distance[neighbor->id] = distance[vertex->id] + 1;
+          queue.push_back(neighbor);
+        }
+      }
+      for (auto* neighbor : tow_position->neighbor) {
+        if (!blocked[neighbor->id]) result.push_back(neighbor);
+      }
+      std::stable_sort(result.begin(), result.end(), [&](Vertex* left, Vertex* right) {
+        const int ld = distance[left->id] < 0 ? ins.G->size() : distance[left->id];
+        const int rd = distance[right->id] < 0 ? ins.G->size() : distance[right->id];
+        return ld < rd;
+      });
+      result.push_back(tow_position);
+      return result;
+    };
+
+    auto apply_tow_step = [&](Vertex* next_tow, Config& next) {
+      if (next_tow == nullptr) next_tow = tow_position;
+      const bool moved = next_tow != tow_position;
+      tow_position = next_tow;
+      if (tow_state == TowState::ToAgent && tow_target >= 0) {
+        if (tow_position == next[tow_target]) {
+          tow_state = TowState::Loading;
+          tow_loading_dwell_remaining = kTowLoadingDwellSteps;
+        }
+      } else if (tow_state == TowState::Loading && tow_target >= 0) {
+        if (tow_loading_dwell_remaining > 0) --tow_loading_dwell_remaining;
+        if (tow_loading_dwell_remaining == 0) {
+          next[tow_target] = tow_position;
+          ins.goals[tow_target] = tow_position;
+          recovery_state[tow_target] = RecoveryState::InTransit;
+          tow_state = TowState::ToRepair;
+        }
+      } else if (tow_state == TowState::ToRepair && tow_target >= 0) {
+        next[tow_target] = tow_position;
+        ins.goals[tow_target] = tow_position;
+        if (tow_position == repair_station) {
+          recovery_state[tow_target] = RecoveryState::Repairing;
+          repair_dwell_remaining[tow_target] = kRepairDwellSteps;
+          tow_target = -1;
+          tow_state = TowState::ToDepot;
+        }
+      } else if (tow_state == TowState::ToDepot && tow_position == tow_depot) {
+        tow_state = TowState::Idle;
+        dispatch_tow();
+      }
+      return moved || tow_state == TowState::Loading ||
+             tow_state == TowState::ToRepair;
     };
 
     auto emit_stream_frame = [&](int step, const Config& positions) {
@@ -998,6 +1068,7 @@ int main(int argc, char** argv)
       if (lifelong && advance_recovery()) refresh_navigation(current);
       std::vector<int> actions(ins.N, 0);
       Config next(ins.N, nullptr);
+      bool tow_navigation_changed = false;
       if (args.mode == "soft") {
         const auto probs =
             raw_policy->get_dmm_action_probabilities(current, &history);
@@ -1065,17 +1136,13 @@ int main(int argc, char** argv)
             }
             for (int other = 0; other < static_cast<int>(ins.N); ++other) {
               if (!failed[other] || other == i) continue;
+              if (other == tow_target &&
+                  (tow_state == TowState::Loading ||
+                   tow_state == TowState::ToRepair)) continue;
               const int vertex_id = current[other]->id;
               if (std::find(forbidden.begin(), forbidden.end(), vertex_id) ==
                   forbidden.end()) {
                 forbidden.push_back(vertex_id);
-              }
-            }
-            for (auto* tow_cell : {tow_previous_position, tow_position}) {
-              if (tow_cell != nullptr &&
-                  std::find(forbidden.begin(), forbidden.end(),
-                            tow_cell->id) == forbidden.end()) {
-                forbidden.push_back(tow_cell->id);
               }
             }
             if (service_dwell_remaining[i] > 0) {
@@ -1089,6 +1156,33 @@ int main(int argc, char** argv)
           }
         }
         Config repeated_escape_candidate;
+        TowPlan tow_plan;
+        if (lifelong) {
+          tow_plan.current = tow_position;
+          Vertex* goal = tow_position;
+          if (tow_state == TowState::ToAgent && tow_target >= 0) {
+            goal = current[tow_target];
+            tow_plan.pickup_agent = tow_target;
+          } else if (tow_state == TowState::ToRepair) {
+            goal = repair_station;
+          } else if (tow_state == TowState::ToDepot) {
+            goal = tow_depot;
+          }
+          if (tow_state == TowState::Loading ||
+              tow_state == TowState::ToRepair) {
+            tow_plan.shared_agent = tow_target;
+            tow_plan.carrying = true;
+          } else if (tow_state == TowState::ToDepot) {
+            for (int i = 0; i < static_cast<int>(ins.N); ++i) {
+              if (recovery_state[i] == RecoveryState::Repairing &&
+                  current[i] == tow_position) {
+                tow_plan.shared_agent = i;
+                break;
+              }
+            }
+          }
+          tow_plan.preferences = tow_preferences(goal);
+        }
         std::vector<std::vector<int>> dump_observations;
         std::vector<std::vector<int>> dump_chat;
         std::vector<uint8_t> dump_preferred;
@@ -1111,7 +1205,8 @@ int main(int argc, char** argv)
           const auto* forbidden =
               (lifelong || retries > 0) ? &forbidden_vertex_ids : nullptr;
           if (!active_pibt->set_new_config(current, next, order, {}, &history,
-                                           forbidden)) {
+                                           forbidden,
+                                           lifelong ? &tow_plan : nullptr)) {
             if (repeated_escape_candidate.empty()) {
               throw std::runtime_error(
                   "PIBT failed to produce a joint action");
@@ -1239,6 +1334,9 @@ int main(int argc, char** argv)
           ++retries;
           ++repeat_retry_attempts;
         }
+        if (lifelong) {
+          tow_navigation_changed = apply_tow_step(tow_plan.next, next);
+        }
         if (dump_pending &&
             (!args.dump_training_repeat_only || saw_repeated_candidate) &&
             (!args.dump_training_fallback_only || fallback_active)) {
@@ -1319,7 +1417,7 @@ int main(int argc, char** argv)
         }
       }
       current = std::move(next);
-      bool navigation_changed = false;
+      bool navigation_changed = tow_navigation_changed;
       if (lifelong) {
         for (int i = 0; i < static_cast<int>(ins.N); ++i) {
           if (service_dwell_remaining[i] > 0) {

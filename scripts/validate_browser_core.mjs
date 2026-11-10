@@ -43,9 +43,10 @@ function views() {
   };
 }
 
+let ordinaryMoves = 0;
 for (let tick = 0; tick < 10; tick++) {
   for (let i = 0; i < count; i++) core.setAgentState(i, positions[i], goals[i], 0, 0, 0);
-  core.setTow(-1, -1);
+  core.setTow(-1, -1, -1, -1, 0);
   core.buildInputs();
   let current = views();
   for (const token of current.observations) {
@@ -90,6 +91,7 @@ for (let tick = 0; tick < 10; tick++) {
   for (let i = 0; i < count; i++) {
     const target = current.next[i];
     if (target < 0 || target >= cells) throw new Error(`invalid target for agent ${i}`);
+    if (target !== positions[i]) ordinaryMoves++;
     if (occupied.has(target)) throw new Error(`vertex collision at tick ${tick}, cell ${target}`);
     occupied.add(target);
     const delta = Math.abs(target - positions[i]);
@@ -102,5 +104,75 @@ for (let tick = 0; tick < 10; tick++) {
   }
   for (let i = 0; i < count; i++) positions[i] = current.next[i];
 }
+if (ordinaryMoves === 0) throw new Error('ordinary agents froze without a tow unit');
 
 console.log('browser core validation: 10 collision-free ticks, token ranges valid');
+
+// The tow unit has the highest priority, but the robot in its next cell must
+// move as part of the same joint action. Pickup and carrying are the only
+// intentional overlaps with the failed robot.
+core.configure(5, 3, 2);
+const at = (x, y) => y * 5 + x;
+core.setStation(at(4, 1), 1);
+let robot = at(2, 1);
+const failedRobot = at(3, 1);
+const planTow = (tow, goal, pickup, shared, carrying) => {
+  core.setAgentState(0, robot, at(0, 1), 0, 0, 0);
+  core.setAgentState(1, failedRobot, failedRobot, 0, 1, 1);
+  core.setTow(tow, goal, pickup, shared, carrying);
+  core.buildInputs();
+  const probs = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), 10);
+  probs.fill(0);
+  probs[0] = 1;
+  probs[2] = 0.8;
+  core.plan();
+  const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), 2);
+  return { robot: next[0], failed: next[1], tow: core.getTowNext() };
+};
+let move = planTow(at(1, 1), failedRobot, 1, -1, 0);
+if (move.tow !== at(2, 1) || move.robot === move.tow || move.failed !== failedRobot) {
+  throw new Error(`tow did not displace the active robot: ${JSON.stringify(move)}`);
+}
+robot = move.robot;
+move = planTow(at(2, 1), failedRobot, 1, -1, 0);
+if (move.tow !== failedRobot || move.robot === move.tow) {
+  throw new Error(`tow did not reach the failed robot: ${JSON.stringify(move)}`);
+}
+move = planTow(failedRobot, failedRobot, -1, 1, 1);
+if (move.tow !== failedRobot || move.failed !== failedRobot) {
+  throw new Error(`tow did not wait during loading: ${JSON.stringify(move)}`);
+}
+move = planTow(failedRobot, at(4, 1), -1, 1, 1);
+if (move.tow !== at(4, 1) || move.robot === move.tow) {
+  throw new Error(`tow did not carry the failed robot to repair: ${JSON.stringify(move)}`);
+}
+console.log('tow PIBT validation: displacement, pickup, loading, transport');
+
+core.configure(12, 10, 50);
+const crowdedPositions = Array.from({ length: 50 }, (_, i) => i + 1);
+const crowdedGoals = crowdedPositions.map((_, i) => crowdedPositions[(i * 13 + 17) % 50]);
+let crowdedTow = 0;
+for (let tick = 0; tick < 40; tick++) {
+  for (let i = 0; i < 50; i++) {
+    core.setAgentState(i, crowdedPositions[i], crowdedGoals[i], 0, 0, 0);
+  }
+  core.setTow(crowdedTow, 119, -1, -1, 0);
+  core.buildInputs();
+  const scores = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), 250);
+  for (let i = 0; i < scores.length; i++) scores[i] = ((i * 31 + tick * 7) % 97) / 97;
+  core.plan();
+  const planned = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), 50);
+  const towPlanned = core.getTowNext();
+  const occupied = new Set([towPlanned]);
+  for (let i = 0; i < 50; i++) {
+    if (occupied.has(planned[i])) throw new Error(`tow/crowd vertex collision at tick ${tick}`);
+    occupied.add(planned[i]);
+    if (planned[i] === crowdedTow && towPlanned === crowdedPositions[i]) {
+      throw new Error(`tow/crowd swap collision at tick ${tick}`);
+    }
+  }
+  for (let i = 0; i < 50; i++) crowdedPositions[i] = planned[i];
+  crowdedTow = towPlanned;
+}
+if (crowdedTow === 0) throw new Error('tow never moved through the crowd');
+console.log('tow PIBT validation: 40 collision-free crowded ticks');
