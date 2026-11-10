@@ -16,6 +16,7 @@ import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
+import './qr-links.css';
 
 const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
@@ -66,6 +67,9 @@ const FALLBACK_STEP_SECONDS = 1.44;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 const USE_SERVER_RUNTIME = import.meta.env.VITE_MAPF_RUNTIME === 'server';
+const DEFAULT_CAMERA_ALPHA = -Math.PI / 2;
+const DEFAULT_CAMERA_BETA = 0.34;
+const DEFAULT_CAMERA_RADIUS = 46;
 
 type LiveFrame = {
   positions: Float32Array;
@@ -144,7 +148,10 @@ const scene = new Scene(engine);
 scene.clearColor = new Color4(0.018, 0.035, 0.055, 1);
 scene.ambientColor = new Color3(0.09, 0.15, 0.2);
 
-const camera = new ArcRotateCamera('camera', -Math.PI / 4, 1.02, 37.5, new Vector3(0, 0, 0), scene);
+const camera = new ArcRotateCamera(
+  'camera', DEFAULT_CAMERA_ALPHA, DEFAULT_CAMERA_BETA,
+  DEFAULT_CAMERA_RADIUS, new Vector3(0, 0, 0), scene,
+);
 camera.attachControl(canvas, true);
 camera.lowerRadiusLimit = 12;
 camera.upperRadiusLimit = 84;
@@ -2918,9 +2925,9 @@ document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (e
 });
 
 document.querySelector('#reset-camera')!.addEventListener('click', () => {
-  camera.alpha = -Math.PI / 4;
-  camera.beta = 1.02;
-  camera.radius = 37.5;
+  camera.alpha = DEFAULT_CAMERA_ALPHA;
+  camera.beta = DEFAULT_CAMERA_BETA;
+  camera.radius = DEFAULT_CAMERA_RADIUS;
   camera.target.set(0, 0, 0);
 });
 

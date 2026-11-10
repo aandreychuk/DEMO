@@ -1,4 +1,5 @@
 import './maze.css';
+import './qr-links.css';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
 
 const ROUNDS = 4;

@@ -1,0 +1,66 @@
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.qr-links { position: relative; flex: none; font-family: Inter, system-ui, sans-serif; }
+.qr-links summary {
+  list-style: none;
+  padding: 8px 11px;
+  border: 1px solid rgba(113, 202, 232, .22);
+  border-radius: 7px;
+  color: #b8deeb;
+  background: rgba(67, 183, 222, .1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qr-links summary::-webkit-details-marker { display: none; }
+.qr-links summary:hover, .qr-links[open] summary { color: #e8faff; background: rgba(67, 183, 222, .2); }
+.qr-links summary:focus-visible { outline: 2px solid #5ce1ff; outline-offset: 3px; }
+
+.qr-panel {
+  position: absolute;
+  top: calc(100% + 17px);
+  right: 0;
+  width: min(480px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid rgba(135, 219, 255, .23);
+  border-radius: 12px;
+  background: #091a28;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.qr-panel > strong { display: block; margin-bottom: 13px; color: #def7ff; font-size: 13px; }
+.qr-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.qr-grid a {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  padding: 9px 7px 10px;
+  border: 1px solid rgba(135, 219, 255, .13);
+  border-radius: 8px;
+  color: #dff6ff;
+  text-align: center;
+  text-decoration: none;
+  background: rgba(40, 105, 136, .12);
+}
+.qr-grid a:hover, .qr-grid a:focus-visible { border-color: #5ce1ff; background: rgba(40, 105, 136, .25); }
+.qr-grid img { display: block; width: min(100%, 128px); height: auto; aspect-ratio: 1; padding: 4px; border-radius: 5px; background: white; }
+.qr-grid span { margin-top: 9px; font-size: 11px; font-weight: 600; }
+.qr-grid small { overflow: hidden; width: 100%; margin-top: 4px; color: #83a5b6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .header-actions { gap: 8px; }
+  .qr-panel { padding: 12px; }
+  .qr-grid { gap: 6px; }
+  .qr-grid a { padding: 6px 4px 8px; }
+}
+
+@media (max-width: 850px) {
+  .maze-source { display: none; }
+}
