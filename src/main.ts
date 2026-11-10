@@ -251,7 +251,9 @@ const palletMotions: Array<PalletMotion | null> = Array.from(
 const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
 const cameraKeys = new Set<string>();
 const driveKeys = new Set<string>();
-const driveActionByKey: Readonly<Record<string, number>> = { w: 1, s: 2, a: 3, d: 4 };
+const driveTurnByKey: Readonly<Record<string, number>> = { w: 2, a: -1, s: 0, d: 1 };
+const gridActionsByTurn = [4, 2, 3, 1]; // East, south, west, north in world space.
+let sentDriveDirection = 0;
 const cameraKeyByCode: Readonly<Record<string, string>> = {
   KeyW: 'w',
   KeyA: 'a',
@@ -416,7 +418,7 @@ function createSelectionHalo(): Mesh {
   return halo;
 }
 
-function createTaskMarkers(): { pallet: Mesh; station: Mesh; reload: Mesh } {
+function createTaskMarkers(): { pallet: Mesh; station: Mesh; reload: Mesh; returnCell: Mesh } {
   const pallet = MeshBuilder.CreateTorus('selected-task-pallet', {
     diameter: CELL_SIZE * 1.08,
     thickness: 0.055,
@@ -461,18 +463,35 @@ function createTaskMarkers(): { pallet: Mesh; station: Mesh; reload: Mesh } {
   reload.isVisible = false;
   reload.alwaysSelectAsActiveMesh = true;
 
+  const returnCell = MeshBuilder.CreateBox('selected-task-return', {
+    width: CELL_SIZE * 0.88,
+    height: 0.045,
+    depth: CELL_SIZE * 0.88,
+  }, scene);
+  const returnMaterial = new StandardMaterial('selected-task-return-material', scene);
+  returnMaterial.diffuseColor = Color3.FromHexString('#58dcff');
+  returnMaterial.emissiveColor = Color3.FromHexString('#21a8dd');
+  returnMaterial.alpha = 0.64;
+  returnMaterial.disableLighting = true;
+  returnCell.material = returnMaterial;
+  returnCell.isPickable = false;
+  returnCell.isVisible = false;
+  returnCell.alwaysSelectAsActiveMesh = true;
+
   const markerGlow = new GlowLayer('task-marker-glow', scene, { blurKernelSize: 22 });
   markerGlow.intensity = 0.72;
   markerGlow.addIncludedOnlyMesh(pallet);
   markerGlow.addIncludedOnlyMesh(station);
   markerGlow.addIncludedOnlyMesh(reload);
-  return { pallet, station, reload };
+  markerGlow.addIncludedOnlyMesh(returnCell);
+  return { pallet, station, reload, returnCell };
 }
 
 function hideTaskMarkers(): void {
   taskMarkers.pallet.isVisible = false;
   taskMarkers.station.isVisible = false;
   taskMarkers.reload.isVisible = false;
+  taskMarkers.returnCell.isVisible = false;
 }
 
 function updateTaskMarkers(now: number): void {
@@ -495,8 +514,10 @@ function updateTaskMarkers(now: number): void {
     return;
   }
 
-  if ((frame.statuses[id] & 2) !== 0) {
+  const loaded = (frame.statuses[id] & 2) !== 0;
+  if (loaded) {
     taskMarkers.pallet.position.set(matrices[id * 16 + 12], 1.02, matrices[id * 16 + 14]);
+    taskMarkers.returnCell.position.copyFrom(worldAt(pallet.x, pallet.z, 0.065));
   } else {
     taskMarkers.pallet.position.copyFrom(worldAt(
       palletX >= 0 ? palletX : pallet.x,
@@ -517,6 +538,7 @@ function updateTaskMarkers(now: number): void {
   taskMarkers.station.isVisible = true;
   taskMarkers.reload.isVisible = reloadX >= 0 && reloadZ >= 0
     && (((frame.statuses[id] & 8) !== 0) || frame.palletItems[id] <= 1);
+  taskMarkers.returnCell.isVisible = loaded;
 }
 
 function createAgentPicker(): Mesh {
@@ -2627,6 +2649,7 @@ function renderAgentPanel(): void {
     stageElements[index].className = state;
     routeElements[index].className = state;
   }
+  routeElements[3].classList.toggle('return-marked', loaded && pallet !== null);
 
   document.querySelector('#agent-distance')!.textContent = stats.distance.toFixed(0);
   document.querySelector('#agent-waits')!.textContent = String(stats.waitTicks);
@@ -2667,6 +2690,7 @@ function setControlledAgent(agent: number): void {
   controlledAgentId = agent;
   cameraKeys.clear();
   driveKeys.clear();
+  sentDriveDirection = 0;
   sendControl('control-agent', { agent });
 }
 
@@ -2677,7 +2701,13 @@ function clearMovementKeys(): void {
 
 function sendDriveDirection(): void {
   let direction = 0;
-  for (const key of driveKeys) direction = driveActionByKey[key];
+  // Snap camera-relative directions to the four legal moves of the grid.
+  const cameraTurn = Math.round(camera.alpha / (Math.PI / 2));
+  for (const key of driveKeys) {
+    direction = gridActionsByTurn[mod(cameraTurn + driveTurnByKey[key], gridActionsByTurn.length)];
+  }
+  if (direction === sentDriveDirection) return;
+  sentDriveDirection = direction;
   sendControl('drive-agent', { agent: controlledAgentId, value: direction });
 }
 
@@ -2801,6 +2831,7 @@ let telemetryElapsed = 0;
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   updateCameraMovement(dt);
+  if (driveKeys.size > 0) sendDriveDirection();
   if (!editorActive) {
     if (!paused && !live) simTime += dt * speed;
     if (live) updateLive(performance.now());
