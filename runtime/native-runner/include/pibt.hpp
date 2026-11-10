@@ -13,6 +13,15 @@
 #include "policy.hpp"
 #include "utils.hpp"
 
+struct TowPlan {
+  Vertex* current = nullptr;
+  Vertex* next = nullptr;
+  std::vector<Vertex*> preferences;
+  int pickup_agent = -1;
+  int shared_agent = -1;
+  bool carrying = false;
+};
+
 struct PIBT {
   const Instance *ins;
   std::mt19937 MT;
@@ -61,11 +70,15 @@ struct PIBT {
                       const std::set<int> &default_policy_agents,
                       const std::vector<std::array<int, LC_MAPF_ACTION_HISTORY_LEN>> *action_history = nullptr,
                       const std::vector<std::vector<int>>
-                          *forbidden_vertex_ids = nullptr);
+                          *forbidden_vertex_ids = nullptr,
+                      TowPlan* tow = nullptr);
   bool funcPIBT(const int i, const Config &Q_from, Config &Q_to,
                 const std::set<int> &default_policy_agents,
                 const std::vector<std::vector<int>>
                     *forbidden_vertex_ids = nullptr);
+  bool funcTowPIBT(const Config &Q_from, Config &Q_to, TowPlan& tow,
+                   const std::set<int>& default_policy_agents,
+                   const std::vector<std::vector<int>>* forbidden_vertex_ids);
 
   // Get recursion metrics
   int get_recursion_count() const { return recursion_count; }
