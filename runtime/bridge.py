@@ -212,6 +212,21 @@ class NativeSession:
         self.process = process
         self.agent_count = agent_count
         self.diagnostics: deque[str] = deque(maxlen=40)
+        self.controlled_agent = -1
+        self.held_move = 0
+        self.pending_move = 0
+
+    def set_controlled_agent(self, agent: int) -> None:
+        self.controlled_agent = agent
+        self.held_move = 0
+        self.pending_move = 0
+
+    def drive_agent(self, agent: int, move: int) -> None:
+        if self.controlled_agent < 0 or agent != self.controlled_agent:
+            return
+        self.held_move = move
+        if move:
+            self.pending_move = move
 
     async def read_frame(self) -> NativeFrame:
         if self.process.stdout is None:
@@ -234,7 +249,12 @@ class NativeSession:
     async def step(self) -> NativeFrame:
         if self.process.stdin is None or self.process.returncode is not None:
             raise RuntimeError("native simulator is not running")
-        self.process.stdin.write(b"step\n")
+        command = "step\n"
+        if self.controlled_agent >= 0:
+            move = self.pending_move or self.held_move
+            self.pending_move = 0
+            command = f"drive {self.controlled_agent} {move}\nstep\n"
+        self.process.stdin.write(command.encode("ascii"))
         await self.process.stdin.drain()
         return await self.read_frame()
 
@@ -620,9 +640,26 @@ class Bridge:
                         speed = min(
                             5.0, max(0.25, float(message.get("value", 1)))
                         )
+                    elif action == "control-agent":
+                        agent = message.get("agent")
+                        if agent == -1:
+                            session.set_controlled_agent(-1)
+                        elif (
+                            type(agent) is int
+                            and 0 <= agent < count
+                            and previous[agent].recovery_state == 0
+                        ):
+                            session.set_controlled_agent(agent)
+                    elif action == "drive-agent":
+                        agent = message.get("agent")
+                        move = message.get("value")
+                        if type(agent) is int and type(move) is int and 0 <= move <= 4:
+                            session.drive_agent(agent, move)
                     elif action == "fail":
                         agent = int(message.get("agent", -1))
                         if 0 <= agent < count:
+                            if agent == session.controlled_agent:
+                                session.set_controlled_agent(-1)
                             frame = await session.fail_agent(agent)
                             await socket.send(encode_frame(frame, previous))
                             previous = frame.states

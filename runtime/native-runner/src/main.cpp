@@ -1032,6 +1032,7 @@ int main(int argc, char** argv)
          (args.max_steps == 0 || step < args.max_steps) &&
          (lifelong || !solved);
          ++step) {
+      ManualMove manual;
       if (args.stream) {
         std::string command;
         while (std::getline(std::cin, command) &&
@@ -1039,7 +1040,23 @@ int main(int argc, char** argv)
           std::istringstream input(command);
           std::string action;
           int agent = -1;
-          if (input >> action >> agent && action == "fail" &&
+          input >> action;
+          if (action == "drive") {
+            int direction = 0;
+            if (lifelong && args.mode == "pibt" && input >> agent >> direction &&
+                agent >= 0 && agent < static_cast<int>(ins.N) &&
+                direction >= 0 && direction <= 4 &&
+                recovery_state[agent] == RecoveryState::Normal) {
+              manual.agent = agent;
+              for (auto* neighbor : current[agent]->neighbor) {
+                if (action_index(current[agent], neighbor) != direction) continue;
+                manual.target = neighbor;
+                break;
+              }
+            }
+            continue;
+          }
+          if (action == "fail" && input >> agent &&
               agent >= 0 && agent < static_cast<int>(ins.N) &&
               recovery_state[agent] == RecoveryState::Normal) {
             failed[agent] = true;
@@ -1206,7 +1223,7 @@ int main(int argc, char** argv)
               (lifelong || retries > 0) ? &forbidden_vertex_ids : nullptr;
           if (!active_pibt->set_new_config(current, next, order, {}, &history,
                                            forbidden,
-                                           lifelong ? &tow_plan : nullptr)) {
+                                           lifelong ? &tow_plan : nullptr, manual)) {
             if (repeated_escape_candidate.empty()) {
               throw std::runtime_error(
                   "PIBT failed to produce a joint action");

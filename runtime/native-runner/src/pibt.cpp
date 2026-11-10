@@ -49,7 +49,7 @@ bool PIBT::set_new_config(const Config &Q_from, Config &Q_to,
                           const std::vector<std::array<int, LC_MAPF_ACTION_HISTORY_LEN>> *action_history,
                           const std::vector<std::vector<int>>
                               *forbidden_vertex_ids,
-                          TowPlan* tow)
+                          TowPlan* tow, const ManualMove& manual)
 {
   bool success = true;
   Config joint_from = Q_from;
@@ -101,13 +101,18 @@ bool PIBT::set_new_config(const Config &Q_from, Config &Q_to,
     policy.set_preferences(Q_from, default_policy_agents, action_history);
     if (tow != nullptr && !funcTowPIBT(joint_from, joint_to, *tow,
                                       default_policy_agents,
-                                      forbidden_vertex_ids)) {
+                                      forbidden_vertex_ids, manual)) {
+      success = false;
+    }
+    if (success && manual.agent >= 0 && joint_to[manual.agent] == nullptr &&
+        !funcPIBT(manual.agent, joint_from, joint_to, default_policy_agents,
+                  forbidden_vertex_ids, manual)) {
       success = false;
     }
     for (auto i : order) {
       if (success && joint_to[i] == nullptr &&
           !funcPIBT(i, joint_from, joint_to, default_policy_agents,
-                    forbidden_vertex_ids)) {
+                    forbidden_vertex_ids, manual)) {
         success = false;
         break;
       }
@@ -199,7 +204,8 @@ bool PIBT::set_new_config(const Config &Q_from, Config &Q_to,
 
 bool PIBT::funcTowPIBT(const Config &Q_from, Config &Q_to, TowPlan& tow,
                        const std::set<int>& default_policy_agents,
-                       const std::vector<std::vector<int>>* forbidden_vertex_ids)
+                       const std::vector<std::vector<int>>* forbidden_vertex_ids,
+                       const ManualMove& manual)
 {
   for (auto* target : tow.preferences) {
     const int occupant = occupied_now[target->id];
@@ -220,7 +226,7 @@ bool PIBT::funcTowPIBT(const Config &Q_from, Config &Q_to, TowPlan& tow,
     if (occupant != NO_AGENT && occupant != N && !pickup_overlap &&
         Q_to[occupant] == nullptr &&
         !funcPIBT(occupant, Q_from, Q_to, default_policy_agents,
-                  forbidden_vertex_ids)) {
+                  forbidden_vertex_ids, manual)) {
       Q_to = before;
       occupied_next = reserved_before;
       continue;
@@ -233,7 +239,8 @@ bool PIBT::funcTowPIBT(const Config &Q_from, Config &Q_to, TowPlan& tow,
 bool PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to,
                     const std::set<int> &default_policy_agents,
                     const std::vector<std::vector<int>>
-                        *forbidden_vertex_ids)
+                        *forbidden_vertex_ids,
+                    const ManualMove& manual)
 {
   // Track recursion metrics
   recursion_count++;
@@ -247,14 +254,17 @@ bool PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to,
     displaced_on_entry[i] = true;
   }
 
-  const auto K = Q_from[i]->neighbor.size();
+  const int K = static_cast<int>(Q_from[i]->neighbor.size());
+  const bool controlled = i == manual.agent;
+  const auto origin = Q_from[i];
 
   // emulate swap
   auto swap_agent = NO_AGENT;
-  if (!policy.use_model ||
-      default_policy_agents.find(i) != default_policy_agents.end()) {
+  if (!controlled && (!policy.use_model ||
+      default_policy_agents.find(i) != default_policy_agents.end())) {
     swap_agent =
         is_swap_required_and_possible(i, Q_from, Q_to, policy.get(i, 0));
+    if (swap_agent == manual.agent) swap_agent = NO_AGENT;
     if (swap_agent != NO_AGENT) {
       std::reverse(policy.preferences[i].begin(),
                    policy.preferences[i].begin() + K + 1);
@@ -272,9 +282,14 @@ bool PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to,
   };
 
   // main loop
-  for (size_t k = 0; k < K + 1; ++k) {
-    const auto u = policy.get(i, k);
-    if (forbidden_vertex_ids != nullptr) {
+  // The tow chain can ask the controlled agent to yield. Otherwise try only
+  // the requested direction and waiting, without substituting a model move.
+  const int limit = controlled && occupied_next[origin->id] == NO_AGENT ? 0 : K + 1;
+  for (int k = controlled ? -2 : 0; k < limit; ++k) {
+    const auto u = k == -2 ? manual.target : k == -1 ? origin : policy.get(i, k);
+    if (u == nullptr || (k == -2 && u == origin)) continue;
+    if (controlled && k >= 0 && (u == manual.target || u == origin)) continue;
+    if (k != -1 && forbidden_vertex_ids != nullptr) {
       const auto &forbidden = (*forbidden_vertex_ids)[i];
       if (std::find(forbidden.begin(), forbidden.end(), u->id) !=
           forbidden.end()) {
@@ -297,7 +312,7 @@ bool PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to,
     // priority inheritance
     if (j != NO_AGENT && u != Q_from[i] && Q_to[j] == nullptr &&
         !funcPIBT(j, Q_from, Q_to, default_policy_agents,
-                  forbidden_vertex_ids)) {
+                  forbidden_vertex_ids, manual)) {
       continue;
     }
 
