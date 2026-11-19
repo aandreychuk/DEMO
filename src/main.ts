@@ -17,7 +17,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 import './qr-links.css';
-import { cameraStick, gamepadMoveKey, getActiveGamepad, type MoveKey } from './gamepad';
+import { cameraStick, GamepadButton, gamepadMoveKey, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
 import { fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage } from './i18n';
 
 initI18n();
@@ -272,8 +272,14 @@ const driveTurnByKey: Readonly<Record<MoveKey, number>> = { w: 2, a: -1, s: 0, d
 const gridActionsByTurn = [4, 2, 3, 1]; // East, south, west, north in world space.
 let sentDriveDirection = 0;
 let gamepadIndex = -1;
+let gamepadButtonState: number | null = null;
 let gamepadDriveKey: MoveKey | null = null;
 let gamepadDriveArmed = false;
+let followGamepadAgent = false;
+const gamepadReticle = document.querySelector<HTMLElement>('#gamepad-reticle')!;
+const gamepadHelp = document.querySelector<HTMLElement>('#gamepad-help')!;
+const aimWorld = Vector3.Zero();
+const aimProjected = Vector3.Zero();
 const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
   KeyW: 'w',
   KeyA: 'a',
@@ -2728,6 +2734,7 @@ function sendControl(action: string, extra: Record<string, unknown> = {}): void 
 }
 
 function setControlledAgent(agent: number): void {
+  if (controlledAgentId !== agent) followGamepadAgent = false;
   controlledAgentId = agent;
   cameraKeys.clear();
   driveKeys.clear();
@@ -2879,7 +2886,7 @@ function updateCameraMovement(dt: number, x: number, y: number): void {
   camera.target.z = Math.max(-maxZ, Math.min(maxZ, camera.target.z + (-x * forwardX - y * forwardZ) * distance));
 }
 
-function updateControls(dt: number): void {
+function updateControls(dt: number): Gamepad | null {
   const pad = getActiveGamepad();
   const index = pad?.index ?? -1;
   if (gamepadIndex !== index) {
@@ -2888,6 +2895,7 @@ function updateControls(dt: number): void {
       setControlledAgent(controlledAgentId);
     }
     gamepadIndex = index;
+    gamepadButtonState = null;
     gamepadDriveKey = null;
     gamepadDriveArmed = false;
   }
@@ -2916,6 +2924,73 @@ function updateControls(dt: number): void {
   }
   updateCameraMovement(dt, panX, panY);
   sendDriveDirection();
+  return pad;
+}
+
+function centerCameraOnAgent(agent: number): void {
+  camera.target.x = matrices[agent * 16 + 12];
+  camera.target.z = matrices[agent * 16 + 14];
+}
+
+function agentAtReticle(): number {
+  if (!liveCurrent) return -1;
+  const halfWidth = canvas.clientWidth / 2;
+  const halfHeight = canvas.clientHeight / 2;
+  const cursorX = gamepadReticle.offsetLeft;
+  const cursorY = gamepadReticle.offsetTop;
+  const viewProjection = scene.getTransformMatrix();
+  let nearest = -1;
+  let nearestDistance = 18 ** 2;
+  for (let agent = 0; agent < liveCurrent.statuses.length; agent++) {
+    const offset = agent * 16;
+    aimWorld.set(matrices[offset + 12], matrices[offset + 13] + 0.42, matrices[offset + 14]);
+    Vector3.TransformCoordinatesToRef(aimWorld, viewProjection, aimProjected);
+    if (aimProjected.z < 0 || aimProjected.z > 1) continue;
+    const dx = (1 + aimProjected.x) * halfWidth - cursorX;
+    const dy = (1 - aimProjected.y) * halfHeight - cursorY;
+    const distance = dx * dx + dy * dy;
+    if (distance < nearestDistance) {
+      nearest = agent;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+function cycleAgent(direction: number): void {
+  const count = liveCurrent?.statuses.length ?? 0;
+  if (count === 0) return;
+  const agent = selectedAgentId < 0
+    ? (direction > 0 ? 0 : count - 1)
+    : mod(selectedAgentId + direction, count);
+  selectAgent(agent);
+  centerCameraOnAgent(agent);
+}
+
+function updateGamepadActions(pad: Gamepad | null): void {
+  const active = pad !== null && !editorActive;
+  const aiming = active && controlledAgentId < 0;
+  if (gamepadHelp.hidden === active) gamepadHelp.hidden = !active;
+  if (gamepadReticle.hidden === aiming) gamepadReticle.hidden = !aiming;
+  const aimedAgent = aiming ? agentAtReticle() : -1;
+  gamepadReticle.toggleAttribute('data-target', aimedAgent >= 0);
+  if (!pad) return;
+
+  const pressed = pressedGamepadButtons(pad);
+  const justPressed = gamepadButtonState === null ? 0 : pressed & ~gamepadButtonState;
+  gamepadButtonState = pressed;
+  if (!active) return;
+
+  if (justPressed & GamepadButton.circle) clearAgentSelection();
+  else if (justPressed & GamepadButton.l1) cycleAgent(-1);
+  else if (justPressed & GamepadButton.r1) cycleAgent(1);
+  else if (justPressed & GamepadButton.cross) {
+    if (aimedAgent >= 0) selectAgent(aimedAgent);
+  } else if (justPressed & GamepadButton.square) toggleManualControl(true);
+  else if (justPressed & GamepadButton.triangle) breakSelectedAgent();
+  else if (justPressed & GamepadButton.options) togglePause();
+  else if (justPressed & GamepadButton.r3) resetCamera();
+  else if (justPressed & GamepadButton.create) stopSimulation();
 }
 
 const fpsValue = document.querySelector('#fps-value')!;
@@ -2932,14 +3007,16 @@ let telemetryElapsed = 0;
 
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
-  updateControls(dt);
+  const pad = updateControls(dt);
   if (!editorActive) {
     if (!paused && !live) simTime += dt * speed;
     if (live) updateLive(performance.now());
     else updateFallback(simTime);
+    if (followGamepadAgent && controlledAgentId >= 0) centerCameraOnAgent(controlledAgentId);
     updateTaskMarkers(performance.now());
   }
   scene.render();
+  updateGamepadActions(pad);
   telemetryElapsed += dt;
   if (telemetryElapsed > 0.25) {
     telemetryElapsed = 0;
@@ -2976,12 +3053,16 @@ engine.runRenderLoop(() => {
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
 const failAgentButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
+const controlAgentButton = document.querySelector<HTMLButtonElement>('#control-agent-button')!;
 document.querySelector('#clear-selection')!.addEventListener('click', clearAgentSelection);
-document.querySelector<HTMLButtonElement>('#control-agent-button')!.addEventListener('click', (event) => {
-  if ((event.currentTarget as HTMLButtonElement).disabled || selectedAgentId < 0) return;
+controlAgentButton.addEventListener('click', () => toggleManualControl(false));
+
+function toggleManualControl(follow: boolean): void {
+  if (controlAgentButton.disabled || selectedAgentId < 0 || !liveCurrent) return;
   setControlledAgent(controlledAgentId === selectedAgentId ? -1 : selectedAgentId);
+  followGamepadAgent = follow && controlledAgentId >= 0;
   renderAgentPanel();
-});
+}
 
 function handleDocumentActivityChange(): void {
   backgroundSuspended = document.visibilityState === 'hidden' || !document.hasFocus();
@@ -2996,14 +3077,15 @@ function syncPauseButton(): void {
   document.querySelector('#pause-icon')!.textContent = paused ? '▶' : 'Ⅱ';
   document.querySelector('#pause-label')!.textContent = tr(paused ? 'Run' : 'Pause');
 }
-pauseButton.addEventListener('click', () => {
+function togglePause(): void {
   paused = !paused;
   if (paused) clearMovementKeys();
   syncPauseButton();
   sendControl(paused ? 'pause' : 'run');
-});
+}
+pauseButton.addEventListener('click', togglePause);
 
-stopButton.addEventListener('click', () => {
+function stopSimulation(): void {
   paused = true;
   if (controlledAgentId >= 0) setControlledAgent(-1);
   simTime = 0;
@@ -3012,10 +3094,11 @@ stopButton.addEventListener('click', () => {
   resetAgentStats();
   sendControl('stop');
   setConnection('stopped', 'Simulation stopped');
-});
+}
+stopButton.addEventListener('click', stopSimulation);
 
-failAgentButton.addEventListener('click', () => {
-  if (selectedAgentId < 0 || !liveCurrent) return;
+function breakSelectedAgent(): void {
+  if (failAgentButton.disabled || selectedAgentId < 0 || !liveCurrent) return;
   if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
   if (controlledAgentId === selectedAgentId) {
     setControlledAgent(-1);
@@ -3024,7 +3107,8 @@ failAgentButton.addEventListener('click', () => {
   failAgentButton.disabled = true;
   document.querySelector('#fail-agent-label')!.textContent = tr('Breaking…');
   sendControl('fail', { agent: selectedAgentId });
-});
+}
+failAgentButton.addEventListener('click', breakSelectedAgent);
 
 document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('change', (event) => {
   const count = Number((event.currentTarget as HTMLSelectElement).value);
@@ -3044,12 +3128,14 @@ document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (e
   sendControl('speed', { value: speed });
 });
 
-document.querySelector('#reset-camera')!.addEventListener('click', () => {
+function resetCamera(): void {
+  followGamepadAgent = false;
   camera.alpha = DEFAULT_CAMERA_ALPHA;
   camera.beta = DEFAULT_CAMERA_BETA;
   camera.radius = DEFAULT_CAMERA_RADIUS;
   camera.target.set(0, 0, 0);
-});
+}
+document.querySelector('#reset-camera')!.addEventListener('click', resetCamera);
 
 document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
 
@@ -3142,9 +3228,13 @@ window.addEventListener('keyup', (event) => {
   if (driveKeys.delete(key) && controlledAgentId >= 0) sendDriveDirection();
 });
 
-window.addEventListener('blur', clearMovementKeys);
+function clearInputOnFocusLoss(): void {
+  gamepadButtonState = null;
+  clearMovementKeys();
+}
+window.addEventListener('blur', clearInputOnFocusLoss);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) clearMovementKeys();
+  if (document.hidden) clearInputOnFocusLoss();
 });
 
 canvas.addEventListener('wheel', (event) => {

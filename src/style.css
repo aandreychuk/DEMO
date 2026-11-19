@@ -245,6 +245,12 @@ input[type='range'] { width: 100%; height: 3px; accent-color: #52dafe; cursor: p
 .icon-button:hover { color: #dff7ff; background: rgba(90, 184, 221, .15); }
 
 .hint { position: fixed; right: 24px; bottom: 30px; color: rgba(111, 146, 166, .62); font: 500 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; pointer-events: none; }
+#gamepad-reticle { position: fixed; left: 50%; top: 50%; z-index: 18; width: 24px; height: 24px; transform: translate(-50%, -50%); border: 1px solid rgba(218, 243, 255, .8); border-radius: 50%; box-shadow: 0 0 0 1px rgba(5, 15, 25, .85); pointer-events: none; }
+#gamepad-reticle::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: currentColor; }
+#gamepad-reticle[data-target] { color: #ffdc6b; border-color: currentColor; box-shadow: 0 0 12px rgba(255, 220, 107, .45); }
+.gamepad-help { position: fixed; left: 20px; bottom: 96px; display: grid; grid-template-columns: repeat(2, max-content); gap: 6px 14px; padding: 10px 12px; border-radius: 8px; color: #c6deeb; font-size: 10px; pointer-events: none; }
+.gamepad-help small { grid-column: 1 / -1; color: #a9c5d2; font-size: 9px; }
+.gamepad-help kbd { display: inline-block; min-width: 16px; margin-right: 3px; padding: 1px 4px; border: 1px solid rgba(135, 219, 255, .23); border-radius: 4px; color: #e4f6ff; background: rgba(126, 210, 240, .1); font: inherit; text-align: center; }
 .scanline { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(93, 197, 235, .011) 4px); }
 
 @media (max-width: 720px) {
@@ -252,6 +258,10 @@ input[type='range'] { width: 100%; height: 3px; accent-color: #52dafe; cursor: p
   .inspector { top: 90px; right: 10px; bottom: 82px; width: 270px; transform: scale(.88); transform-origin: top right; }
   .layout-editor { top: 90px; right: 10px; bottom: 10px; width: 270px; }
   .hint { display: none; }
+  .gamepad-help { left: 10px; bottom: 76px; }
   .controls { left: 50%; bottom: 10px; width: calc(100% - 20px); gap: 10px; }
   .speed-control { flex: 1; }
+}
+@media (max-width: 500px) {
+  #gamepad-reticle { left: calc((100% - 248px) / 2); }
 }

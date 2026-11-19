@@ -1,5 +1,17 @@
 export type MoveKey = 'w' | 'a' | 's' | 'd';
 
+export const GamepadButton = {
+  cross: 1 << 0,
+  circle: 1 << 1,
+  square: 1 << 2,
+  triangle: 1 << 3,
+  l1: 1 << 4,
+  r1: 1 << 5,
+  create: 1 << 8,
+  options: 1 << 9,
+  r3: 1 << 11,
+} as const;
+
 const STICK_DEAD_ZONE = 0.22;
 const DRIVE_THRESHOLD = 0.5;
 
@@ -15,6 +27,14 @@ export function getActiveGamepad(): Gamepad | null {
     readGamepads = undefined;
     return null;
   }
+}
+
+export function pressedGamepadButtons(pad: Gamepad): number {
+  let pressed = 0;
+  for (let index = 0; index <= 11; index++) {
+    if (pad.buttons[index]?.pressed) pressed |= 1 << index;
+  }
+  return pressed;
 }
 
 export function cameraStick(x: number, y: number): [number, number] {
