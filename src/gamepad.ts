@@ -9,7 +9,12 @@ export const GamepadButton = {
   r1: 1 << 5,
   create: 1 << 8,
   options: 1 << 9,
+  l3: 1 << 10,
   r3: 1 << 11,
+  up: 1 << 12,
+  down: 1 << 13,
+  left: 1 << 14,
+  right: 1 << 15,
 } as const;
 
 const STICK_DEAD_ZONE = 0.22;
@@ -31,7 +36,7 @@ export function getActiveGamepad(): Gamepad | null {
 
 export function pressedGamepadButtons(pad: Gamepad): number {
   let pressed = 0;
-  for (let index = 0; index <= 11; index++) {
+  for (let index = 0; index <= 15; index++) {
     if (pad.buttons[index]?.pressed) pressed |= 1 << index;
   }
   return pressed;
@@ -44,9 +49,9 @@ export function cameraStick(x: number, y: number): [number, number] {
   return [x / magnitude * strength, y / magnitude * strength];
 }
 
-export function gamepadMoveKey(pad: Gamepad, previous: MoveKey | null): MoveKey | null {
-  const dpadX = Number(!!pad.buttons[15]?.pressed) - Number(!!pad.buttons[14]?.pressed);
-  const dpadY = Number(!!pad.buttons[13]?.pressed) - Number(!!pad.buttons[12]?.pressed);
+export function gamepadMoveKey(pad: Gamepad, previous: MoveKey | null, useDpadButtons: boolean): MoveKey | null {
+  const dpadX = useDpadButtons ? Number(!!pad.buttons[15]?.pressed) - Number(!!pad.buttons[14]?.pressed) : 0;
+  const dpadY = useDpadButtons ? Number(!!pad.buttons[13]?.pressed) - Number(!!pad.buttons[12]?.pressed) : 0;
   const useDpad = dpadX !== 0 || dpadY !== 0;
   const x = useDpad ? dpadX : (pad.axes[0] ?? 0);
   const y = useDpad ? dpadY : (pad.axes[1] ?? 0);
@@ -54,4 +59,8 @@ export function gamepadMoveKey(pad: Gamepad, previous: MoveKey | null): MoveKey 
   const key = horizontal ? (x < 0 ? 'a' : 'd') : (y < 0 ? 'w' : 's');
   const threshold = key === previous ? 0.35 : DRIVE_THRESHOLD;
   return Math.abs(horizontal ? x : y) >= threshold ? key : null;
+}
+
+export function gamepadSpeedModifier(pad: Gamepad): boolean {
+  return (pad.buttons[6]?.value ?? 0) >= 0.5 && (pad.buttons[7]?.value ?? 0) >= 0.5;
 }
