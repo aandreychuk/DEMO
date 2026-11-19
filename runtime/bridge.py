@@ -657,7 +657,7 @@ class Bridge:
                             session.drive_agent(agent, move)
                     elif action == "fail":
                         agent = int(message.get("agent", -1))
-                        if 0 <= agent < count:
+                        if 0 <= agent < count and previous[agent].recovery_state == 0:
                             if agent == session.controlled_agent:
                                 session.set_controlled_agent(-1)
                             frame = await session.fail_agent(agent)
