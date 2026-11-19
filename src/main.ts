@@ -17,6 +17,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 import './qr-links.css';
+import { cameraStick, gamepadMoveKey, getActiveGamepad, type MoveKey } from './gamepad';
 import { fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage } from './i18n';
 
 initI18n();
@@ -265,12 +266,15 @@ const palletMotions: Array<PalletMotion | null> = Array.from(
   () => null,
 );
 const agentStats: AgentStats[] = Array.from({ length: MAX_AGENTS }, () => createAgentStats());
-const cameraKeys = new Set<string>();
-const driveKeys = new Set<string>();
-const driveTurnByKey: Readonly<Record<string, number>> = { w: 2, a: -1, s: 0, d: 1 };
+const cameraKeys = new Set<MoveKey>();
+const driveKeys = new Set<MoveKey>();
+const driveTurnByKey: Readonly<Record<MoveKey, number>> = { w: 2, a: -1, s: 0, d: 1 };
 const gridActionsByTurn = [4, 2, 3, 1]; // East, south, west, north in world space.
 let sentDriveDirection = 0;
-const cameraKeyByCode: Readonly<Record<string, string>> = {
+let gamepadIndex = -1;
+let gamepadDriveKey: MoveKey | null = null;
+let gamepadDriveArmed = false;
+const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
   KeyW: 'w',
   KeyA: 'a',
   KeyS: 's',
@@ -2727,6 +2731,8 @@ function setControlledAgent(agent: number): void {
   controlledAgentId = agent;
   cameraKeys.clear();
   driveKeys.clear();
+  gamepadDriveKey = null;
+  gamepadDriveArmed = false;
   sentDriveDirection = 0;
   sendControl('control-agent', { agent });
 }
@@ -2737,12 +2743,12 @@ function clearMovementKeys(): void {
 }
 
 function sendDriveDirection(): void {
-  let direction = 0;
+  if (controlledAgentId < 0) return;
+  let key = gamepadDriveKey;
+  for (const heldKey of driveKeys) key = heldKey;
   // Snap camera-relative directions to the four legal moves of the grid.
   const cameraTurn = Math.round(camera.alpha / (Math.PI / 2));
-  for (const key of driveKeys) {
-    direction = gridActionsByTurn[mod(cameraTurn + driveTurnByKey[key], gridActionsByTurn.length)];
-  }
+  const direction = key ? gridActionsByTurn[mod(cameraTurn + driveTurnByKey[key], gridActionsByTurn.length)] : 0;
   if (direction === sentDriveDirection) return;
   sentDriveDirection = direction;
   sendControl('drive-agent', { agent: controlledAgentId, value: direction });
@@ -2856,27 +2862,60 @@ function mod(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
 }
 
-function updateCameraMovement(dt: number): void {
-  if (cameraKeys.size === 0) return;
-  const forward = camera.target.subtract(camera.position);
-  forward.y = 0;
-  if (forward.lengthSquared() < 1e-6) return;
-  forward.normalize();
-  const right = Vector3.Cross(Vector3.Up(), forward).normalize();
-  const direction = Vector3.Zero();
-  if (cameraKeys.has('w')) direction.addInPlace(forward);
-  if (cameraKeys.has('s')) direction.subtractInPlace(forward);
-  if (cameraKeys.has('d')) direction.addInPlace(right);
-  if (cameraKeys.has('a')) direction.subtractInPlace(right);
-  if (direction.lengthSquared() < 1e-6) return;
-  direction.normalize();
+function updateCameraMovement(dt: number, x: number, y: number): void {
+  if (cameraKeys.size > 0) {
+    x = Number(cameraKeys.has('d')) - Number(cameraKeys.has('a'));
+    y = Number(cameraKeys.has('s')) - Number(cameraKeys.has('w'));
+  }
+  if (x === 0 && y === 0) return;
+  const forwardX = -Math.cos(camera.alpha);
+  const forwardZ = -Math.sin(camera.alpha);
   const movementSpeed = Math.max(2.5, camera.radius * 0.18);
-  camera.target.addInPlace(direction.scale(movementSpeed * dt));
+  const distance = movementSpeed * dt / Math.max(1, Math.hypot(x, y));
   const margin = CELL_SIZE * 3;
   const maxX = MAP_WIDTH * CELL_SIZE / 2 + margin;
   const maxZ = MAP_DEPTH * CELL_SIZE / 2 + margin;
-  camera.target.x = Math.max(-maxX, Math.min(maxX, camera.target.x));
-  camera.target.z = Math.max(-maxZ, Math.min(maxZ, camera.target.z));
+  camera.target.x = Math.max(-maxX, Math.min(maxX, camera.target.x + (x * forwardZ - y * forwardX) * distance));
+  camera.target.z = Math.max(-maxZ, Math.min(maxZ, camera.target.z + (-x * forwardX - y * forwardZ) * distance));
+}
+
+function updateControls(dt: number): void {
+  const pad = getActiveGamepad();
+  const index = pad?.index ?? -1;
+  if (gamepadIndex !== index) {
+    // Clear a queued stick command when the controller disconnects.
+    if (gamepadDriveKey && controlledAgentId >= 0 && driveKeys.size === 0) {
+      setControlledAgent(controlledAgentId);
+    }
+    gamepadIndex = index;
+    gamepadDriveKey = null;
+    gamepadDriveArmed = false;
+  }
+
+  let panX = 0;
+  let panY = 0;
+  if (pad) {
+    if (!editorActive) {
+      const [orbitX, orbitY] = cameraStick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+      camera.alpha -= orbitX * 1.8 * dt;
+      camera.beta = Math.max(0.28, Math.min(1.38, camera.beta - orbitY * 1.2 * dt));
+    }
+    const zoom = (pad.buttons[7]?.value ?? 0) - (pad.buttons[6]?.value ?? 0);
+    if (Math.abs(zoom) > 0.05) {
+      const radius = camera.radius * Math.exp(-zoom * 1.6 * dt);
+      camera.radius = Math.max(editorActive ? 38 : 12, Math.min(84, radius));
+    }
+    if (controlledAgentId < 0) {
+      [panX, panY] = cameraStick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
+    } else if (!paused) {
+      const key = gamepadMoveKey(pad, gamepadDriveKey);
+      // Require a neutral position after taking control or returning to the tab.
+      if (key === null) gamepadDriveArmed = true;
+      gamepadDriveKey = gamepadDriveArmed ? key : null;
+    }
+  }
+  updateCameraMovement(dt, panX, panY);
+  sendDriveDirection();
 }
 
 const fpsValue = document.querySelector('#fps-value')!;
@@ -2893,8 +2932,7 @@ let telemetryElapsed = 0;
 
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
-  updateCameraMovement(dt);
-  if (driveKeys.size > 0) sendDriveDirection();
+  updateControls(dt);
   if (!editorActive) {
     if (!paused && !live) simTime += dt * speed;
     if (live) updateLive(performance.now());

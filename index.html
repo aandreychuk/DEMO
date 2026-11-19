@@ -58,7 +58,7 @@
               <span id="selected-agent-state" class="state-pill">Empty</span>
             </div>
             <button id="control-agent-button" class="control-agent-button" type="button" aria-pressed="false">Take control</button>
-            <p id="agent-control-hint" class="agent-control-hint" hidden>WASD follows the camera. Esc returns control to DMM.</p>
+            <p id="agent-control-hint" class="agent-control-hint" hidden>Move the robot with WASD, the left stick, or the D-pad. Esc returns control to DMM.</p>
             <div class="stage-track" aria-label="Task progress">
               <span id="stage-pickup">Pickup</span>
               <i></i>
@@ -121,7 +121,7 @@
       <aside id="layout-editor" class="layout-editor glass" hidden>
         <p class="eyebrow">Warehouse configuration</p>
         <h2>Pallet layout</h2>
-        <p class="editor-copy">Click a cell to add or remove a pallet. Drag to paint. Use WASD to move and the wheel to zoom.</p>
+        <p class="editor-copy">Click a cell to add or remove a pallet. Drag to paint. Pan with WASD or the left stick. Zoom with the wheel or L2/R2.</p>
         <div class="editor-stats">
           <div><small>Pallets</small><strong id="editor-pallet-count">792</strong></div>
           <div><small>Density</small><strong id="editor-density">66.7%</strong></div>
@@ -174,7 +174,7 @@
         <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
       </section>
 
-      <div class="hint">WASD to move, drag to orbit, scroll to zoom</div>
+      <div class="hint"><div>WASD to move, drag to orbit, scroll to zoom</div><div>Gamepad — left stick to move, right stick to orbit, L2/R2 to zoom</div></div>
       <div class="scanline"></div>
     </main>
     <script type="module" src="/src/main.ts"></script>
