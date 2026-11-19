@@ -17,7 +17,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 import './qr-links.css';
-import { cameraStick, GamepadButton, gamepadMoveKey, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
+import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
 import { fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage } from './i18n';
 
 initI18n();
@@ -275,9 +275,12 @@ let gamepadIndex = -1;
 let gamepadButtonState: number | null = null;
 let gamepadDriveKey: MoveKey | null = null;
 let gamepadDriveArmed = false;
+let gamepadDpadSuppressed = false;
 let followGamepadAgent = false;
+let gamepadEditorAiming = false;
 const gamepadReticle = document.querySelector<HTMLElement>('#gamepad-reticle')!;
 const gamepadHelp = document.querySelector<HTMLElement>('#gamepad-help')!;
+const gamepadEditorHelp = document.querySelector<HTMLElement>('#gamepad-editor-help')!;
 const aimWorld = Vector3.Zero();
 const aimProjected = Vector3.Zero();
 const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
@@ -340,12 +343,15 @@ scene.onPointerObservable.add((pointerInfo) => {
   if (!editorActive) return;
   const cell = pickEditorCell();
   if (pointerInfo.type === PointerEventTypes.POINTERMOVE) {
+    gamepadEditorAiming = false;
     updateEditorCursor(cell);
     const event = pointerInfo.event as PointerEvent;
     if (editorPaintMode && (event.buttons & 1) !== 0 && cell) paintEditorCell(cell);
     return;
   }
   if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+    gamepadEditorAiming = false;
+    if (editorAwaitingApply) return;
     if (!cell) return;
     pushEditorHistory();
     const key = palletCellKey(cell.x, cell.z);
@@ -697,8 +703,8 @@ function replacePalletCells(records: Array<{ x: number; z: number; cargoType?: n
   hiddenPalletKey = '';
 }
 
-function pickEditorCell(): { x: number; z: number } | null {
-  const pick = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh === floor);
+function pickEditorCell(viewX = scene.pointerX, viewY = scene.pointerY): { x: number; z: number } | null {
+  const pick = scene.pick(viewX, viewY, (mesh) => mesh === floor);
   if (!pick?.hit || !pick.pickedPoint) return null;
   const x = Math.floor((pick.pickedPoint.x + MAP_WIDTH * CELL_SIZE / 2) / CELL_SIZE);
   const z = Math.floor((pick.pickedPoint.z + MAP_DEPTH * CELL_SIZE / 2) / CELL_SIZE);
@@ -722,11 +728,16 @@ function pushEditorHistory(): void {
 }
 
 function paintEditorCell(cell: { x: number; z: number }): void {
-  if (!editorPaintMode) return;
+  if (!editorPaintMode || editorAwaitingApply) return;
   const key = palletCellKey(cell.x, cell.z);
   if (key === editorLastPainted) return;
   editorLastPainted = key;
-  if (editorPaintMode === 'add') editorLayout.add(key);
+  setEditorPallet(cell, editorPaintMode === 'add');
+}
+
+function setEditorPallet(cell: { x: number; z: number }, present: boolean): void {
+  const key = palletCellKey(cell.x, cell.z);
+  if (present) editorLayout.add(key);
   else editorLayout.delete(key);
   replacePalletCells(palletRecordsFromKeys(editorLayout));
   updateEditorCursor(cell);
@@ -804,6 +815,7 @@ function updateEditorPanel(): void {
   card.querySelector('strong')!.textContent = tr(validation.valid ? 'Layout valid' : 'Layout blocked');
   card.querySelector('small')!.textContent = translateMessage(validation.message);
   document.querySelector<HTMLButtonElement>('#editor-undo')!.disabled = editorHistory.length === 0;
+  document.querySelector<HTMLButtonElement>('#editor-cancel')!.disabled = editorAwaitingApply;
   document.querySelector<HTMLButtonElement>('#editor-apply')!.disabled = !validation.valid || editorAwaitingApply;
 }
 
@@ -820,6 +832,7 @@ function setEditorMessage(english: string, isError = false): void {
 function enterLayoutEditor(): void {
   if (editorActive) return;
   editorActive = true;
+  gamepadEditorAiming = false;
   editorAwaitingApply = false;
   editorOriginal = new Set(palletCells.map(({ x, z }) => palletCellKey(x, z)));
   editorLayout = new Set(editorOriginal);
@@ -865,6 +878,7 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
   if (!editorActive) return;
   if (restoreLayout) replacePalletCells(palletRecordsFromKeys(editorOriginal));
   editorActive = false;
+  gamepadEditorAiming = false;
   editorAwaitingApply = false;
   editorPaintMode = null;
   editorCursor.isVisible = false;
@@ -2898,25 +2912,30 @@ function updateControls(dt: number): Gamepad | null {
     gamepadButtonState = null;
     gamepadDriveKey = null;
     gamepadDriveArmed = false;
+    gamepadDpadSuppressed = false;
   }
 
   let panX = 0;
   let panY = 0;
   if (pad) {
+    const adjustingSpeed = !editorActive && gamepadSpeedModifier(pad);
+    if (adjustingSpeed) gamepadDpadSuppressed = true;
+    else if (!pad.buttons[12]?.pressed && !pad.buttons[13]?.pressed) gamepadDpadSuppressed = false;
     if (!editorActive) {
       const [orbitX, orbitY] = cameraStick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
       camera.alpha -= orbitX * 1.8 * dt;
       camera.beta = Math.max(0.28, Math.min(1.38, camera.beta - orbitY * 1.2 * dt));
     }
     const zoom = (pad.buttons[7]?.value ?? 0) - (pad.buttons[6]?.value ?? 0);
-    if (Math.abs(zoom) > 0.05) {
+    if (!adjustingSpeed && Math.abs(zoom) > 0.05) {
       const radius = camera.radius * Math.exp(-zoom * 1.6 * dt);
       camera.radius = Math.max(editorActive ? 38 : 12, Math.min(84, radius));
     }
     if (controlledAgentId < 0) {
       [panX, panY] = cameraStick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
+      if (editorActive && (panX !== 0 || panY !== 0)) gamepadEditorAiming = true;
     } else if (!paused) {
-      const key = gamepadMoveKey(pad, gamepadDriveKey);
+      const key = gamepadMoveKey(pad, gamepadDriveKey, !gamepadDpadSuppressed);
       // Require a neutral position after taking control or returning to the tab.
       if (key === null) gamepadDriveArmed = true;
       gamepadDriveKey = gamepadDriveArmed ? key : null;
@@ -2969,17 +2988,54 @@ function cycleAgent(direction: number): void {
 
 function updateGamepadActions(pad: Gamepad | null): void {
   const active = pad !== null && !editorActive;
-  const aiming = active && controlledAgentId < 0;
+  const editing = pad !== null && editorActive;
+  const aiming = editing || (active && controlledAgentId < 0);
   if (gamepadHelp.hidden === active) gamepadHelp.hidden = !active;
+  if (gamepadEditorHelp.hidden === editing) gamepadEditorHelp.hidden = !editing;
   if (gamepadReticle.hidden === aiming) gamepadReticle.hidden = !aiming;
-  const aimedAgent = aiming ? agentAtReticle() : -1;
-  gamepadReticle.toggleAttribute('data-target', aimedAgent >= 0);
-  if (!pad) return;
+  const aimedAgent = aiming && !editing ? agentAtReticle() : -1;
+  const aimedCell = editing ? pickEditorCell(gamepadReticle.offsetLeft, gamepadReticle.offsetTop) : null;
+  gamepadReticle.toggleAttribute('data-target', aimedAgent >= 0 || aimedCell !== null);
+  if (!pad) {
+    if (gamepadEditorAiming) updateEditorCursor(null);
+    gamepadEditorAiming = false;
+    return;
+  }
+  if (editing && gamepadEditorAiming) updateEditorCursor(aimedCell);
 
   const pressed = pressedGamepadButtons(pad);
   const justPressed = gamepadButtonState === null ? 0 : pressed & ~gamepadButtonState;
   gamepadButtonState = pressed;
-  if (!active) return;
+  if (editing) {
+    if (editorAwaitingApply || justPressed === 0) return;
+    const countDelta = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down))
+      + 10 * (Number(!!(justPressed & GamepadButton.right)) - Number(!!(justPressed & GamepadButton.left)));
+    if (justPressed & (GamepadButton.circle | GamepadButton.l3)) cancelLayoutEditor();
+    else if (justPressed & GamepadButton.options) applyLayoutEditor();
+    else if (justPressed & GamepadButton.square) undoEditorEdit();
+    else if (justPressed & GamepadButton.cross) {
+      gamepadEditorAiming = true;
+      if (aimedCell) {
+        pushEditorHistory();
+        setEditorPallet(aimedCell, !editorLayout.has(palletCellKey(aimedCell.x, aimedCell.z)));
+      }
+    } else if (countDelta !== 0) setEditorAgentCount(editorAgentCount + countDelta);
+    return;
+  }
+
+  if (justPressed & GamepadButton.l3) {
+    enterLayoutEditor();
+    gamepadEditorAiming = true;
+    return;
+  }
+  if (controlledAgentId < 0 || gamepadSpeedModifier(pad)) {
+    const speedStep = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down));
+    if (speedStep !== 0) {
+      speedInput.stepUp(speedStep);
+      applySimulationSpeed();
+      return;
+    }
+  }
 
   if (justPressed & GamepadButton.circle) clearAgentSelection();
   else if (justPressed & GamepadButton.l1) cycleAgent(-1);
@@ -3122,11 +3178,14 @@ document.querySelector<HTMLSelectElement>('#agent-count')!.addEventListener('cha
   }
 });
 
-document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (event) => {
-  speed = Number((event.currentTarget as HTMLInputElement).value);
+const speedInput = document.querySelector<HTMLInputElement>('#speed')!;
+function applySimulationSpeed(): void {
+  if (speed === speedInput.valueAsNumber) return;
+  speed = speedInput.valueAsNumber;
   document.querySelector('#speed-value')!.textContent = `${speed.toFixed(2).replace(/0$/, '')}×`;
   sendControl('speed', { value: speed });
-});
+}
+speedInput.addEventListener('input', applySimulationSpeed);
 
 function resetCamera(): void {
   followGamepadAgent = false;
@@ -3139,10 +3198,14 @@ document.querySelector('#reset-camera')!.addEventListener('click', resetCamera);
 
 document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
 
-document.querySelector<HTMLInputElement>('#editor-agent-count')!.addEventListener('input', (event) => {
-  editorAgentCount = Number((event.currentTarget as HTMLInputElement).value);
+function setEditorAgentCount(count: number): void {
+  editorAgentCount = Math.max(1, Math.min(MAX_AGENTS, count));
+  document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(editorAgentCount);
   document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
   updateEditorPanel();
+}
+document.querySelector<HTMLInputElement>('#editor-agent-count')!.addEventListener('input', (event) => {
+  setEditorAgentCount((event.currentTarget as HTMLInputElement).valueAsNumber);
 });
 
 document.querySelector<HTMLInputElement>('#editor-agent-number')!.addEventListener('input', (event) => {
@@ -3155,13 +3218,14 @@ document.querySelector<HTMLInputElement>('#editor-agent-number')!.addEventListen
   updateEditorPanel();
 });
 
-document.querySelector('#editor-undo')!.addEventListener('click', () => {
+function undoEditorEdit(): void {
   const previous = editorHistory.pop();
   if (!previous) return;
   editorLayout = previous;
   replacePalletCells(palletRecordsFromKeys(editorLayout));
   updateEditorPanel();
-});
+}
+document.querySelector('#editor-undo')!.addEventListener('click', undoEditorEdit);
 
 document.querySelector('#editor-reset')!.addEventListener('click', () => {
   pushEditorHistory();
@@ -3177,14 +3241,16 @@ document.querySelector('#editor-clear')!.addEventListener('click', () => {
   updateEditorPanel();
 });
 
-document.querySelector('#editor-cancel')!.addEventListener('click', () => {
-  closeLayoutEditor(true, true);
-});
+function cancelLayoutEditor(): void {
+  if (!editorAwaitingApply) closeLayoutEditor(true, true);
+}
+document.querySelector('#editor-cancel')!.addEventListener('click', cancelLayoutEditor);
 
-document.querySelector('#editor-apply')!.addEventListener('click', () => {
+function applyLayoutEditor(): void {
+  if (!editorActive || editorAwaitingApply) return;
   const validation = validateEditorLayout();
-  if (!validation.valid || !transportReady()) {
-    setEditorMessage(transportReady()
+  if (!validation.valid || !liveCurrent || !transportReady()) {
+    setEditorMessage(liveCurrent && transportReady()
       ? validation.message
       : 'The browser runtime is not ready.', true);
     return;
@@ -3196,7 +3262,8 @@ document.querySelector('#editor-apply')!.addEventListener('click', () => {
     agents: editorAgentCount,
     pallets: palletRecordsFromKeys(editorLayout).map(({ x, z }) => ({ x, y: z })),
   });
-});
+}
+document.querySelector('#editor-apply')!.addEventListener('click', applyLayoutEditor);
 
 window.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) {
