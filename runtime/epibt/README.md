@@ -2,9 +2,12 @@
 
 Open **EPIBT warehouse** from the demo navigation or load `epibt.html` directly.
 The page runs the rotational planner in a dedicated browser worker. EPIBT
-selects an operation of depth three and executes its first primitive each
-tick. A robot can move one cell forward, turn 90 degrees right or left in its
-cell, or wait. The inspector shows the executed primitive and the full
+selects an operation and executes its first primitive each tick. Use
+**Operation length** to switch between 3, 4 and 5 actions. The new planner
+takes over at the same tick with the same robot poses, tasks and counters.
+The next tick generates a plan at the new length. A robot can move one
+cell forward, turn 90 degrees right or left in its cell, or wait. The
+inspector shows the executed primitive and the full
 operation selected in that tick. The dashed line shows the remaining moves of
 that operation. EPIBT may revise them at the next tick.
 
@@ -15,9 +18,10 @@ at revision `3808e832593c9fb46b3e119cbb36035cccd830e1`, under the MIT license in
 provides the browser interface. The only change in the vendored source is a
 serial implementation of `launch_threads` for WebAssembly.
 
-The adapter enables the rotation model and operation inheritance, with depth
-3 and a revisit limit of 10. It uses the upstream test system's priority for
-multi-stop tasks: the sum of the orientation-aware distance to the current
+The adapter enables the rotation model and operation inheritance with a
+revisit limit of 10. Each selectable operation length is a separate build
+of the same upstream planner. The adapter uses the upstream test system's
+priority for multi-stop tasks: the sum of the orientation-aware distance to the current
 target and the distance of the remaining leg, with smaller values planned
 first. The display reports this priority for the last tick. The warehouse
 worker generates pickup and delivery tasks from the bays on the map. The
@@ -52,6 +56,7 @@ bay markers.
 ## Rebuild the browser runtime
 
 Run `runtime/epibt/build.sh` with Emscripten 4.0.23 on the path. It produces
-`public/runtime/epibt.mjs`, `public/runtime/epibt.wasm` and the license notice.
-These files are checked in so that the ordinary frontend and GitHub Pages
-builds can run with Node.js and pnpm.
+the `epibt`, `epibt-4` and `epibt-5` loader and WebAssembly pairs in
+`public/runtime/` and the license notice. These files are checked in so
+that the ordinary frontend and GitHub Pages builds can run with Node.js
+and pnpm.

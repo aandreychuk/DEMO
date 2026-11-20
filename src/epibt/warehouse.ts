@@ -4,7 +4,7 @@ import { fmt, formatCount, formatFixed, formatNumber, initI18n, tr } from '../i1
 import type { WarehouseConfig } from './config';
 import { LayoutEditor } from './editor';
 import { WarehouseMap } from './map';
-import { ACTIONS, ACTION_CODES, type Action, type Snapshot, type WorkerCommand, type WorkerReply } from './model';
+import { ACTIONS, ACTION_CODES, OPERATION_LENGTHS, type Action, type OperationLength, type Snapshot, type WorkerCommand, type WorkerReply } from './model';
 import { WAREHOUSE_PRESETS } from './presets';
 
 function element<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -17,6 +17,12 @@ const playButton = element<HTMLButtonElement>('epibt-play');
 const stepButton = element<HTMLButtonElement>('epibt-next');
 const speed = element<HTMLInputElement>('epibt-rate');
 const editButton = element<HTMLButtonElement>('epibt-open-editor');
+const previousRobot = element<HTMLButtonElement>('epibt-prev-robot');
+const nextRobot = element<HTMLButtonElement>('epibt-next-robot');
+const fleetScroll = element('epibt-fleet-scroll');
+const lengthButtons = OPERATION_LENGTHS.map(length => ({
+  length, button: element<HTMLButtonElement>(`epibt-length-${length}`),
+}));
 const error = element('epibt-error');
 const operation = element('epibt-operation');
 const headingNames = ['East', 'South', 'West', 'North'] as const;
@@ -27,6 +33,8 @@ let worker: Worker | null = null;
 let snapshot: Snapshot | null = null;
 let previous: Snapshot | null = null;
 let selected = 0;
+let operationLength: OperationLength = 3;
+let requestedLength: OperationLength | null = null;
 let running = false;
 let busy = true;
 let timer: number | undefined;
@@ -59,22 +67,30 @@ function renderError(message: string): void {
 }
 
 function renderControls(): void {
-  playButton.disabled = !snapshot || !worker;
+  const ready = !!snapshot && !!worker;
+  playButton.disabled = !ready;
   playButton.textContent = tr(running ? 'Pause' : 'Run');
-  stepButton.disabled = !snapshot || !worker || busy || running;
-  setText('epibt-state', tr(!worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…' : running ? 'Running' : 'Paused'));
+  stepButton.disabled = !ready || busy || running || requestedLength !== null;
+  const state = !worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…'
+    : requestedLength !== null ? 'Changing operation length…' : running ? 'Running' : 'Paused';
+  setText('epibt-state', tr(state));
   setText('epibt-rate-value', fmt('{value} Hz', { value: speed.valueAsNumber }));
+  for (const { length, button } of lengthButtons) {
+    button.disabled = !ready || requestedLength !== null;
+    button.setAttribute('aria-pressed', String(length === operationLength));
+  }
 }
 
 function renderInspector(): void {
   const agent = snapshot?.agents[selected];
+  previousRobot.disabled = nextRobot.disabled = !agent || config.agentCount <= 1;
   setText('epibt-selected', fmt('Robot {id}', { id: String(selected + 1).padStart(3, '0') }));
   setText('epibt-stage', agent ? tr(agent.stage) : '—');
   setText('epibt-position', agent ? coordinates(agent.cell) : '—');
   setText('epibt-heading', agent ? `${headingGlyphs[agent.direction]} ${tr(headingNames[agent.direction])}` : '—');
   setText('epibt-task', agent ? formatNumber(agent.task) : '—');
   setText('epibt-goal', agent ? coordinates(agent.target) : '—');
-  setText('epibt-action', actionLabel(agent?.operation[0]));
+  setText('epibt-action', actionLabel(agent?.lastAction));
   setText('epibt-priority', agent?.priority == null ? '—' : formatNumber(agent.priority));
   setText('epibt-distance', agent ? formatNumber(agent.distance) : '—');
   setText('epibt-turns', agent ? formatNumber(agent.turns) : '—');
@@ -82,7 +98,7 @@ function renderInspector(): void {
   setText('epibt-agent-completed', agent ? formatNumber(agent.completed) : '—');
 
   const entries = agent?.operation ?? [];
-  operation.replaceChildren(...Array.from({ length: 3 }, (_, index) => {
+  operation.replaceChildren(...Array.from({ length: operationLength }, (_, index) => {
     const action = entries[index];
     const item = document.createElement('li');
     item.textContent = action === undefined ? '—' : `${ACTION_CODES[action]} · ${actionLabel(action)}`;
@@ -103,7 +119,7 @@ function renderFleet(): void {
     row.position.textContent = agent ? coordinates(agent.cell) : '—';
     row.heading.textContent = agent ? headingGlyphs[agent.direction] : '—';
     row.heading.title = agent ? tr(headingNames[agent.direction]) : '';
-    row.action.textContent = actionLabel(agent?.operation[0]);
+    row.action.textContent = actionLabel(agent?.lastAction);
   });
 }
 
@@ -111,6 +127,11 @@ function selectAgent(id: number): void {
   selected = id;
   renderInspector();
   draw();
+  const row = rows[id].row.getBoundingClientRect();
+  const top = fleetScroll.querySelector('th')!.getBoundingClientRect().bottom;
+  const bottom = fleetScroll.getBoundingClientRect().top + fleetScroll.clientHeight;
+  if (row.top < top) fleetScroll.scrollTop += row.top - top;
+  else if (row.bottom > bottom) fleetScroll.scrollTop += row.bottom - bottom;
 }
 
 function rebuildFleet(): void {
@@ -159,7 +180,14 @@ function draw(): void {
 
 function schedule(): void {
   if (timer !== undefined) window.clearTimeout(timer);
-  timer = running && snapshot && !busy ? window.setTimeout(requestStep, 1000 / speed.valueAsNumber) : undefined;
+  timer = undefined;
+  if (!worker || !snapshot || busy) return;
+  if (requestedLength !== null) {
+    busy = true;
+    worker.postMessage({ type: 'length', length: requestedLength } satisfies WorkerCommand);
+  } else if (running) {
+    timer = window.setTimeout(requestStep, 1000 / speed.valueAsNumber);
+  }
 }
 
 function requestStep(): void {
@@ -172,6 +200,7 @@ function requestStep(): void {
 function fail(message: string): void {
   running = false;
   busy = false;
+  requestedLength = null;
   worker?.terminate();
   worker = null;
   schedule();
@@ -181,6 +210,8 @@ function fail(message: string): void {
 
 function start(next: WarehouseConfig, autoplay = false): void {
   worker?.terminate();
+  operationLength = requestedLength ?? operationLength;
+  requestedLength = null;
   config = next;
   snapshot = null;
   previous = null;
@@ -200,7 +231,18 @@ function start(next: WarehouseConfig, autoplay = false): void {
       return;
     }
     busy = false;
-    previous = snapshot;
+    if (data.type === 'length-error') {
+      requestedLength = null;
+      renderControls();
+      renderError('Could not change the operation length.');
+      schedule();
+      return;
+    }
+    if (data.operationLength !== operationLength) {
+      operationLength = data.operationLength;
+      requestedLength = null;
+    }
+    previous = snapshot?.step === data.step ? null : snapshot;
     snapshot = data;
     transitionStarted = performance.now();
     renderSnapshot();
@@ -210,7 +252,7 @@ function start(next: WarehouseConfig, autoplay = false): void {
   instance.onerror = () => {
     if (worker === instance) fail('Could not start the EPIBT worker.');
   };
-  instance.postMessage({ type: 'configure', config } satisfies WorkerCommand);
+  instance.postMessage({ type: 'configure', config, length: operationLength } satisfies WorkerCommand);
   renderSnapshot();
   draw();
 }
@@ -230,7 +272,7 @@ function showEditor(editing: boolean): void {
   canvas.tabIndex = editing ? 0 : -1;
   document.querySelector('.epibt-app')?.toggleAttribute('data-editing', editing);
   element('epibt-editor').hidden = !editing;
-  for (const id of ['epibt-legend', 'epibt-insights', 'epibt-controls', 'epibt-open-editor']) {
+  for (const id of ['epibt-legend', 'epibt-insights', 'epibt-controls', 'epibt-length-control', 'epibt-open-editor']) {
     element(id).hidden = editing;
   }
   labelMap();
@@ -270,6 +312,17 @@ playButton.addEventListener('click', () => {
 });
 stepButton.addEventListener('click', requestStep);
 element('epibt-reset').addEventListener('click', () => start(config));
+previousRobot.addEventListener('click', () => selectAgent((selected + config.agentCount - 1) % config.agentCount));
+nextRobot.addEventListener('click', () => selectAgent((selected + 1) % config.agentCount));
+for (const { length, button } of lengthButtons) {
+  button.addEventListener('click', () => {
+    if (length === operationLength) return;
+    requestedLength = length;
+    renderError('');
+    renderControls();
+    schedule();
+  });
+}
 speed.addEventListener('input', () => {
   renderControls();
   schedule();
