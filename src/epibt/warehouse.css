@@ -75,7 +75,7 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-app .epibt-primary:hover:not(:disabled) { background: #a2ecf6; }
 .epibt-speed { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
 .epibt-speed input { width: 114px; accent-color: #65d7ea; }
-.epibt-speed output { min-width: 62px; color: #d2eef5; font-variant-numeric: tabular-nums; }
+.epibt-speed output { min-width: 74px; color: #d2eef5; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .epibt-length { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
 .epibt-length-options { display: flex; gap: 2px; padding: 2px; border: 1px solid #2a5267; border-radius: 5px; background: #071822; }
 .epibt-length-options .epibt-button { min-width: 27px; padding: 4px 6px; border-color: transparent; border-radius: 3px; background: transparent; }

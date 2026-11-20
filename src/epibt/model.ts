@@ -43,4 +43,4 @@ export type WorkerReply = Snapshot | { type: 'error'; message: string } | { type
 export type WorkerCommand =
   | { type: 'configure'; config: WarehouseConfig; length: OperationLength }
   | { type: 'length'; length: OperationLength }
-  | { type: 'step' };
+  | { type: 'step'; count: number };
