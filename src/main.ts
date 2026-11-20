@@ -19,6 +19,7 @@ import './style.css';
 import './demo-header.css';
 import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
 import { countLabel, fmt, formatFixed, formatNumber, initI18n, tr, translateMessage, type CountLabel } from './i18n';
+import { warehouseStartup, type StartupUpdate } from './warehouse-startup';
 
 initI18n();
 
@@ -67,7 +68,6 @@ const MAX_RENDERED_GOODS = MAX_AGENTS * PALLET_CAPACITY
   + CONVEYOR_BOX_COUNT * CONVEYOR_BOX_CAPACITY
   + UNLOAD_STATION_COUNT
   + RELOAD_STATION_COUNT;
-const FALLBACK_STEP_SECONDS = 1.44;
 const FRAME_MAGIC = 0x4d415046;
 const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 const USE_SERVER_RUNTIME = import.meta.env.VITE_MAPF_RUNTIME === 'server';
@@ -211,11 +211,9 @@ const cargoAgentIds = [
   new Int16Array(MAX_RENDERED_GOODS),
 ];
 const colors = new Float32Array(MAX_AGENTS * 4);
-const cells = buildFreeCells();
 let agentCount = 100;
 let paused = false;
 let speed = 1;
-let simTime = 0;
 let socket: WebSocket | null = null;
 let browserWorker: Worker | null = null;
 let runtimeBackend = 'WASM';
@@ -289,9 +287,9 @@ const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
 for (let i = 0; i < MAX_AGENTS; i++) setAgentColor(i, 0);
 robotMesh.thinInstanceSetBuffer('matrix', matrices, 16, false);
 robotMesh.thinInstanceSetBuffer('color', colors, 4, false);
-setThinInstanceCount(robotMesh, agentCount);
+setThinInstanceCount(robotMesh, 0);
 agentPicker.thinInstanceSetBuffer('matrix', matrices, 16, false);
-setThinInstanceCount(agentPicker, agentCount);
+setThinInstanceCount(agentPicker, 0);
 robotLoad.frame.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 robotLoad.deck.thinInstanceSetBuffer('matrix', loadMatrices, 16, false);
 for (let type = 0; type < robotLoad.cargo.length; type++) {
@@ -842,11 +840,7 @@ function enterLayoutEditor(): void {
   syncPauseButton();
   clearAgentSelection();
   hideTaskMarkers();
-  setThinInstanceCount(robotMesh, 0);
-  setThinInstanceCount(agentPicker, 0);
-  setThinInstanceCount(robotLoad.frame, 0);
-  setThinInstanceCount(robotLoad.deck, 0);
-  for (const cargo of robotLoad.cargo) setThinInstanceCount(cargo, 0);
+  hideAgents();
   const editorInventory = new Uint8Array(palletCells.length);
   editorInventory.fill(PALLET_CAPACITY);
   palletScene.update(new Set(), editorInventory);
@@ -885,8 +879,6 @@ function closeLayoutEditor(restoreLayout: boolean, resumeSimulation: boolean): v
   camera.radius = editorCameraState.radius;
   camera.target.copyFrom(editorCameraState.target);
   camera.attachControl(canvas, true);
-  setThinInstanceCount(robotMesh, agentCount);
-  setThinInstanceCount(agentPicker, agentCount);
   if (resumeSimulation && !editorWasPaused) {
     paused = false;
     syncPauseButton();
@@ -2018,17 +2010,6 @@ function createBoundaryLights(): void {
   glow.addIncludedOnlyMesh(marker);
 }
 
-function buildFreeCells(): Array<{ x: number; z: number; direction: number }> {
-  const result: Array<{ x: number; z: number; direction: number }> = [];
-  for (let x = 1; x < MAP_WIDTH - 1; x++) {
-    for (let z = 1; z < MAP_DEPTH - 1; z++) {
-      if (z >= UNLOAD_MIN_Z && z <= UNLOAD_MAX_Z && x >= UNLOAD_X) continue;
-      result.push({ x, z, direction: x % 2 === 0 ? 1 : -1 });
-    }
-  }
-  return result;
-}
-
 function writeTransform(
   target: Float32Array,
   index: number,
@@ -2057,23 +2038,9 @@ function writeTransform(
   target[offset + 15] = 1;
 }
 
-function updateFallback(time: number): void {
-  const step = time / FALLBACK_STEP_SECONDS;
-  unloadingScene.update(step);
-  reloadingScene.update(step);
-  conveyorScene.update(step);
-  selectionHalo.isVisible = false;
-  hideTaskMarkers();
-  const wholeStep = Math.floor(step);
-  const phase = smoothstep(step - wholeStep);
-  for (let i = 0; i < agentCount; i++) {
-    const cell = cells[(i * 47) % cells.length];
-    const range = MAP_DEPTH - 2;
-    const z = 1 + mod(cell.z - 1 + cell.direction * (wholeStep + phase), range);
-    writeTransform(matrices, i, cell.x, z);
-  }
-  robotMesh.thinInstanceBufferUpdated('matrix');
-  agentPicker.thinInstanceBufferUpdated('matrix');
+function hideAgents(): void {
+  setThinInstanceCount(robotMesh, 0);
+  setThinInstanceCount(agentPicker, 0);
   setThinInstanceCount(robotLoad.frame, 0);
   setThinInstanceCount(robotLoad.deck, 0);
   for (const cargo of robotLoad.cargo) setThinInstanceCount(cargo, 0);
@@ -2219,6 +2186,10 @@ function updateLive(now: number): void {
   }
   robotMesh.thinInstanceBufferUpdated('matrix');
   agentPicker.thinInstanceBufferUpdated('matrix');
+  if (robotMesh.thinInstanceCount !== agentCount) {
+    setThinInstanceCount(robotMesh, agentCount);
+    setThinInstanceCount(agentPicker, agentCount);
+  }
   setThinInstanceCount(robotLoad.frame, loadedCount);
   setThinInstanceCount(robotLoad.deck, loadedCount);
   if (loadedCount) {
@@ -2266,11 +2237,11 @@ function setAgentColor(index: number, status: number, recoveryState = 0): void {
   colors.set(color, index * 4);
 }
 
-function parseFrame(buffer: ArrayBuffer): void {
+function parseFrame(buffer: ArrayBuffer): boolean {
   const view = new DataView(buffer);
-  if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC) return;
+  if (view.byteLength < 16 || view.getUint32(0, true) !== FRAME_MAGIC) return false;
   const protocol = view.getUint16(4, true);
-  if (protocol < 1 || protocol > 5) return;
+  if (protocol < 1 || protocol > 5) return false;
   const recordSize = protocol >= 4 ? 36 : protocol === 3 ? 32 : protocol === 2 ? 24 : 16;
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
@@ -2282,7 +2253,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   const completedTasks = view.getUint16(6, true);
   const count = Math.min(MAX_AGENTS, view.getUint32(12, true));
   const towRecordSize = protocol >= 4 ? 16 : 0;
-  if (view.byteLength < 16 + count * recordSize + towRecordSize) return;
+  if (view.byteLength < 16 + count * recordSize + towRecordSize) return false;
   const positions = new Float32Array(count * 2);
   const statuses = new Uint8Array(count);
   const stages = new Uint8Array(count);
@@ -2493,6 +2464,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   robotMesh.thinInstanceBufferUpdated('color');
   renderAgentPanel();
   renderTelemetry();
+  return true;
 }
 
 function createAgentStats(): AgentStats {
@@ -2701,8 +2673,6 @@ function syncDocumentActivity(): void {
 function setAgentCount(count: number): void {
   agentCount = Math.max(1, Math.min(MAX_AGENTS, count));
   if (selectedAgentId >= agentCount) clearAgentSelection();
-  setThinInstanceCount(robotMesh, agentCount);
-  setThinInstanceCount(agentPicker, agentCount);
   setCountMetric(agentsValue, agentCount, 'agents');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
   select.querySelector('option[data-custom-agent-count]')?.remove();
@@ -2754,13 +2724,19 @@ function transportReady(): boolean {
 
 function handleRuntimeMessage(data: unknown): void {
   if (data instanceof ArrayBuffer) {
+    if (!parseFrame(data)) return;
     live = true;
-    parseFrame(data);
+    warehouseStartup.finish();
     setRuntimeConnection();
     return;
   }
   const message = typeof data === 'string' ? JSON.parse(data) : data as Record<string, any>;
-  if (message.type === 'hello') {
+  if (message.type === 'initialization') {
+    const { task, detail, done, values } = message as StartupUpdate;
+    warehouseStartup.update(task, detail, done, values);
+  } else if (message.type === 'hello') {
+    warehouseStartup.update('engine', 'Ready', true);
+    warehouseStartup.update('warehouse', 'Waiting for the first simulation frame…');
     runtimeBackend = String(message.backend ?? (message.browserRuntime ? 'WASM' : 'SIMULATOR'));
     runtimeAdapter = String(message.backendAdapter ?? '');
     if (Array.isArray(message.layout?.pallets)) {
@@ -2785,12 +2761,21 @@ function handleRuntimeMessage(data: unknown): void {
   } else if (message.type === 'layout-applied') {
     closeLayoutEditor(false, false);
   } else if (message.type === 'layout-error') {
+    warehouseStartup.finish();
     editorAwaitingApply = false;
     setEditorMessage(String(message.message ?? 'The layout could not be applied.'), true);
     updateEditorPanel();
   } else if (message.type === 'status' && message.state === 'planning') {
+    if (USE_SERVER_RUNTIME && liveCurrent) {
+      warehouseStartup.begin(['engine', 'warehouse'], 'Loading the model and starting the simulator…');
+    } else if (message.loadingModel === true) {
+      warehouseStartup.begin(['model', 'warehouse'], 'Preparing the model…');
+    } else if (message.loadingModel === false) {
+      warehouseStartup.begin(['warehouse'], 'Preparing the map, agents, and tasks…');
+    }
     livePrevious = null;
     liveCurrent = null;
+    hideAgents();
     setInferenceTiming(null);
     renderTelemetry();
     resetServiceAnimations();
@@ -2808,29 +2793,37 @@ function handleRuntimeMessage(data: unknown): void {
     runtimeBackend = String(message.backend ?? runtimeBackend);
     runtimeAdapter = String(message.backendAdapter ?? runtimeAdapter);
   } else if (message.type === 'error') {
+    warehouseStartup.fail(String(message.message ?? 'Runtime error'));
     setConnection('error', 'Error: {message}', { message: String(message.message ?? 'runtime') });
     console.error(message.message);
   }
 }
 
 function connectServer(): void {
+  warehouseStartup.begin(['connection', 'engine', 'warehouse'], 'Connecting to the local simulator…');
   setConnection('connecting', 'Connecting to local server');
   const ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
   socket = ws;
-  ws.addEventListener('open', () => setConnection('planning', 'Planning lifelong run'));
+  ws.addEventListener('open', () => {
+    warehouseStartup.update('connection', 'Ready', true);
+    warehouseStartup.update('engine', 'Loading the model and starting the simulator…');
+    setConnection('planning', 'Planning lifelong run');
+  });
   ws.addEventListener('message', (event) => handleRuntimeMessage(event.data));
   ws.addEventListener('close', () => {
     if (socket !== ws) return;
     live = false;
     livePrevious = null;
     liveCurrent = null;
+    hideAgents();
     setInferenceTiming(null);
     renderTelemetry();
     resetServiceAnimations();
     resetPalletInventory();
     resetAgentStats();
     clearAgentSelection();
+    warehouseStartup.begin(['connection', 'engine', 'warehouse'], 'Waiting to reconnect to the local simulator…');
     setConnection('fallback', 'Demo reconnecting');
     window.setTimeout(connectServer, 2000);
   });
@@ -2842,14 +2835,18 @@ function connect(): void {
     connectServer();
     return;
   }
+  warehouseStartup.begin(['core', 'model', 'warehouse'], 'Starting the browser worker…');
   setConnection('connecting', 'Loading ONNX and WASM');
-  const worker = new BrowserRuntimeWorker();
-  browserWorker = worker;
-  worker.addEventListener('message', (event) => handleRuntimeMessage(event.data));
-  worker.addEventListener('error', (event) => {
-    setConnection('error', 'Error: {message}', { message: event.message || 'worker load' });
-    console.error(event.message);
-  });
+  try {
+    const worker = new BrowserRuntimeWorker();
+    browserWorker = worker;
+    worker.addEventListener('message', (event) => handleRuntimeMessage(event.data));
+    worker.addEventListener('error', (event) => {
+      handleRuntimeMessage({ type: 'error', message: event.message || 'Runtime error' });
+    });
+  } catch (error) {
+    handleRuntimeMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 function smoothstep(t: number): number {
@@ -3084,9 +3081,7 @@ engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   const pad = updateControls(dt);
   if (!editorActive) {
-    if (!paused && !live) simTime += dt * speed;
-    if (live) updateLive(performance.now());
-    else updateFallback(simTime);
+    updateLive(performance.now());
     if (followGamepadAgent && controlledAgentId >= 0) centerCameraOnAgent(controlledAgentId);
     updateTaskMarkers(performance.now());
   }
@@ -3132,7 +3127,6 @@ pauseButton.addEventListener('click', togglePause);
 function stopSimulation(): void {
   paused = true;
   if (controlledAgentId >= 0) setControlledAgent(-1);
-  simTime = 0;
   syncPauseButton();
   resetServiceAnimations();
   resetAgentStats();

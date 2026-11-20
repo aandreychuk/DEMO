@@ -11,6 +11,16 @@
     <main id="app">
       <canvas id="scene" aria-label="3D MAPF simulation"></canvas>
 
+      <section id="warehouse-startup" class="warehouse-startup glass" aria-labelledby="warehouse-startup-title">
+        <div class="warehouse-startup-heading">
+          <h2 id="warehouse-startup-title">Starting the simulation</h2>
+          <span id="warehouse-startup-count" aria-live="polite"></span>
+        </div>
+        <progress id="warehouse-startup-progress" aria-labelledby="warehouse-startup-title"></progress>
+        <ul id="warehouse-startup-tasks"></ul>
+        <p id="warehouse-startup-notice" role="status" hidden></p>
+      </section>
+
       <header class="demo-header topbar">
         <div class="demo-brand">
           <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />

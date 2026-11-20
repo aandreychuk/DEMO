@@ -1,3 +1,4 @@
+import type { StartupUpdate } from './warehouse-startup';
 import * as ort from 'onnxruntime-web/webgpu';
 import scenarioText from '../runtime/scenarios/warehouse-lifelong-44x33.scen?raw';
 import tasksText from '../runtime/scenarios/warehouse-lifelong-44x33.tasks.tsv?raw';
@@ -194,6 +195,12 @@ function post(message: unknown, transfer?: Transferable[]): void {
   workerScope.postMessage(message, transfer);
 }
 
+function reportInitialization(
+  task: StartupUpdate['task'], detail: string, done = false, values?: StartupUpdate['values'],
+): void {
+  post({ type: 'initialization', task, detail, done, values } satisfies StartupUpdate);
+}
+
 function buildMap(width: number, height: number): { width: number; height: number; blocked: Uint8Array } {
   const blocked = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
@@ -282,10 +289,14 @@ function rebuildScenarioForLayout(): void {
 }
 
 async function loadWasm(): Promise<WasmCore> {
+  reportInitialization('core', 'Downloading the WebAssembly core…');
   const response = await fetch(new URL(`${import.meta.env.BASE_URL}runtime/mapf-core.wasm`, self.location.origin));
   if (!response.ok) throw new Error(`WASM core download failed: ${response.status}`);
   const imports = { env: { abort: (): never => { throw new Error('MAPF WASM core aborted'); } } };
-  const result = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
+  const bytes = await response.arrayBuffer();
+  reportInitialization('core', 'Compiling the WebAssembly core…');
+  const result = await WebAssembly.instantiate(bytes, imports);
+  reportInitialization('core', 'Ready', true);
   return result.instance.exports as unknown as WasmCore;
 }
 
@@ -301,6 +312,7 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
     : new URL(import.meta.env.BASE_URL + 'runtime/fastdmm-0.8m-webgpu-fp16.onnx', self.location.origin).href;
   const gpu = (navigator as Navigator & { gpu?: BrowserGpu }).gpu;
   if (gpu) {
+    reportInitialization('model', 'Checking WebGPU support…');
     let device: BrowserGpuDevice | null = null;
     try {
       const adapter = await gpu.requestAdapter({
@@ -327,29 +339,35 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
           storageBufferCacheMode: 'simple' as const,
         }],
       };
+      function loadWebGpuModel(url: string, precision: string, retry = false): Promise<ort.InferenceSession> {
+        const detail = retry ? 'Retrying with WebGPU ({precision})…' : 'Loading the model and setting up WebGPU ({precision})…';
+        reportInitialization('model', detail, false, { precision });
+        return ort.InferenceSession.create(url, sessionOptions);
+      }
+
       let precision = 'FP32';
       let webgpuSession: ort.InferenceSession;
       if (supportsFp16) {
         try {
-          webgpuSession = await ort.InferenceSession.create(fusedFp16ModelUrl, sessionOptions);
+          webgpuSession = await loadWebGpuModel(fusedFp16ModelUrl, 'FP16 fused');
           precision = 'FP16 fused';
         } catch (error) {
           console.warn('Fused FP16 WebGPU policy unavailable; retrying the portable FP16 graph.', error);
           try {
-            webgpuSession = await ort.InferenceSession.create(fp16ModelUrl, sessionOptions);
+            webgpuSession = await loadWebGpuModel(fp16ModelUrl, 'FP16', true);
             precision = 'FP16';
           } catch (fallbackError) {
             console.warn('FP16 WebGPU policy unavailable; retrying the FP32 graph.', fallbackError);
-            webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+            webgpuSession = await loadWebGpuModel(fp32ModelUrl, 'FP32', true);
           }
         }
       } else {
         try {
-          webgpuSession = await ort.InferenceSession.create(fusedFp32ModelUrl, sessionOptions);
+          webgpuSession = await loadWebGpuModel(fusedFp32ModelUrl, fusedFp32ModelUrl === fp32ModelUrl ? 'FP32' : 'FP32 fused');
           precision = 'FP32 fused';
         } catch (error) {
           console.warn('Fused FP32 WebGPU policy unavailable; retrying the portable graph.', error);
-          webgpuSession = await ort.InferenceSession.create(fp32ModelUrl, sessionOptions);
+          webgpuSession = await loadWebGpuModel(fp32ModelUrl, 'FP32', true);
         }
       }
       backend = 'WEBGPU';
@@ -363,6 +381,7 @@ async function loadPolicy(slots: number): Promise<ort.InferenceSession> {
   }
   backend = 'WASM';
   backendAdapter = '';
+  reportInitialization('model', gpu ? 'WebGPU unavailable. Loading the model on the CPU…' : 'Loading the model on the CPU…');
   return ort.InferenceSession.create(fp32ModelUrl, { executionProviders: ['wasm'] });
 }
 
@@ -798,17 +817,19 @@ async function reconfigure(count: number, pallets: Array<{ x: number; y: number 
   setControlledAgent(-1);
   schedule();
   count = Number.isFinite(count) ? Math.max(1, Math.min(MAX_AGENTS, Math.floor(count))) : agentCount;
-  post({ type: 'status', state: 'planning', agents: count });
+  const slots = count > SMALL_POLICY_SLOTS ? MAX_AGENTS : SMALL_POLICY_SLOTS;
+  post({ type: 'status', state: 'planning', agents: count, loadingModel: slots !== modelSlots });
   try {
     while (stepping) await new Promise<void>((resolve) => workerScope.setTimeout(resolve, 10));
-    const slots = count > SMALL_POLICY_SLOTS ? MAX_AGENTS : SMALL_POLICY_SLOTS;
     if (slots !== modelSlots) {
       const nextSession = await loadPolicy(slots);
       const previous = session;
       session = nextSession;
       configureModelInputs(slots);
       await previous.release();
+      reportInitialization('model', 'Ready', true);
     }
+    reportInitialization('warehouse', 'Preparing the map, agents, and tasks…');
     if (pallets) {
       applyLayout(pallets, count);
       post({ type: 'layout-applied', pallets: layout.pallets.length });
@@ -868,7 +889,14 @@ async function boot(): Promise<void> {
   try {
     post({ type: 'status', state: 'planning', agents: agentCount });
     const slots = requestedAgentCount > SMALL_POLICY_SLOTS ? MAX_AGENTS : SMALL_POLICY_SLOTS;
-    [core, session] = await Promise.all([loadWasm(), loadPolicy(slots)]);
+    [core, session] = await Promise.all([
+      loadWasm(),
+      loadPolicy(slots).then((policy) => {
+        reportInitialization('model', 'Ready', true);
+        return policy;
+      }),
+    ]);
+    reportInitialization('warehouse', 'Preparing the map, agents, and tasks…');
     if (slots !== modelSlots) configureModelInputs(slots);
     if (scenarioStarts.length < requestedAgentCount) rebuildScenarioForLayout();
     resetSimulation(requestedAgentCount);
