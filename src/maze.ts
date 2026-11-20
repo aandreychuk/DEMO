@@ -95,7 +95,9 @@ function actionName(index: number): string { return tr(ACTIONS[index].name); }
 function setSource(english: string, values: Record<string, string | number> = {}): void {
   sourceEnglish = english;
   sourceValues = values;
-  source.querySelector('span')!.textContent = Object.keys(values).length ? fmt(english, values) : translateMessage(english);
+  const description = Object.keys(values).length ? fmt(english, values) : translateMessage(english);
+  source.title = description;
+  source.querySelector('span')!.textContent = description;
 }
 function setEditorMessage(english: string, values: Record<string, string | number> = {}): void {
   editorMessageEnglish = english;

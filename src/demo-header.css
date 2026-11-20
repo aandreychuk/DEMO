@@ -22,7 +22,17 @@
 
 .demo-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .demo-brand img { display: block; flex: none; }
-.demo-source { color: #91afc0; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.demo-source {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  color: #91afc0;
+  font-size: 10px;
+  line-height: 1.35;
+}
 .demo-source.error { color: #ffb1a4; }
 
 .demo-tabs {

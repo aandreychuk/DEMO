@@ -2676,9 +2676,9 @@ function setConnection(state: string, label: string, values: Record<string, stri
   currentConnection = { state, label, values };
   const connection = document.querySelector<HTMLElement>('.connection')!;
   connection.dataset.state = state;
-  const sourceLabel = document.querySelector<HTMLElement>('#source-label')!;
-  sourceLabel.textContent = fmt(label, values);
-  sourceLabel.title = sourceLabel.textContent;
+  const description = fmt(label, values);
+  connection.title = description;
+  document.querySelector('#source-label')!.textContent = description;
 }
 
 function setRuntimeConnection(): void {
