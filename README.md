@@ -113,11 +113,11 @@ When unchecked, each agent stops at its goal; the task is solved once all
 agents have arrived. **Default** restores the original eight-agent layout.
 
 The dedicated ONNX graph exposes the raw accumulated `z` after each of the
-four communication rounds. The agents move only after round four. The selected
-agent's chart shows signed `z` scores, while a vote matrix shows which
-discrete action each round added to that accumulated state. The map shows the
-highest-scoring action and communication links. The WASM planner receives
-`softmax(z)` for collision-aware action selection.
+four communication rounds. The vote matrix shows the selected agent's vote in
+each round. Round four reveals the final signed intent score for every action
+and the action chosen by the WASM planner using `softmax(z)`. The map shows
+the highest-scoring action and communication links. The chosen actions are
+applied when playback advances past round four.
 
 The maze player defaults to 1.3 seconds per communication round, slower than
 the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,

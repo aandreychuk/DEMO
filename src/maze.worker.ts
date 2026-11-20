@@ -35,7 +35,6 @@ let goals = new Int32Array(0);
 let finished = new Uint8Array(0);
 let action = 0;
 const backend = 'WASM';
-let lastExecuted = new Int32Array(0);
 let initialized = false;
 let pending: Promise<void> = Promise.resolve();
 
@@ -80,7 +79,6 @@ function resetScenario(): void {
     if (config.lifelong) goals[i] = nextGoal(i);
     else finished[i] = 1;
   }
-  lastExecuted = new Int32Array(agents);
   action = 0;
 }
 
@@ -140,12 +138,19 @@ async function infer(): Promise<void> {
   } finally {
     for (const tensor of Object.values(output)) tensor.dispose();
   }
+  const messageSources = Array.from(chat32.subarray(0, positions.length * CHAT_SLOTS));
+  const inferenceMs = performance.now() - started;
+  const solved = !config.lifelong && finished.every((value) => value !== 0);
+  let plannedActions: number[] = [];
+  if (!solved) {
+    // Plan once per snapshot. The advance command applies these same positions.
+    core.plan();
+    plannedActions = Array.from(new Int32Array(core.memory.buffer, core.executedActionsPointer(), positions.length));
+  }
   post({
     type: 'snapshot', action, positions: Array.from(positions), goals: Array.from(goals),
-    chat: Array.from(chat32.subarray(0, positions.length * CHAT_SLOTS)), trace, votes,
-    previousActions: Array.from(lastExecuted), finished: Array.from(finished),
-    solved: !config.lifelong && finished.every((value) => value !== 0),
-    inferenceMs: performance.now() - started, backend,
+    chat: messageSources, trace, votes, plannedActions, finished: Array.from(finished),
+    solved, inferenceMs, backend,
   });
 }
 
@@ -192,11 +197,8 @@ async function handle(type: 'start' | 'advance' | 'reset' | 'configure', nextCon
   }
   if (type !== 'advance') return;
   if (!config.lifelong && finished.every((value) => value !== 0)) return;
-  core.plan();
   const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), positions.length);
-  const executed = new Int32Array(core.memory.buffer, core.executedActionsPointer(), positions.length);
   positions.set(next);
-  lastExecuted.set(executed);
   for (let i = 0; i < positions.length; i++) {
     if (positions[i] !== goals[i]) continue;
     if (config.lifelong) goals[i] = nextGoal(i);

@@ -14,8 +14,6 @@ const ACTIONS = [
   { name: 'Right', color: '#66e5aa' },
 ] as const;
 const BASE_ROUND_MS = 1300;
-const Z_MIN = -4;
-const Z_MAX = 15;
 
 function formatIntentScore(value: number): string {
   return `${value > 0 ? '+' : ''}${formatFixed(value, 2)}`;
@@ -37,7 +35,7 @@ type Snapshot = {
   chat: number[];
   trace: number[];
   votes: number[];
-  previousActions: number[];
+  plannedActions: number[];
   finished: number[];
   solved: boolean;
   inferenceMs: number;
@@ -56,10 +54,9 @@ const links = element<SVGSVGElement>('#maze-links');
 const source = element('#maze-source');
 const agentTitle = element('#maze-agent-title');
 const agentSummary = element('#maze-agent-summary');
-const roundStrip = element('#maze-round-strip');
-const chart = element('#maze-chart');
-const chartLegend = element('#maze-chart-legend');
 const voteGrid = element('#maze-votes');
+const decision = element<HTMLElement>('#maze-decision');
+const chosenAction = element('#maze-chosen-action');
 const neighbors = element('#maze-neighbors');
 const allAgents = element('#maze-all-agents');
 const scrub = element<HTMLInputElement>('#maze-scrub');
@@ -105,12 +102,6 @@ function setEditorMessage(english: string, values: Record<string, string | numbe
   editorMessageValues = values;
   editorMessage.textContent = Object.keys(values).length ? fmt(english, values) : translateMessage(english);
 }
-function renderChartLegend(): void {
-  chartLegend.innerHTML = ACTIONS.map((action) =>
-    `<span><i style="background:${action.color}"></i>${tr(action.name)}</span>`
-  ).join('');
-}
-
 function atCell(node: HTMLElement, cell: number, inset: number): void {
   node.style.left = `${(mazeX(cell) + inset) / MAZE_WIDTH * 100}%`;
   node.style.top = `${(mazeY(cell) + inset) / MAZE_HEIGHT * 100}%`;
@@ -145,7 +136,6 @@ function buildBoard(): void {
     board.append(agent);
     agentNodes.push(agent);
   }
-  renderChartLegend();
 }
 
 function paintWalls(walls: readonly number[]): void {
@@ -326,56 +316,42 @@ function renderLinks(frame: Snapshot, round: number): void {
   links.innerHTML = content;
 }
 
-function renderChart(frame: Snapshot, round: number): void {
-  const x = (r: number) => 30 + r * 67;
-  const y = (value: number) => 108 - (value - Z_MIN) / (Z_MAX - Z_MIN) * 92;
-  let svg = `<svg viewBox="0 0 320 130" role="img" aria-label="${tr('Intent scores for the selected agent over four rounds')}">`;
-  for (const level of [-4, 0, 5, 10, 15]) {
-    svg += `<line class="grid ${level === 0 ? 'zero' : ''}" x1="27" y1="${y(level)}" x2="304" y2="${y(level)}" />`;
-    svg += `<text class="axis" x="2" y="${y(level) + 3}">${level}</text>`;
-  }
-  svg += `<line class="marker" x1="${x(round)}" y1="14" x2="${x(round)}" y2="110" />`;
-  for (let action = 0; action < ACTIONS.length; action++) {
-    const points = Array.from({ length: ROUNDS + 1 }, (_, r) => `${x(r)},${y(zValues(frame, r, selectedAgent)[action])}`).join(' ');
-    svg += `<polyline class="trace" points="${points}" stroke="${ACTIONS[action].color}" />`;
-    const current = zValues(frame, round, selectedAgent)[action];
-    svg += `<circle class="dot" cx="${x(round)}" cy="${y(current)}" r="3.5" fill="${ACTIONS[action].color}" />`;
-  }
-  for (let r = 0; r <= ROUNDS; r++) svg += `<text class="axis round" x="${x(r)}" y="124">${r}</text>`;
-  chart.innerHTML = svg + '</svg>';
+function renderVotes(frame: Snapshot, round: number): void {
+  const finalScores = round === ROUNDS ? zValues(frame, round, selectedAgent) : null;
+  const agentVotes = Array.from({ length: ROUNDS }, (_, r) => frame.votes[r * frame.positions.length + selectedAgent]);
+  const headers = agentVotes.map((_, r) => {
+    const number = r + 1;
+    const label = fmt('Round {round}', { round: number });
+    return `<button class="maze-vote-heading" type="button" data-round="${number}" aria-label="${label}"${number === round ? ' aria-current="step"' : ''}>R${number}</button>`;
+  }).join('');
+  const rows = ACTIONS.map((action, index) => {
+    const name = actionName(index);
+    const votes = agentVotes.map((vote, r) => {
+      const number = r + 1;
+      const voted = vote === index;
+      const label = voted ? `aria-label="${fmt('Round {round} vote: {action}', { round: number, action: name })}"` : 'aria-hidden="true"';
+      return `<div class="maze-vote-cell ${voted ? 'voted' : ''} ${number === round ? 'current' : ''} ${number > round ? 'future' : ''}" style="--vote-color:${action.color}" ${label}>${voted ? actionIcon(index) : ''}</div>`;
+    }).join('');
+    const score = finalScores ? formatIntentScore(finalScores[index]) : '—';
+    const scoreLabel = finalScores ? `aria-label="${fmt('Final intent score for {action}, {score}', { action: name, score })}"` : 'aria-hidden="true"';
+    return `<div class="maze-vote-label" style="--vote-color:${action.color}">${actionIcon(index)} ${name}</div>${votes}<div class="maze-intent-score${finalScores ? '' : ' pending'}" ${scoreLabel}>${score}</div>`;
+  }).join('');
+  voteGrid.innerHTML = `<div></div>${headers}<div class="maze-vote-heading" title="${tr('Final intent score')}">${tr('Final score')}</div>${rows}`;
+
+  const chosen = finalScores && !frame.finished[selectedAgent] ? frame.plannedActions[selectedAgent] : undefined;
+  decision.hidden = chosen === undefined;
+  chosenAction.innerHTML = chosen === undefined ? '' : `${actionIcon(chosen)} ${actionName(chosen)}`;
 }
 
 function renderInspector(frame: Snapshot, round: number): void {
-  const current = zValues(frame, round, selectedAgent);
-  const intent = winner(current);
   agentTitle.textContent = fmt('Agent {id}', { id: String(selectedAgent + 1).padStart(2, '0') });
   agentTitle.style.color = MAZE_COLORS[selectedAgent];
   const goal = frame.goals[selectedAgent];
-  const previousMove = actionName(frame.previousActions[selectedAgent] ?? 0).toLowerCase();
+  const goalPosition = { x: mazeX(goal), y: mazeY(goal) };
   agentSummary.textContent = frame.finished[selectedAgent]
-    ? fmt('Goal ({x}, {y}) reached. The agent stays here while the others finish.', { x: mazeX(goal), y: mazeY(goal) })
-    : round === 0
-      ? fmt('Goal ({x}, {y}). Communication has not started.', { x: mazeX(goal), y: mazeY(goal) })
-      : fmt('Goal ({x}, {y}). Intent — {action} ({score}). Last move — {move}.', {
-        x: mazeX(goal), y: mazeY(goal), action: actionName(intent).toLowerCase(), score: formatIntentScore(current[intent]), move: previousMove,
-      });
-
-  roundStrip.innerHTML = Array.from({ length: ROUNDS }, (_, index) => {
-    const r = index + 1;
-    const values = zValues(frame, r, selectedAgent);
-    const action = winner(values);
-    const value = formatIntentScore(values[action]);
-    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="${fmt('Round {round}, intent {action}, score {value}', { round: r, action: actionName(action).toLowerCase(), value })}"><small>${fmt('Round {round}', { round: r })}</small><strong>${actionIcon(action)} ${value}</strong></button>`;
-  }).join('');
-  for (const chip of roundStrip.querySelectorAll<HTMLButtonElement>('button')) {
-    chip.addEventListener('click', () => seek(frame.action * (ROUNDS + 1) + Number(chip.dataset.round)));
-  }
-
-  renderChart(frame, round);
-  const agentVotes = Array.from({ length: ROUNDS }, (_, r) => frame.votes[r * frame.positions.length + selectedAgent]);
-  element('#maze-vote-summary').textContent = round === 0 ? tr('Before the first vote') : fmt('Round {round}: {action}', { round, action: actionName(agentVotes[round - 1]) });
-  voteGrid.innerHTML = `<div class="maze-vote-label"></div>${agentVotes.map((_, r) => `<div class="maze-vote-heading ${r + 1 === round ? 'current' : ''}">R${r + 1}</div>`).join('')}`
-    + ACTIONS.map((action, index) => `<div class="maze-vote-label" style="--vote-color:${action.color}">${actionIcon(index)} ${tr(action.name)}</div>${agentVotes.map((vote, r) => `<div class="maze-vote-cell ${vote === index ? 'voted' : ''} ${r + 1 === round ? 'current' : ''} ${r + 1 > round ? 'future' : ''}" style="--vote-color:${action.color}" ${vote === index ? `aria-label="${fmt('Round {round} vote: {action}', { round: r + 1, action: tr(action.name) })}"` : 'aria-hidden="true"'}>${vote === index ? actionIcon(index) : ''}</div>`).join('')}`).join('');
+    ? fmt('Goal ({x}, {y}) reached.', goalPosition)
+    : fmt('Goal ({x}, {y}).', goalPosition);
+  renderVotes(frame, round);
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
@@ -462,6 +438,8 @@ function bootWorker(): void {
   board.classList.remove('ready');
   solvedBanner.hidden = true;
   agentSummary.textContent = tr('Loading the selected maze scenario…');
+  voteGrid.innerHTML = '';
+  decision.hidden = true;
   allAgents.innerHTML = '';
   source.className = 'maze-source';
   setSource('Loading model');
@@ -502,6 +480,13 @@ function bootWorker(): void {
 }
 
 buildBoard();
+voteGrid.addEventListener('click', (event) => {
+  const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-round]') : null;
+  if (!button) return;
+  const round = Number(button.dataset.round);
+  seek(frameAt(cursor).frame.action * (ROUNDS + 1) + round);
+  voteGrid.querySelector<HTMLButtonElement>(`button[data-round="${round}"]`)?.focus({ preventScroll: true });
+});
 playButton.addEventListener('click', () => setPlaying(!playing));
 nextButton.addEventListener('click', () => { setPlaying(false); advanceRound(); });
 previousButton.addEventListener('click', () => seek(cursor - 1));
@@ -563,7 +548,6 @@ board.addEventListener('pointermove', (event) => {
 board.addEventListener('pointerup', () => { lastPaintedCell = -1; });
 board.addEventListener('pointercancel', () => { lastPaintedCell = -1; });
 window.addEventListener('demo:languagechange', () => {
-  renderChartLegend();
   for (let i = 0; i < agentNodes.length; i++) {
     agentNodes[i].setAttribute('aria-label', fmt('Inspect agent {id}', { id: String(i + 1).padStart(2, '0') }));
   }
