@@ -99,11 +99,11 @@ simulation with the selected count.
 
 ## Communication maze
 
-Open `maze.html` directly or use the **Communication maze** link in the warehouse
-header, which opens it in a separate browser tab. This independent mini-maze
+Open `maze.html` directly or use **Communication maze** in the warehouse
+header to switch views in the current tab. The mini-maze
 uses the same FastDMM checkpoint as the native warehouse. Its browser
 worker uses ONNX Runtime Web and the bundled WebAssembly observation and PIBT
-core; the native warehouse process and its controls are unaffected.
+core.
 
 Use **Edit maze** to paint or erase walls, add or remove agents (1–16), and
 set each agent's start and goal. The outer border stays closed, and the editor
@@ -123,7 +123,7 @@ The maze player defaults to 1.3 seconds per communication round, slower than
 the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,
 or the left/right arrow keys for manual stepping. Earlier rounds remain
 available for inspection; continuing beyond the newest round computes a new
-action. Pause, speed, and Restart affect only the maze tab.
+action. Pause, speed, and Restart control maze playback.
 
 To regenerate the trace model from the local checkpoint with Python/PyTorch:
 
