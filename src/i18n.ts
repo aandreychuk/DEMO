@@ -88,7 +88,6 @@ const RU: Record<string, string> = {
   'Speed': 'Скорость',
   'Layout': 'Расстановка',
   'Reset camera': 'Сбросить камеру',
-  'WASD to move, drag to orbit, scroll to zoom': 'WASD — движение, перетаскивание — поворот, колесо — масштаб',
   'Gamepad controls': 'Управление геймпадом',
   'Select at reticle': 'Выбрать в прицеле',
   'Switch robot': 'Сменить робота',
