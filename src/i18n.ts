@@ -6,7 +6,6 @@ const RU: Record<string, string> = {
   'Multi-agent pathfinding demo': 'Демонстрация многоагентного планирования',
   'Demo views': 'Разделы демо',
   'Warehouse': 'Склад',
-  'Communication maze ↗': 'Лабиринт коммуникации ↗',
   'Communication maze': 'Лабиринт коммуникации',
   'Demo source': 'Источник демо',
   'QR links': 'QR-ссылки',

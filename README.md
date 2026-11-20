@@ -87,8 +87,8 @@ the compatibility fallback.
 
 ## Communication maze
 
-Open `maze.html` directly or use the **Communication maze** link in the warehouse
-header, which opens it in a separate browser tab. This independent mini-maze
+Open `maze.html` directly or use **Communication maze** in the warehouse
+header to switch views in the current tab. The mini-maze
 uses the same observation tokenizer, FastDMM weights, and PIBT shield
 as the browser warehouse. Its dedicated ONNX graph exposes the raw accumulated
 `z` after each of the four communication rounds. The model runs again for each
@@ -109,7 +109,7 @@ The maze player defaults to 1.3 seconds per communication round, slower than
 the warehouse's simulation tick. Use Previous, Next, the recorded-round slider,
 or the left/right arrow keys for manual stepping. Earlier rounds remain
 available for inspection; continuing beyond the newest round computes a new
-action. Pause, speed, and Restart affect only the maze tab.
+action. Pause, speed, and Restart control maze playback.
 
 To regenerate the trace model from the local checkpoint with Python/PyTorch:
 
@@ -121,8 +121,8 @@ python runtime/export_comm_trace_onnx.py \
 ```
 
 The exporter verifies every ONNX round against PyTorch and checks that the
-fourth round agrees with the ordinary deployment output. The maze has its own
-Web Worker and does not change the warehouse simulation or its model.
+fourth round agrees with the ordinary deployment output. The maze runs in
+its own Web Worker.
 
 Every visible tick is calculated on demand. Pause suspends stepping; Stop
 creates a fresh simulation and holds it at step zero. No trajectory is
