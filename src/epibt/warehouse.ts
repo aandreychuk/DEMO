@@ -80,7 +80,7 @@ function renderControls(): void {
   playButton.textContent = tr(running ? 'Pause' : 'Run');
   stepButton.disabled = !ready || busy || running || requestedLength !== null;
   const state = !worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…'
-    : requestedLength !== null ? 'Changing operation length…' : running ? 'Running' : 'Paused';
+    : requestedLength !== null ? 'Changing the planning horizon…' : running ? 'Running' : 'Paused';
   setText('epibt-state', tr(state));
   const rateLabel = fmt('{value} steps/s', { value: formatNumber(playbackRate()) });
   setText('epibt-rate-value', rateLabel);
@@ -259,7 +259,7 @@ function start(next: WarehouseConfig, autoplay = false): void {
     if (data.type === 'length-error') {
       requestedLength = null;
       renderControls();
-      renderError('Could not change the operation length.');
+      renderError('Could not change the planning horizon.');
       schedule();
       return;
     }
@@ -310,7 +310,7 @@ const editor = new LayoutEditor(canvas, mapView, () => {
 }, next => {
   showEditor(false);
   if (next) {
-    start(next);
+    start(next, true);
   } else {
     running = resumeAfterEditor && !!worker;
     renderControls();
