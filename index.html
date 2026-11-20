@@ -4,32 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b13" />
-    <title>MAPF Operations Demo</title>
+    <link rel="icon" type="image/svg+xml" href="./airi-logo.svg" />
+    <title>Interactive warehouse</title>
   </head>
   <body>
     <main id="app">
       <canvas id="scene" aria-label="3D MAPF simulation"></canvas>
 
-      <header class="topbar glass">
-        <div class="brand">
-          <img class="brand-logo" src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
-          <div>
-            <strong>MAPF Operations</strong>
-            <small>Multi-agent pathfinding demo</small>
-          </div>
+      <header class="demo-header topbar">
+        <div class="demo-brand">
+          <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
+          <div class="demo-source connection"><span id="source-label">Demo source</span></div>
         </div>
-        <nav class="demo-tabs" aria-label="Demo views"><span aria-current="page">Warehouse</span><a href="./epibt.html">EPIBT warehouse</a><a href="./maze.html">Communication maze</a></nav>
+        <nav class="demo-tabs" aria-label="Demo views">
+          <span aria-current="page">Interactive warehouse</span>
+          <a href="./epibt.html">Warehouse with orientations</a>
+          <a href="./maze.html">DMM communication</a>
+        </nav>
         <div class="header-actions">
-          <div class="connection"><span id="source-label">Demo source</span></div>
           <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
           <details class="qr-links">
             <summary>QR links</summary>
-            <div class="qr-panel" aria-label="Demo links">
+            <div class="qr-panel" role="group" aria-label="Demo links">
               <strong>Explore DMM</strong>
               <div class="qr-grid">
-                <a href="https://github.com/CognitiveAISystems/DMM" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation"><img src="./qr/method.svg" alt="QR code for the DMM implementation" width="128" height="128" /><span>Implementation</span><small>github.com/CognitiveAISystems/DMM</small></a>
-                <a href="https://aandreychuk.github.io/DEMO/" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo"><img src="./qr/demo.svg" alt="QR code for the live demo" width="128" height="128" /><span>Live demo</span><small>aandreychuk.github.io/DEMO</small></a>
-                <a href="https://arxiv.org/abs/2609.32019" target="_blank" rel="noopener noreferrer" aria-label="Open the paper"><img src="./qr/paper.svg" alt="QR code for the paper" width="128" height="128" /><span>Paper</span><small>arxiv.org/abs/2609.32019</small></a>
+                <a href="https://github.com/CognitiveAISystems/DMM" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation">
+                  <img src="./qr/method.svg" alt="QR code for the DMM implementation" width="128" height="128" />
+                  <span>Code</span><small>github.com/CognitiveAISystems/DMM</small>
+                </a>
+                <a href="https://aandreychuk.github.io/DEMO/" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo">
+                  <img src="./qr/demo.svg" alt="QR code for the live demo" width="128" height="128" />
+                  <span>Live demo</span><small>aandreychuk.github.io/DEMO</small>
+                </a>
+                <a href="https://arxiv.org/abs/2609.32019" target="_blank" rel="noopener noreferrer" aria-label="Open the paper">
+                  <img src="./qr/paper.svg" alt="QR code for the paper" width="128" height="128" />
+                  <span>Paper</span><small>arxiv.org/abs/2609.32019</small>
+                </a>
               </div>
             </div>
           </details>
@@ -39,8 +49,8 @@
       <aside class="inspector glass">
         <section class="demo-guide" aria-label="About this demo">
           <p class="eyebrow">What to watch</p>
-          <p>Robots carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
-          <p>Select a robot to inspect its task, steer it, or trigger a breakdown. Use Layout to edit pallets and agent count.</p>
+          <p>Agents carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
+          <p>Select an agent to inspect its task, steer it, or trigger a breakdown. Use Layout to edit pallets and agent count.</p>
         </section>
         <section class="agent-inspector">
           <div class="section-heading">
@@ -50,7 +60,7 @@
           <div id="agent-empty" class="agent-empty">
             <span class="target-glyph">◎</span>
             <strong>Select an agent</strong>
-            <small>Click a robot or its carried pallet</small>
+            <small>Click an agent or its carried pallet</small>
           </div>
           <div id="agent-details" class="agent-details" hidden>
             <div class="agent-title-row">
@@ -58,7 +68,7 @@
               <span id="selected-agent-state" class="state-pill">Empty</span>
             </div>
             <button id="control-agent-button" class="control-agent-button" type="button" aria-pressed="false">Take control</button>
-            <p id="agent-control-hint" class="agent-control-hint" hidden>Move the robot with WASD, the left stick, or the D-pad. Esc returns control to DMM.</p>
+            <p id="agent-control-hint" class="agent-control-hint" hidden>Move the agent with WASD, the left stick, or the D-pad. Esc returns control to DMM.</p>
             <dl class="agent-facts">
               <div><dt>Pallet</dt><dd id="agent-pallet">—</dd></div>
               <div><dt>Position</dt><dd id="agent-position">—</dd></div>
@@ -167,7 +177,7 @@
       <div id="gamepad-reticle" aria-hidden="true" hidden></div>
       <aside id="gamepad-help" class="gamepad-help glass" aria-label="Gamepad controls" hidden>
         <span><kbd>✕</kbd> Select at reticle</span>
-        <span><kbd>L1 / R1</kbd> Switch robot</span>
+        <span><kbd>L1 / R1</kbd> Switch agent</span>
         <span><kbd>□</kbd> Toggle manual control</span>
         <span><kbd>○</kbd> Clear selection</span>
         <span><kbd>△</kbd> Break agent</span>
@@ -182,8 +192,8 @@
       <aside id="gamepad-editor-help" class="gamepad-help glass" aria-label="Layout editor gamepad controls" hidden>
         <span><kbd>✕</kbd> Add or remove pallet</span>
         <span><kbd>□</kbd> Undo edit</span>
-        <span><kbd>↑ / ↓</kbd> Change robot count by 1</span>
-        <span><kbd>← / →</kbd> Change robot count by 10</span>
+        <span><kbd>↑ / ↓</kbd> Change agent count by 1</span>
+        <span><kbd>← / →</kbd> Change agent count by 10</span>
         <span><kbd>Options</kbd> Apply &amp; restart</span>
         <span><kbd>○ / L3</kbd> Cancel</span>
         <small>Left stick to aim at a cell, L2/R2 to zoom</small>

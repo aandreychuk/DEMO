@@ -1,5 +1,5 @@
 import './maze.css';
-import './qr-links.css';
+import './demo-header.css';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
 import { fmt, formatCount, formatFixed, initI18n, tr, translateMessage } from './i18n';
 
@@ -441,7 +441,7 @@ function bootWorker(): void {
   voteGrid.innerHTML = '';
   decision.hidden = true;
   allAgents.innerHTML = '';
-  source.className = 'maze-source';
+  source.classList.remove('error', 'ready');
   setSource('Loading model');
   nextButton.disabled = true;
   previousButton.disabled = true;

@@ -1,5 +1,5 @@
 import './warehouse.css';
-import '../qr-links.css';
+import '../demo-header.css';
 import { fmt, formatCount, formatFixed, formatNumber, initI18n, tr } from '../i18n';
 import type { WarehouseConfig } from './config';
 import { LayoutEditor } from './editor';
@@ -98,7 +98,7 @@ function renderControls(): void {
 function renderInspector(): void {
   const agent = snapshot?.agents[selected];
   previousRobot.disabled = nextRobot.disabled = !agent || config.agentCount <= 1;
-  setText('epibt-selected', fmt('Robot {id}', { id: String(selected + 1).padStart(3, '0') }));
+  setText('epibt-selected', fmt('Agent {id}', { id: String(selected + 1).padStart(3, '0') }));
   setText('epibt-stage', agent ? tr(agent.stage) : '—');
   setText('epibt-position', agent ? coordinates(agent.cell) : '—');
   setText('epibt-heading', agent ? `${headingGlyphs[agent.direction]} ${tr(headingNames[agent.direction])}` : '—');
@@ -134,7 +134,7 @@ function renderFleet(): void {
   setText('epibt-agent-count', formatCount(config.agentCount, 'agents'));
   rows.forEach((row, index) => {
     const agent = snapshot?.agents[index];
-    row.button.setAttribute('aria-label', fmt('Robot {id}', { id: row.button.textContent ?? '' }));
+    row.button.setAttribute('aria-label', fmt('Agent {id}', { id: row.button.textContent ?? '' }));
     row.position.textContent = agent ? coordinates(agent.cell) : '—';
     row.heading.textContent = agent ? headingGlyphs[agent.direction] : '—';
     row.heading.title = agent ? tr(headingNames[agent.direction]) : '';
@@ -294,7 +294,7 @@ function renderDimensions(): void {
 function labelMap(): void {
   canvas.setAttribute('aria-label', tr(editor.draft
     ? 'Editable warehouse map. Use arrow keys and Space to paint.'
-    : 'Warehouse map with oriented robots'));
+    : 'Warehouse map with oriented agents'));
 }
 
 function showEditor(editing: boolean): void {
