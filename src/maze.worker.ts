@@ -121,7 +121,7 @@ async function infer(): Promise<void> {
       trace.push(...all.subarray(start, start + positions.length * ACTIONS));
       votes.push(...allVotes.subarray(round * MODEL_SLOTS, round * MODEL_SLOTS + positions.length));
     }
-    if (!trace.every(Number.isFinite)) throw new Error('The model returned non-finite z values.');
+    if (!trace.every(Number.isFinite)) throw new Error('The model returned invalid intent scores.');
     if (!votes.every((vote) => Number.isInteger(vote) && vote >= 0 && vote < ACTIONS)) {
       throw new Error('The model returned invalid communication votes.');
     }
