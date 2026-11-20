@@ -1,4 +1,4 @@
-import type { WarehouseConfig } from './config';
+import type { Point } from './config';
 import { nextPose, type Agent } from './model';
 
 const PICKUP = '#bb8b51';
@@ -10,6 +10,7 @@ export class WarehouseMap {
   private readonly context: CanvasRenderingContext2D;
   private agents: Array<{ x: number; y: number }> = [];
   private cellSize = 1;
+  private grid = { left: 0, top: 0, columns: 0, rows: 0 };
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const context = canvas.getContext('2d');
@@ -33,10 +34,18 @@ export class WarehouseMap {
     return index;
   }
 
-  draw(config: WarehouseConfig, agents: Agent[], previous: Agent[], blend: number, selected: number): void {
+  pickCell(event: PointerEvent): Point | null {
+    const bounds = this.canvas.getBoundingClientRect();
+    const { left, top, columns, rows } = this.grid;
+    const x = Math.floor((event.clientX - bounds.left - left) / this.cellSize);
+    const y = Math.floor((event.clientY - bounds.top - top) / this.cellSize);
+    return x >= 0 && x < columns && y >= 0 && y < rows ? { x, y } : null;
+  }
+
+  draw(map: string[], agents: Agent[], previous: Agent[], blend: number, selected: number, cursor?: Point | null): void {
     const { context, canvas } = this;
-    const columns = config.map[0].length;
-    const rows = config.map.length;
+    const columns = map[0].length;
+    const rows = map.length;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     if (!width || !height) return;
@@ -53,6 +62,7 @@ export class WarehouseMap {
     this.cellSize = size;
     const left = (width - size * columns) / 2;
     const top = (height - size * rows) / 2;
+    this.grid = { left, top, columns, rows };
     const centerX = (cell: number) => left + (cell % columns + 0.5) * size;
     const centerY = (cell: number) => top + (Math.floor(cell / columns) + 0.5) * size;
 
@@ -78,7 +88,7 @@ export class WarehouseMap {
     for (let x = 0; x < columns; x += 5) context.fillText(String(x), centerX(x), top - 8);
     for (let y = 0; y < rows; y += 5) context.fillText(String(y), left - 11, centerY(y * columns));
 
-    config.map.forEach((row, y) => {
+    map.forEach((row, y) => {
       for (let x = 0; x < columns; x++) {
         const tile = row[x];
         const px = left + x * size;
@@ -97,6 +107,12 @@ export class WarehouseMap {
         }
       }
     });
+
+    if (cursor) {
+      context.strokeStyle = '#a8f0fb';
+      context.lineWidth = 1.5;
+      context.strokeRect(left + cursor.x * size + 1, top + cursor.y * size + 1, size - 2, size - 2);
+    }
 
     const focus = agents[selected];
     if (focus) {

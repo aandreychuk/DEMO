@@ -24,9 +24,8 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-board-header { padding: 16px 18px 10px; }
 .epibt-board-header h1 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .epibt-board-header p { margin: 4px 0 0; color: #a4bac7; font-size: 11px; font-variant-numeric: tabular-nums; }
-.epibt-file-actions { display: flex; gap: 6px; }
-.epibt-file-actions button, .epibt-controls button { border: 1px solid #2a5267; border-radius: 5px; padding: 7px 10px; background: #102939; color: #d5edf8; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.epibt-file-actions button:hover, .epibt-controls button:hover:not(:disabled) { background: #18465a; }
+.epibt-button, .epibt-controls button { border: 1px solid #2a5267; border-radius: 5px; padding: 7px 10px; background: #102939; color: #d5edf8; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.epibt-button:hover:not(:disabled), .epibt-controls button:hover:not(:disabled) { background: #18465a; }
 .epibt-error { margin: 3px 18px 8px; padding: 8px 10px; border: 1px solid #864b47; border-radius: 5px; background: #281b26; color: #ffb1a4; }
 .epibt-map-space { flex: 1; min-height: 0; position: relative; margin: 0 10px; }
 #epibt-map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
@@ -67,19 +66,51 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-fleet tr[data-selected] td { background: #143648; }
 .epibt-fleet td button { border: 0; border-radius: 4px; padding: 2px 3px; background: transparent; color: #8edfed; font-size: 10px; font-weight: 700; }
 .epibt-fleet td button:hover { background: #234b61; }
-.epibt-controls .epibt-primary { background: #65d7ea; border-color: #65d7ea; color: #092330; min-width: 72px; }
-.epibt-controls .epibt-primary:hover:not(:disabled) { background: #a2ecf6; }
+.epibt-app .epibt-primary { background: #65d7ea; border-color: #65d7ea; color: #092330; min-width: 72px; }
+.epibt-app .epibt-primary:hover:not(:disabled) { background: #a2ecf6; }
 .epibt-speed { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
 .epibt-speed input { width: 114px; accent-color: #65d7ea; }
 .epibt-speed output { min-width: 30px; color: #d2eef5; font-variant-numeric: tabular-nums; }
 .epibt-method { margin-left: auto; color: #a5c5d4; font-size: 11px; text-decoration: none; }
 .epibt-method:hover { color: #ddf8ff; }
 
+.epibt-app[data-editing] { grid-template-rows: 66px minmax(660px, 1fr); }
+.epibt-app[data-editing] #epibt-map { touch-action: none; }
+.epibt-editor { gap: 17px; padding: 18px; }
+.epibt-editor .epibt-section-head h2 { font-size: 17px; }
+.epibt-editor-config { display: grid; gap: 7px; }
+.epibt-editor-config label, .epibt-brushes legend { font-size: 11px; font-weight: 600; color: #b6cfdb; }
+.epibt-editor-config select, .epibt-editor-config input[type=number] {
+  min-width: 0; width: 100%; padding: 8px 9px; border: 1px solid #2a5267; border-radius: 5px;
+  background: #0b2231; color: #e8f6fb; font: inherit;
+}
+.epibt-editor-config label[for=epibt-robot-count] { margin-top: 5px; }
+.epibt-editor-files, .epibt-editor-actions { display: flex; gap: 7px; }
+.epibt-editor-files { margin-top: 4px; }
+.epibt-editor-files button { flex: 1; }
+.epibt-editor-config .epibt-error { margin: 0; font-size: 11px; }
+.epibt-brushes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.epibt-brushes legend { margin-bottom: 8px; padding: 0; }
+.epibt-brushes label {
+  position: relative; display: flex; align-items: center; gap: 7px; padding: 9px;
+  border: 1px solid #264659; border-radius: 5px; background: #0c2230; color: #c3dce7; cursor: pointer;
+}
+.epibt-brushes label:has(input:checked) { border-color: #67b6cc; background: #15394a; color: #eaf9fd; }
+.epibt-brushes label:has(input:focus-visible) { outline: 2px solid #65dcf4; outline-offset: 2px; }
+.epibt-brushes input { position: absolute; opacity: 0; }
+.epibt-brushes i { flex: 0 0 12px; height: 12px; border: 1px solid currentColor; border-radius: 2px; background: currentColor; }
+.epibt-brushes .epibt-wall { color: #557480; }
+.epibt-brushes .epibt-aisle { color: #7192a2; background: #101f2b; }
+.epibt-paint-help { margin: -9px 0 0; color: #a7bfcc; font-size: 11px; }
+.epibt-map-check { margin: 0; padding: 9px; border: 1px solid #806348; border-radius: 5px; background: #332820; color: #ffcf96; font-size: 11px; }
+.epibt-editor-actions { margin-top: auto; justify-content: flex-end; padding-top: 12px; border-top: 1px solid #204052; }
+
 @media (max-width: 1030px) {
   .epibt-main { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 850px) {
   .epibt-app { grid-template-rows: auto auto auto; }
+  .epibt-app[data-editing] { grid-template-rows: auto auto; }
   .epibt-header, .epibt-controls { flex-wrap: wrap; }
   .epibt-main { grid-template-columns: minmax(0, 1fr); }
   .epibt-map-space { min-height: 390px; }

@@ -1,29 +1,44 @@
-export const WAREHOUSE_SCHEMA = 'epibt-warehouse/v1';
-export const HEADINGS = ['E', 'S', 'W', 'N'] as const;
+export const WAREHOUSE_SCHEMA = 'epibt-warehouse/v2';
 export const MAX_CONFIG_BYTES = 1_000_000;
+export const MAX_AGENTS = 200;
 const MAX_WIDTH = 48;
 const MAX_HEIGHT = 40;
-const MAX_AGENTS = 200;
-const MAX_TASKS = 4096;
 
-export type Heading = typeof HEADINGS[number];
 export type Point = { x: number; y: number };
-export type Start = Point & { heading: Heading };
-export type Delivery = { pickup: Point; delivery: Point };
-
+export type Tile = '.' | '#' | 'S' | 'D';
 export type WarehouseConfig = {
   schema: typeof WAREHOUSE_SCHEMA;
   map: string[];
-  agents: Start[];
-  tasks: Delivery[];
+  agentCount: number;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+function migrateMap(map: string[], tasks: unknown): string[] {
+  if (!Array.isArray(tasks)) return map;
+  const missing = ([['pickup', 'S'], ['delivery', 'D']] as const)
+    .filter(([, tile]) => !map.some(row => row.includes(tile)));
+  if (!missing.length) return map;
+
+  const rows = [...map];
+  function mark(task: unknown, key: string, tile: Tile): boolean {
+    const point = isRecord(task) && task[key];
+    if (!isRecord(point) || typeof point.x !== 'number' || typeof point.y !== 'number') return false;
+    const { x, y } = point;
+    if (rows[y]?.[x] !== '.') return false;
+    rows[y] = rows[y].slice(0, x) + tile + rows[y].slice(x + 1);
+    return true;
+  }
+  // Reserve one cell for each missing bay type before converting any other points.
+  for (const [key, tile] of missing) tasks.some(task => mark(task, key, tile));
+  for (const [key, tile] of missing) tasks.forEach(task => mark(task, key, tile));
+  return rows;
+}
+
 export function parseWarehouse(value: unknown): WarehouseConfig {
-  if (!isRecord(value) || value.schema !== WAREHOUSE_SCHEMA) {
-    throw new Error('Expected an EPIBT warehouse JSON file (epibt-warehouse/v1).');
+  if (!isRecord(value) || (value.schema !== WAREHOUSE_SCHEMA && value.schema !== 'epibt-warehouse/v1')) {
+    throw new Error('Expected an EPIBT warehouse JSON file.');
   }
 
   const { map } = value;
@@ -36,101 +51,52 @@ export function parseWarehouse(value: unknown): WarehouseConfig {
   )) {
     throw new Error('The map must have 2–48 columns and use only #, ., S and D.');
   }
-  const rows: string[] = map;
 
-  function point(input: unknown): Point {
-    if (!isRecord(input) || typeof input.x !== 'number' || typeof input.y !== 'number'
-      || !Number.isInteger(input.x) || !Number.isInteger(input.y)
-      || input.x < 0 || input.x >= width || input.y < 0 || input.y >= rows.length
-      || rows[input.y][input.x] === '#') {
-      throw new Error('A start or task point is outside the walkable map.');
-    }
-    return { x: input.x, y: input.y };
-  }
-
-  if (!Array.isArray(value.agents) || value.agents.length < 1 || value.agents.length > MAX_AGENTS) {
+  const legacy = value.schema === 'epibt-warehouse/v1';
+  const agentCount = legacy && Array.isArray(value.agents) ? value.agents.length : value.agentCount;
+  if (typeof agentCount !== 'number' || !Number.isInteger(agentCount) || agentCount < 1 || agentCount > MAX_AGENTS) {
     throw new Error('The warehouse must have 1–200 robots.');
   }
-  const agents = value.agents.map((input: unknown): Start => {
-    const start = point(input);
-    const heading = isRecord(input) ? HEADINGS.find(option => option === input.heading) : undefined;
-    if (!heading) throw new Error('Robot headings must be E, S, W or N.');
-    return { ...start, heading };
-  });
 
-  const cell = ({ x, y }: Point) => y * width + x;
-  const starts = new Set(agents.map(cell));
-  if (starts.size !== agents.length) throw new Error('Two robots share a start cell.');
+  return { schema: WAREHOUSE_SCHEMA, map: legacy ? migrateMap(map, value.tasks) : [...map], agentCount };
+}
 
-  if (!Array.isArray(value.tasks) || value.tasks.length < 1 || value.tasks.length > MAX_TASKS) {
-    throw new Error('The warehouse must have 1–4,096 delivery tasks.');
+export function prepareWarehouse(config: WarehouseConfig): {
+  starts: number[];
+  pickups: number[];
+  deliveries: number[];
+} {
+  const width = config.map[0].length;
+  const tiles = config.map.join('');
+  const pickups: number[] = [];
+  const deliveries: number[] = [];
+  for (let cell = 0; cell < tiles.length; cell++) {
+    if (tiles[cell] === 'S') pickups.push(cell);
+    if (tiles[cell] === 'D') deliveries.push(cell);
   }
-  const tasks = value.tasks.map((input: unknown): Delivery => {
-    if (!isRecord(input)) throw new Error('Every task must specify pickup and delivery points.');
-    const pickup = point(input.pickup);
-    const delivery = point(input.delivery);
-    if (cell(pickup) === cell(delivery)) throw new Error('Pickup and delivery must use different cells.');
-    return { pickup, delivery };
-  });
+  if (!pickups.length || !deliveries.length) throw new Error('Place at least one pickup and one delivery bay.');
 
-  const visited = new Set([cell(agents[0])]);
-  const queue: Point[] = [agents[0]];
-  for (let head = 0; head < queue.length; head++) {
-    const { x, y } = queue[head];
-    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
-      const next = { x: x + dx, y: y + dy };
-      const tile = rows[next.y]?.[next.x];
-      const index = cell(next);
-      if (!tile || tile === '#' || visited.has(index)) continue;
-      visited.add(index);
+  const reachable = new Set([pickups[0]]);
+  const queue = [pickups[0]];
+  for (let index = 0; index < queue.length; index++) {
+    const cell = queue[index];
+    const x = cell % width;
+    const neighbours = [x > 0 ? cell - 1 : -1, x < width - 1 ? cell + 1 : -1, cell - width, cell + width];
+    for (const next of neighbours) {
+      if (!tiles[next] || tiles[next] === '#' || reachable.has(next)) continue;
+      reachable.add(next);
       queue.push(next);
     }
   }
-  if (agents.some(start => !visited.has(cell(start))) ||
-      tasks.some(task => !visited.has(cell(task.pickup)) || !visited.has(cell(task.delivery)))) {
-    throw new Error('All robots and task points must be connected by aisles.');
+  if ([...pickups, ...deliveries].some(cell => !reachable.has(cell))) {
+    throw new Error('Connect all pickup and delivery bays by aisles.');
   }
+  if (reachable.size < config.agentCount) throw new Error('There are too few reachable cells for this many robots.');
 
-  return { schema: WAREHOUSE_SCHEMA, map: rows, agents, tasks };
-}
-
-export function defaultWarehouse(): WarehouseConfig {
-  const width = 44;
-  const height = 27;
-  const map: string[][] = Array.from({ length: height }, (_, y) =>
-    Array.from({ length: width }, (_, x) =>
-      x === 0 || y === 0 || x === width - 1 || y === height - 1 ? '#' : '.'
-    )
+  const floor = Array.from(reachable).filter(cell => tiles[cell] === '.').sort((a, b) => a - b);
+  const cells = floor.length >= config.agentCount ? floor : [...floor, ...pickups, ...deliveries];
+  const starts = Array.from({ length: config.agentCount }, (_, index) =>
+    cells[Math.floor(index * cells.length / config.agentCount)]
   );
-  const pickups: Point[] = [];
-  for (const y of [4, 11, 18]) {
-    for (const x of [8, 14, 20, 26, 32, 38]) {
-      for (let row = y; row < y + 5; row++) {
-        map[row][x] = '#';
-        map[row][x + 1] = '#';
-      }
-      for (const dx of [-1, 2]) {
-        for (const dy of [1, 3]) {
-          map[y + dy][x + dx] = 'S';
-          pickups.push({ x: x + dx, y: y + dy });
-        }
-      }
-    }
-  }
-
-  const deliveries = [3, 6, 9, 12, 15, 18, 21, 24].map(y => ({ x: 42, y }));
-  for (const { x, y } of deliveries) map[y][x] = 'D';
-  const starts: Point[] = [];
-  for (let y = 2; y < height - 2; y++) {
-    for (let x = 2; x < width - 2; x++) if (map[y][x] === '.') starts.push({ x, y });
-  }
-
-  return {
-    schema: WAREHOUSE_SCHEMA,
-    map: map.map(row => row.join('')),
-    agents: Array.from({ length: 48 }, (_, id) => ({
-      ...starts[(id * 83) % starts.length], heading: HEADINGS[id % HEADINGS.length],
-    })),
-    tasks: pickups.map((pickup, i) => ({ pickup, delivery: deliveries[(i * 3 + Math.floor(i / 8)) % deliveries.length] })),
-  };
+  return { starts, pickups, deliveries };
 }

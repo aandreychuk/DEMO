@@ -19,33 +19,34 @@ The adapter enables the rotation model and operation inheritance, with depth
 3 and a revisit limit of 10. It uses the upstream test system's priority for
 multi-stop tasks: the sum of the orientation-aware distance to the current
 target and the distance of the remaining leg, with smaller values planned
-first. The display reports this priority for the last tick. The warehouse worker cycles through
-pickup and delivery tasks. The telemetry divides completed deliveries by
-elapsed simulation ticks and measures time spent in the planner call.
+first. The display reports this priority for the last tick. The warehouse
+worker generates pickup and delivery tasks from the bays on the map. The
+telemetry divides completed deliveries by elapsed simulation ticks and
+measures time spent in the planner call.
 
 ## Configuration files
 
-Use **Export JSON** to get the current starting configuration. Import starts
-the selected configuration at tick zero and pauses it. Restart uses the same
-starting configuration. Coordinates are zero-based, with `x` increasing to the
-right and `y` increasing down. Headings are `E`, `S`, `W` or `N`.
+Open **Edit map** to choose among the rack rows, central junction and narrow
+aisles presets, or paint individual cells. Import and export work on the
+editor draft. **Apply & restart** starts the draft at tick zero and pauses it.
+The same map and robot count produce the same starts, initial orientations
+and sequence of pickup and delivery pairs.
 
 ```json
 {
-  "schema": "epibt-warehouse/v1",
+  "schema": "epibt-warehouse/v2",
   "map": ["#####", "#...#", "#.SD#", "#...#", "#####"],
-  "agents": [{ "x": 2, "y": 2, "heading": "N" }],
-  "tasks": [
-    { "pickup": { "x": 2, "y": 2 }, "delivery": { "x": 3, "y": 2 } }
-  ]
+  "agentCount": 1
 }
 ```
 
 `#` marks a fixed obstacle. `.`, `S` and `D` are walkable, with `S` and `D`
-rendered as pickup and delivery bays. Starts must be distinct, with all starts
-and task points connected by walkable cells. The supported size is up to
-48 × 40 cells, 200 robots and 4,096 task templates. Export includes the
-map, starts, headings and tasks.
+rendered as pickup and delivery bays. A runnable map needs at least one of
+each bay type, with all bays connected by aisles and room for the robot count.
+The supported size is up to 48 × 40 cells and 200 robots. Export saves the
+map and robot count. The editor also imports v1 files, reading the robot count
+from their starting positions and using saved task points to recover missing
+bay markers.
 
 ## Rebuild the browser runtime
 
