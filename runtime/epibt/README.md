@@ -3,7 +3,7 @@
 Open **EPIBT warehouse** from the demo navigation or load `epibt.html` directly.
 The page runs the rotational planner in a dedicated browser worker. EPIBT
 selects an operation and executes its first primitive each tick. Use
-**Operation length** to switch between 3, 4 and 5 actions. The new planner
+**Planning horizon** to switch between 3, 4 and 5 actions. The new planner
 takes over at the same tick with the same robot poses, tasks and counters.
 The next tick generates a plan at the new length. A robot can move one
 cell forward, turn 90 degrees right or left in its cell, or wait. The
@@ -13,6 +13,7 @@ that operation. EPIBT may revise them at the next tick.
 
 The logarithmic playback control sets a target of 1 to 1,000 steps per
 second. At high rates the worker runs several ticks between screen updates.
+**Stop** resets the active map to tick zero and pauses playback.
 
 The rotation model, operation enumeration, inheritance, reservations and
 backtracking come from [Straple/EPIBT](https://github.com/Straple/EPIBT/tree/3808e832593c9fb46b3e119cbb36035cccd830e1)
@@ -36,7 +37,8 @@ measures time spent in the planner call.
 Open **Edit map** to choose a preset or paint individual cells. The presets
 include rack rows, a central junction, single-cell aisles, staggered gates,
 switchback lanes with passing bays, and nested loops. Import and export work on the
-editor draft. **Apply & restart** starts the draft at tick zero and pauses it.
+editor draft. **Apply & restart** starts the draft at tick zero and immediately
+runs the simulation.
 The same map and robot count produce the same starts, initial orientations
 and sequence of pickup and delivery pairs.
 
