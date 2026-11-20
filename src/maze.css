@@ -91,8 +91,8 @@ button { cursor: pointer; }
 .maze-chart-legend span { color: #8eabba; font-size: 8px; white-space: nowrap; }
 .maze-chart-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; vertical-align: 1px; }
 .maze-votes-section { padding-bottom: 15px; }
-.maze-votes { display: grid; grid-template-columns: 48px repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 13px; }
-.maze-vote-label { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--vote-color, #7899a9); font-size: 9px; font-weight: 600; }
+.maze-votes { display: grid; grid-template-columns: max-content repeat(4, minmax(0, 1fr)); gap: 4px 8px; margin-top: 13px; }
+.maze-vote-label { display: flex; align-items: center; gap: 4px; color: var(--vote-color, #7899a9); font-size: 9px; font-weight: 600; white-space: nowrap; }
 .maze-vote-label .maze-action-icon { width: 11px; height: 11px; }
 .maze-vote-heading { display: grid; place-items: center; color: #7899a9; font-size: 9px; font-weight: 700; }
 .maze-vote-heading.current { color: #dffaff; }
