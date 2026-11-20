@@ -1,7 +1,7 @@
 import './maze.css';
 import './qr-links.css';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
-import { fmt, getLanguage, initI18n, tr, translateMessage } from './i18n';
+import { fmt, formatCount, initI18n, tr, translateMessage } from './i18n';
 
 initI18n();
 
@@ -95,17 +95,6 @@ let editorMessageEnglish = '';
 let editorMessageValues: Record<string, string | number> = {};
 
 function actionName(index: number): string { return tr(ACTIONS[index].name); }
-function ruPlural(count: number, one: string, few: string, many: string): string {
-  const lastTwo = count % 100;
-  if (lastTwo >= 11 && lastTwo <= 14) return many;
-  const last = count % 10;
-  return last === 1 ? one : last >= 2 && last <= 4 ? few : many;
-}
-function agentCountLabel(count: number): string {
-  return getLanguage() === 'ru'
-    ? `${count} ${ruPlural(count, 'агент', 'агента', 'агентов')}`
-    : `${count} ${count === 1 ? 'agent' : 'agents'}`;
-}
 function setSource(english: string, values: Record<string, string | number> = {}): void {
   sourceEnglish = english;
   sourceValues = values;
@@ -392,7 +381,7 @@ function renderInspector(frame: Snapshot, round: number): void {
     const id = frame.chat[selectedAgent * 13 + slot];
     if (id >= 0 && id < frame.positions.length && id !== selectedAgent) sources.add(id);
   }
-  element('#maze-neighbor-count').textContent = agentCountLabel(sources.size);
+  element('#maze-neighbor-count').textContent = formatCount(sources.size, 'agents');
   neighbors.innerHTML = sources.size
     ? [...sources].map((id) => `<span style="--agent-color:${MAZE_COLORS[id]}">${fmt('Agent {id}', { id: String(id + 1).padStart(2, '0') })}</span>`).join('')
     : `<span>${tr('No agents in range')}</span>`;
@@ -409,13 +398,11 @@ function renderInspector(frame: Snapshot, round: number): void {
 function renderRoundCopy(frame: Snapshot, round: number, changes: number): void {
   element('#maze-timeline-label').textContent = round === 0 ? tr('Before communication') : fmt('Communication round {round} of {total}', { round, total: ROUNDS });
   element('#maze-step-label').textContent = fmt('Step {step}', { step: cursor });
-  element('#maze-changed').textContent = round <= 1
-    ? round === 0 ? tr('Intents begin in the next round') : getLanguage() === 'ru'
-      ? `${frame.positions.length} ${ruPlural(frame.positions.length, 'намерение сформировано', 'намерения сформированы', 'намерений сформировано')}`
-      : `${frame.positions.length} intents formed`
-    : getLanguage() === 'ru'
-      ? `${changes} ${ruPlural(changes, 'намерение изменилось', 'намерения изменились', 'намерений изменилось')} в этом раунде`
-      : `${changes} changed intent${changes === 1 ? '' : 's'} this round`;
+  element('#maze-changed').textContent = round === 0
+    ? tr('Intents begin in the next round')
+    : round === 1
+      ? formatCount(frame.positions.length, 'intentsFormed')
+      : formatCount(changes, 'intentsChanged');
 }
 
 function render(): void {
