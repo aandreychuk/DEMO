@@ -44,7 +44,7 @@ const RU: Record<string, string> = {
   'West': 'запад',
   'North': 'север',
   'Robot {id}': 'Робот {id}',
-  '{value} Hz': '{value} Гц',
+  '{value} steps/s': '{value} шаг/с',
   'Running': 'В работе',
   'Paused': 'Пауза',
   'EPIBT stopped': 'EPIBT остановлен',
