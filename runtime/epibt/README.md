@@ -26,8 +26,9 @@ measures time spent in the planner call.
 
 ## Configuration files
 
-Open **Edit map** to choose among the rack rows, central junction and narrow
-aisles presets, or paint individual cells. Import and export work on the
+Open **Edit map** to choose a preset or paint individual cells. The presets
+include rack rows, a central junction, single-cell aisles, staggered gates,
+switchback lanes with passing bays, and nested loops. Import and export work on the
 editor draft. **Apply & restart** starts the draft at tick zero and pauses it.
 The same map and robot count produce the same starts, initial orientations
 and sequence of pickup and delivery pairs.
