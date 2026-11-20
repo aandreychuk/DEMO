@@ -84,8 +84,8 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-length-options { display: flex; gap: 2px; padding: 2px; border: 1px solid #2a5267; border-radius: 5px; background: #071822; }
 .epibt-length-options .epibt-button { min-width: 27px; padding: 4px 6px; border-color: transparent; border-radius: 3px; background: transparent; }
 .epibt-length-options button[aria-pressed="true"] { border-color: #427c91; background: #15394a; color: #aaf1fa; }
-.epibt-method { margin-left: auto; color: #a5c5d4; font-size: 11px; text-decoration: none; }
-.epibt-method:hover { color: #ddf8ff; }
+.epibt-controls .qr-links { margin-left: auto; z-index: 2; }
+.epibt-controls .qr-panel { top: auto; bottom: calc(100% + 12px); }
 
 .epibt-app[data-editing] { grid-template-rows: auto minmax(0, 1fr); }
 .epibt-app[data-editing] #epibt-map { touch-action: none; }
