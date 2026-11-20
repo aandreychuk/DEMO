@@ -1,4 +1,4 @@
-import { HEADINGS, parseWarehouse, type Point, type WarehouseConfig } from './config';
+import { parseWarehouse, prepareWarehouse, type WarehouseConfig } from './config';
 import { nextPose, type Action, type Agent, type WorkerCommand, type WorkerReply } from './model';
 
 type Runtime = {
@@ -20,6 +20,8 @@ const OUTPUT_STRIDE = 6;
 let runtime: Runtime;
 let config: WarehouseConfig;
 let width = 0;
+let pickups: number[] = [];
+let deliveries: number[] = [];
 let step = 0;
 let completed = 0;
 let nextTask = 0;
@@ -27,19 +29,21 @@ let input = 0;
 let output = 0;
 let agents: Array<Agent & { dropoff: number }> = [];
 
-const cell = (point: Point) => point.y * width + point.x;
-
 function assignTask(agent: Agent & { dropoff: number }): void {
-  const task = config.tasks[nextTask % config.tasks.length];
-  const pickup = cell(task.pickup);
+  const pickupIndex = nextTask % pickups.length;
+  const pickup = pickups[pickupIndex];
+  const deliveryIndex = pickupIndex + Math.floor(nextTask / pickups.length);
   agent.task = ++nextTask;
-  agent.dropoff = cell(task.delivery);
+  agent.dropoff = deliveries[deliveryIndex % deliveries.length];
   agent.stage = agent.cell === pickup ? 'Delivery' : 'Pickup';
   agent.target = agent.stage === 'Pickup' ? pickup : agent.dropoff;
 }
 
 async function configure(request: WarehouseConfig): Promise<void> {
   config = parseWarehouse(request);
+  const plan = prepareWarehouse(config);
+  pickups = plan.pickups;
+  deliveries = plan.deliveries;
   width = config.map[0].length;
   const moduleUrl = new URL(`${import.meta.env.BASE_URL}runtime/epibt.mjs`, self.location.origin);
   const createRuntime = (await import(/* @vite-ignore */ moduleUrl.href)).default as (options: {
@@ -59,9 +63,9 @@ async function configure(request: WarehouseConfig): Promise<void> {
     runtime._free(mapPointer);
   }
 
-  agents = config.agents.map(start => {
+  agents = plan.starts.map((cell, index) => {
     const agent: Agent & { dropoff: number } = {
-      cell: cell(start), direction: HEADINGS.indexOf(start.heading), target: 0, task: 0, stage: 'Pickup',
+      cell, direction: index % 4, target: 0, task: 0, stage: 'Pickup',
       operation: [], priority: null, completed: 0, distance: 0, turns: 0, waits: 0, dropoff: 0,
     };
     assignTask(agent);

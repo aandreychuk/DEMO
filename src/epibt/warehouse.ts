@@ -1,9 +1,11 @@
 import './warehouse.css';
 import '../qr-links.css';
 import { fmt, formatCount, formatFixed, formatNumber, initI18n, tr } from '../i18n';
-import { defaultWarehouse, MAX_CONFIG_BYTES, parseWarehouse, type WarehouseConfig } from './config';
+import type { WarehouseConfig } from './config';
+import { LayoutEditor } from './editor';
 import { WarehouseMap } from './map';
 import { ACTIONS, ACTION_CODES, type Action, type Snapshot, type WorkerCommand, type WorkerReply } from './model';
+import { WAREHOUSE_PRESETS } from './presets';
 
 function element<T extends HTMLElement = HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -14,13 +16,13 @@ const mapView = new WarehouseMap(canvas);
 const playButton = element<HTMLButtonElement>('epibt-play');
 const stepButton = element<HTMLButtonElement>('epibt-next');
 const speed = element<HTMLInputElement>('epibt-rate');
-const fileInput = element<HTMLInputElement>('epibt-file');
+const editButton = element<HTMLButtonElement>('epibt-open-editor');
 const error = element('epibt-error');
 const operation = element('epibt-operation');
 const headingNames = ['East', 'South', 'West', 'North'] as const;
 const headingGlyphs = ['→', '↓', '←', '↑'] as const;
 
-let config = defaultWarehouse();
+let config = WAREHOUSE_PRESETS[0].config;
 let worker: Worker | null = null;
 let snapshot: Snapshot | null = null;
 let previous: Snapshot | null = null;
@@ -31,7 +33,7 @@ let timer: number | undefined;
 let animationFrame: number | undefined;
 let transitionStarted = 0;
 let errorText = '';
-let importVersion = 0;
+let resumeAfterEditor = false;
 let rows: Array<{ row: HTMLTableRowElement; button: HTMLButtonElement; position: HTMLElement; heading: HTMLElement; action: HTMLElement }> = [];
 
 initI18n();
@@ -52,7 +54,7 @@ function actionLabel(action: Action | undefined): string {
 
 function renderError(message: string): void {
   errorText = message;
-  error.hidden = !message;
+  error.hidden = !message || !!editor.draft;
   error.textContent = tr(message);
 }
 
@@ -94,7 +96,7 @@ function renderInspector(): void {
 }
 
 function renderFleet(): void {
-  setText('epibt-agent-count', formatCount(config.agents.length, 'agents'));
+  setText('epibt-agent-count', formatCount(config.agentCount, 'agents'));
   rows.forEach((row, index) => {
     const agent = snapshot?.agents[index];
     row.button.setAttribute('aria-label', fmt('Robot {id}', { id: row.button.textContent ?? '' }));
@@ -114,7 +116,7 @@ function selectAgent(id: number): void {
 function rebuildFleet(): void {
   const root = element('epibt-agents');
   root.replaceChildren();
-  rows = config.agents.map((_, id) => {
+  rows = Array.from({ length: config.agentCount }, (_, id) => {
     const row = document.createElement('tr');
     const button = document.createElement('button');
     button.type = 'button';
@@ -144,9 +146,14 @@ function renderSnapshot(): void {
 
 function draw(): void {
   if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+  if (editor.draft) {
+    animationFrame = undefined;
+    mapView.draw(editor.draft.map, [], [], 1, -1, editor.cursor);
+    return;
+  }
   const duration = Math.min(170, 950 / speed.valueAsNumber);
   const blend = previous && snapshot ? Math.min(1, (performance.now() - transitionStarted) / duration) : 1;
-  mapView.draw(config, snapshot?.agents ?? [], previous?.agents ?? [], blend, selected);
+  mapView.draw(config.map, snapshot?.agents ?? [], previous?.agents ?? [], blend, selected);
   animationFrame = blend < 1 ? window.requestAnimationFrame(draw) : undefined;
 }
 
@@ -177,12 +184,12 @@ function start(next: WarehouseConfig, autoplay = false): void {
   config = next;
   snapshot = null;
   previous = null;
-  selected = Math.min(selected, config.agents.length - 1);
+  selected = Math.min(selected, config.agentCount - 1);
   running = autoplay;
   busy = true;
   schedule();
   renderError('');
-  setText('epibt-dimensions', `${config.map[0].length} × ${config.map.length}`);
+  renderDimensions();
   rebuildFleet();
   const instance = new Worker(new URL('./warehouse.worker.ts', import.meta.url), { type: 'module' });
   worker = instance;
@@ -208,6 +215,54 @@ function start(next: WarehouseConfig, autoplay = false): void {
   draw();
 }
 
+function renderDimensions(): void {
+  const { map } = editor.draft ?? config;
+  setText('epibt-dimensions', `${map[0].length} × ${map.length}`);
+}
+
+function labelMap(): void {
+  canvas.setAttribute('aria-label', tr(editor.draft
+    ? 'Editable warehouse map. Use arrow keys and Space to paint.'
+    : 'Warehouse map with oriented robots'));
+}
+
+function showEditor(editing: boolean): void {
+  canvas.tabIndex = editing ? 0 : -1;
+  document.querySelector('.epibt-app')?.toggleAttribute('data-editing', editing);
+  element('epibt-editor').hidden = !editing;
+  for (const id of ['epibt-legend', 'epibt-insights', 'epibt-controls', 'epibt-open-editor']) {
+    element(id).hidden = editing;
+  }
+  labelMap();
+  renderError(errorText);
+}
+
+const editor = new LayoutEditor(canvas, mapView, () => {
+  renderDimensions();
+  draw();
+}, next => {
+  showEditor(false);
+  if (next) {
+    start(next);
+  } else {
+    running = resumeAfterEditor && !!worker;
+    renderControls();
+    renderDimensions();
+    draw();
+    schedule();
+  }
+  editButton.focus({ preventScroll: true });
+});
+
+editButton.addEventListener('click', () => {
+  resumeAfterEditor = running;
+  running = false;
+  schedule();
+  editor.open(config);
+  showEditor(true);
+  element('epibt-editor-title').focus({ preventScroll: true });
+});
+
 playButton.addEventListener('click', () => {
   running = !running;
   renderControls();
@@ -220,40 +275,15 @@ speed.addEventListener('input', () => {
   schedule();
 });
 canvas.addEventListener('pointerdown', (event) => {
+  if (editor.draft) return;
   const id = mapView.pick(event);
   if (id >= 0) selectAgent(id);
 });
 new ResizeObserver(draw).observe(canvas);
 
-element('epibt-import').addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', async () => {
-  const file = fileInput.files?.[0];
-  fileInput.value = '';
-  if (!file) return;
-  const version = ++importVersion;
-  try {
-    if (file.size > MAX_CONFIG_BYTES) throw new Error('The JSON file is larger than 1 MB.');
-    const text = await file.text();
-    if (version !== importVersion) return;
-    start(parseWarehouse(JSON.parse(text)));
-  } catch (problem) {
-    if (version !== importVersion) return;
-    renderError(problem instanceof SyntaxError ? 'The file does not contain valid JSON.'
-      : problem instanceof Error ? problem.message : 'Could not read the JSON file.');
-  }
-});
-element('epibt-export').addEventListener('click', () => {
-  const file = new Blob([JSON.stringify(config, null, 2) + '\n'], { type: 'application/json' });
-  const url = URL.createObjectURL(file);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'epibt-warehouse.json';
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-});
-
 window.addEventListener('demo:languagechange', () => {
   renderSnapshot();
   renderError(errorText);
+  labelMap();
 });
 start(config, true);

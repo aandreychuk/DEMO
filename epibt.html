@@ -29,17 +29,13 @@
               <h1>Warehouse map</h1>
               <p id="epibt-dimensions"></p>
             </div>
-            <div class="epibt-file-actions">
-              <button id="epibt-import" type="button">Import JSON</button>
-              <button id="epibt-export" type="button">Export JSON</button>
-              <input id="epibt-file" type="file" accept=".json,application/json" hidden />
-            </div>
+            <button id="epibt-open-editor" class="epibt-button" type="button" aria-controls="epibt-editor">Edit map</button>
           </div>
           <p id="epibt-error" class="epibt-error" role="alert" hidden></p>
           <div class="epibt-map-space">
             <canvas id="epibt-map" aria-label="Warehouse map with oriented robots"></canvas>
           </div>
-          <div class="epibt-legend">
+          <div id="epibt-legend" class="epibt-legend">
             <span><i class="epibt-pickup"></i>Pickup bay</span>
             <span><i class="epibt-delivery"></i>Delivery bay</span>
             <span><i class="epibt-robot"></i>Robot</span>
@@ -47,7 +43,7 @@
           </div>
         </section>
 
-        <aside class="epibt-panel epibt-sidebar">
+        <aside id="epibt-insights" class="epibt-panel epibt-sidebar">
           <section class="epibt-telemetry">
             <div class="epibt-section-head"><h2>Live telemetry</h2><span id="epibt-state" role="status">Loading EPIBT…</span></div>
             <dl class="epibt-metrics">
@@ -90,9 +86,41 @@
             </div>
           </section>
         </aside>
+
+        <aside id="epibt-editor" class="epibt-panel epibt-sidebar epibt-editor" aria-labelledby="epibt-editor-title" hidden>
+          <div class="epibt-section-head">
+            <h2 id="epibt-editor-title" tabindex="-1">Map editor</h2>
+            <button id="epibt-undo" class="epibt-button" type="button">↶ Undo edit</button>
+          </div>
+          <div class="epibt-editor-config">
+            <label for="epibt-preset">Warehouse preset</label>
+            <select id="epibt-preset"><option value="" disabled>Custom layout</option></select>
+            <label for="epibt-robot-count">Number of robots</label>
+            <input id="epibt-robot-count" type="number" min="1" step="1" required />
+            <div class="epibt-editor-files">
+              <button id="epibt-import" class="epibt-button" type="button">Import JSON</button>
+              <button id="epibt-export" class="epibt-button" type="button">Export JSON</button>
+              <input id="epibt-file" type="file" accept=".json,application/json" hidden />
+            </div>
+            <p id="epibt-file-error" class="epibt-error" role="alert" hidden></p>
+          </div>
+          <fieldset class="epibt-brushes">
+            <legend>Paint cells</legend>
+            <label><input type="radio" name="epibt-brush" value="#" checked /><i class="epibt-wall"></i><span>Obstacle</span></label>
+            <label><input type="radio" name="epibt-brush" value="." /><i class="epibt-aisle"></i><span>Aisle</span></label>
+            <label><input type="radio" name="epibt-brush" value="S" /><i class="epibt-pickup"></i><span>Pickup bay</span></label>
+            <label><input type="radio" name="epibt-brush" value="D" /><i class="epibt-delivery"></i><span>Delivery bay</span></label>
+          </fieldset>
+          <p class="epibt-paint-help">Click or drag on the map to paint.</p>
+          <p id="epibt-map-check" class="epibt-map-check" role="status" hidden></p>
+          <div class="epibt-editor-actions">
+            <button id="epibt-cancel" class="epibt-button" type="button">Cancel</button>
+            <button id="epibt-apply" class="epibt-button epibt-primary" type="button">Apply &amp; restart</button>
+          </div>
+        </aside>
       </main>
 
-      <footer class="epibt-controls epibt-panel">
+      <footer id="epibt-controls" class="epibt-controls epibt-panel">
         <button id="epibt-play" class="epibt-primary" type="button" disabled>Run</button>
         <button id="epibt-next" type="button" disabled>Single step</button>
         <button id="epibt-reset" type="button">Restart</button>
