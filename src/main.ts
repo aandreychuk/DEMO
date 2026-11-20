@@ -2659,7 +2659,9 @@ function setConnection(state: string, label: string, values: Record<string, stri
   currentConnection = { state, label, values };
   const connection = document.querySelector<HTMLElement>('.connection')!;
   connection.dataset.state = state;
-  document.querySelector('#source-label')!.textContent = fmt(label, values);
+  const description = fmt(label, values);
+  connection.title = description;
+  document.querySelector('#source-label')!.textContent = description;
 }
 
 function setAgentCount(count: number): void {
