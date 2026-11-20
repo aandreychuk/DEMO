@@ -9,7 +9,7 @@ button { cursor: pointer; }
 #maze-app { display: grid; grid-template-rows: 68px minmax(0, 1fr) 84px; gap: 16px; min-height: 100vh; height: 100vh; padding: 18px; }
 .maze-top { position: relative; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-radius: 12px; }
 .maze-brand { display: flex; align-items: center; gap: 12px; min-width: 235px; }
-.maze-brand-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: #082332; background: #54dcfb; box-shadow: 0 0 21px rgba(74, 217, 248, .35); font-size: 24px; font-weight: 700; }
+.maze-brand-logo { display: block; flex: none; }
 .maze-brand strong, .maze-brand small { display: block; }
 .maze-brand strong { font-size: 13px; letter-spacing: .01em; }
 .maze-brand small { margin-top: 3px; color: #7697aa; font-size: 9px; }
@@ -17,10 +17,7 @@ button { cursor: pointer; }
 .maze-nav a, .maze-nav span { padding: 8px 11px; border-radius: 6px; color: #8db4c8; font-size: 10px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .maze-nav a:hover { color: #e7f6ff; background: rgba(90, 194, 230, .12); }
 .maze-nav span { color: #e7f6ff; background: rgba(69, 188, 226, .16); }
-.maze-source { display: flex; align-items: center; gap: 8px; min-width: 145px; justify-content: flex-end; color: #8faebd; font-size: 10px; white-space: nowrap; }
-.maze-source i { display: block; width: 7px; height: 7px; border-radius: 50%; background: #f4b960; box-shadow: 0 0 12px #f4b960; }
-.maze-source.ready i { background: #5bf0b6; box-shadow: 0 0 12px #5bf0b6; }
-.maze-source.error i { background: #ff6974; box-shadow: 0 0 12px #ff6974; }
+.maze-source { display: flex; align-items: center; min-width: 145px; justify-content: flex-end; color: #8faebd; font-size: 10px; white-space: nowrap; }
 .maze-main { display: grid; grid-template-columns: minmax(0, 1fr) 334px; gap: 16px; min-height: 0; }
 .maze-stage, .maze-analysis, .maze-editor { min-height: 0; border-radius: 12px; }
 .maze-analysis[hidden], .maze-editor[hidden], .maze-solved[hidden] { display: none; }

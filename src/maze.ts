@@ -1,24 +1,24 @@
 import './maze.css';
 import './qr-links.css';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
-import { fmt, formatCount, initI18n, tr, translateMessage } from './i18n';
+import { fmt, formatCount, formatFixed, initI18n, tr, translateMessage } from './i18n';
 
 initI18n();
 
 const ROUNDS = 4;
 const ACTIONS = [
   { name: 'Wait', color: '#9bb8ca' },
-  { name: 'North', color: '#4fe1f6' },
-  { name: 'South', color: '#ffa95a' },
-  { name: 'West', color: '#ad9eff' },
-  { name: 'East', color: '#66e5aa' },
+  { name: 'Up', color: '#4fe1f6' },
+  { name: 'Down', color: '#ffa95a' },
+  { name: 'Left', color: '#ad9eff' },
+  { name: 'Right', color: '#66e5aa' },
 ] as const;
 const BASE_ROUND_MS = 1300;
 const Z_MIN = -4;
 const Z_MAX = 15;
 
-function zLabel(value: number): string {
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+function formatIntentScore(value: number): string {
+  return `${value > 0 ? '+' : ''}${formatFixed(value, 2)}`;
 }
 
 function actionIcon(action: number): string {
@@ -329,7 +329,7 @@ function renderLinks(frame: Snapshot, round: number): void {
 function renderChart(frame: Snapshot, round: number): void {
   const x = (r: number) => 30 + r * 67;
   const y = (value: number) => 108 - (value - Z_MIN) / (Z_MAX - Z_MIN) * 92;
-  let svg = `<svg viewBox="0 0 320 130" role="img" aria-label="${tr('Selected agent raw z values over four communication rounds')}">`;
+  let svg = `<svg viewBox="0 0 320 130" role="img" aria-label="${tr('Intent scores for the selected agent over four rounds')}">`;
   for (const level of [-4, 0, 5, 10, 15]) {
     svg += `<line class="grid ${level === 0 ? 'zero' : ''}" x1="27" y1="${y(level)}" x2="304" y2="${y(level)}" />`;
     svg += `<text class="axis" x="2" y="${y(level) + 3}">${level}</text>`;
@@ -348,7 +348,6 @@ function renderChart(frame: Snapshot, round: number): void {
 function renderInspector(frame: Snapshot, round: number): void {
   const current = zValues(frame, round, selectedAgent);
   const intent = winner(current);
-  const leadingZ = current[intent];
   agentTitle.textContent = fmt('Agent {id}', { id: String(selectedAgent + 1).padStart(2, '0') });
   agentTitle.style.color = MAZE_COLORS[selectedAgent];
   const goal = frame.goals[selectedAgent];
@@ -357,14 +356,16 @@ function renderInspector(frame: Snapshot, round: number): void {
     ? fmt('Goal ({x}, {y}) reached. The agent stays here while the others finish.', { x: mazeX(goal), y: mazeY(goal) })
     : round === 0
       ? fmt('Goal ({x}, {y}). Communication has not started.', { x: mazeX(goal), y: mazeY(goal) })
-      : fmt('Goal ({x}, {y}). Leading z: {action} {z}. Last executed move: {move}.', { x: mazeX(goal), y: mazeY(goal), action: actionName(intent).toLowerCase(), z: zLabel(leadingZ), move: previousMove });
+      : fmt('Goal ({x}, {y}). Intent — {action} ({score}). Last move — {move}.', {
+        x: mazeX(goal), y: mazeY(goal), action: actionName(intent).toLowerCase(), score: formatIntentScore(current[intent]), move: previousMove,
+      });
 
   roundStrip.innerHTML = Array.from({ length: ROUNDS }, (_, index) => {
     const r = index + 1;
     const values = zValues(frame, r, selectedAgent);
     const action = winner(values);
-    const value = zLabel(values[action]);
-    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="${fmt('Round {round}: {action}, z {value}', { round: r, action: actionName(action), value })}"><small>${fmt('Round {round}', { round: r })}</small><strong>${actionIcon(action)} ${value}</strong></button>`;
+    const value = formatIntentScore(values[action]);
+    return `<button type="button" class="maze-round-chip ${r === round ? 'active' : ''} ${r > round ? 'future' : ''}" data-round="${r}" aria-label="${fmt('Round {round}, intent {action}, score {value}', { round: r, action: actionName(action).toLowerCase(), value })}"><small>${fmt('Round {round}', { round: r })}</small><strong>${actionIcon(action)} ${value}</strong></button>`;
   }).join('');
   for (const chip of roundStrip.querySelectorAll<HTMLButtonElement>('button')) {
     chip.addEventListener('click', () => seek(frame.action * (ROUNDS + 1) + Number(chip.dataset.round)));
@@ -443,7 +444,9 @@ function render(): void {
       ? fmt('Agent {id}: goal reached', { id: i + 1 })
       : round === 0
         ? fmt('Agent {id}: awaiting communication', { id: i + 1 })
-        : fmt('Agent {id}: {action}, z {value}', { id: i + 1, action: actionName(currentAction).toLowerCase(), value: zLabel(current[currentAction]) });
+        : fmt('Agent {id}, intent {action} ({value})', {
+          id: i + 1, action: actionName(currentAction).toLowerCase(), value: formatIntentScore(current[currentAction]),
+        });
   }
   lastChangedIntents = changes;
   renderRoundCopy(frame, round, changes);
