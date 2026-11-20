@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050b13" />
+    <link rel="icon" type="image/svg+xml" href="./airi-logo.svg" />
+    <title>EPIBT warehouse</title>
+  </head>
+  <body>
+    <div class="epibt-app">
+      <header class="epibt-header epibt-panel">
+        <div class="epibt-brand">
+          <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
+          <strong>EPIBT warehouse</strong>
+        </div>
+        <nav class="epibt-nav" aria-label="Demo views">
+          <a href="./">Warehouse</a>
+          <span aria-current="page">EPIBT warehouse</span>
+          <a href="./maze.html">Communication maze</a>
+        </nav>
+        <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
+      </header>
+
+      <main class="epibt-main">
+        <section class="epibt-panel epibt-board">
+          <div class="epibt-board-header">
+            <div>
+              <h1>Warehouse map</h1>
+              <p id="epibt-dimensions"></p>
+            </div>
+            <div class="epibt-file-actions">
+              <button id="epibt-import" type="button">Import JSON</button>
+              <button id="epibt-export" type="button">Export JSON</button>
+              <input id="epibt-file" type="file" accept=".json,application/json" hidden />
+            </div>
+          </div>
+          <p id="epibt-error" class="epibt-error" role="alert" hidden></p>
+          <div class="epibt-map-space">
+            <canvas id="epibt-map" aria-label="Warehouse map with oriented robots"></canvas>
+          </div>
+          <div class="epibt-legend">
+            <span><i class="epibt-pickup"></i>Pickup bay</span>
+            <span><i class="epibt-delivery"></i>Delivery bay</span>
+            <span><i class="epibt-robot"></i>Robot</span>
+            <span><i class="epibt-loaded"></i>With cargo</span>
+          </div>
+        </section>
+
+        <aside class="epibt-panel epibt-sidebar">
+          <section class="epibt-telemetry">
+            <div class="epibt-section-head"><h2>Live telemetry</h2><span id="epibt-state" role="status">Loading EPIBT…</span></div>
+            <dl class="epibt-metrics">
+              <div class="epibt-throughput"><dt>Throughput</dt><dd id="epibt-throughput">—</dd><small>Tasks per step</small></div>
+              <div><dt>Environment steps</dt><dd id="epibt-step">—</dd></div>
+              <div><dt>Completed deliveries</dt><dd id="epibt-completed">—</dd></div>
+              <div><dt>Planning, ms</dt><dd id="epibt-time">—</dd></div>
+            </dl>
+          </section>
+
+          <section class="epibt-inspector">
+            <div class="epibt-section-head"><h2 id="epibt-selected">Robot</h2><span id="epibt-stage">—</span></div>
+            <dl class="epibt-facts">
+              <div><dt>Position</dt><dd id="epibt-position">—</dd></div>
+              <div><dt>Heading</dt><dd id="epibt-heading">—</dd></div>
+              <div><dt>Task</dt><dd id="epibt-task">—</dd></div>
+              <div><dt>Current goal</dt><dd id="epibt-goal">—</dd></div>
+              <div><dt>Last action</dt><dd id="epibt-action">—</dd></div>
+              <div><dt>Planning priority</dt><dd id="epibt-priority">—</dd></div>
+            </dl>
+            <div class="epibt-operation">
+              <h3>Last EPIBT operation</h3>
+              <ol id="epibt-operation" aria-label="Last EPIBT operation"></ol>
+            </div>
+            <dl class="epibt-robot-totals">
+              <div><dt>Cells travelled</dt><dd id="epibt-distance">—</dd></div>
+              <div><dt>Turns</dt><dd id="epibt-turns">—</dd></div>
+              <div><dt>Wait ticks</dt><dd id="epibt-waits">—</dd></div>
+              <div><dt>Completed deliveries</dt><dd id="epibt-agent-completed">—</dd></div>
+            </dl>
+          </section>
+
+          <section class="epibt-fleet">
+            <div class="epibt-section-head"><h2>Fleet</h2><span id="epibt-agent-count"></span></div>
+            <div class="epibt-fleet-scroll">
+              <table>
+                <thead><tr><th scope="col">Robot</th><th scope="col">Position</th><th scope="col">Heading</th><th scope="col">Last action</th></tr></thead>
+                <tbody id="epibt-agents"></tbody>
+              </table>
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="epibt-controls epibt-panel">
+        <button id="epibt-play" class="epibt-primary" type="button" disabled>Run</button>
+        <button id="epibt-next" type="button" disabled>Single step</button>
+        <button id="epibt-reset" type="button">Restart</button>
+        <label class="epibt-speed"><span>Playback</span><input id="epibt-rate" type="range" min="1" max="20" step="1" value="5" /><output id="epibt-rate-value" for="epibt-rate">5 Hz</output></label>
+        <a class="epibt-method" href="https://sites.google.com/view/epibt" target="_blank" rel="noopener noreferrer">About EPIBT ↗</a>
+      </footer>
+    </div>
+    <script type="module" src="/src/epibt/warehouse.ts"></script>
+  </body>
+</html>
