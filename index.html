@@ -59,27 +59,16 @@
             </div>
             <button id="control-agent-button" class="control-agent-button" type="button" aria-pressed="false">Take control</button>
             <p id="agent-control-hint" class="agent-control-hint" hidden>Move the robot with WASD, the left stick, or the D-pad. Esc returns control to DMM.</p>
-            <div class="stage-track" aria-label="Task progress">
-              <span id="stage-pickup">Pickup</span>
-              <i></i>
-              <span id="stage-unload">Unload</span>
-              <i></i>
-              <span id="stage-reload">Reload</span>
-              <i></i>
-              <span id="stage-return">Return</span>
-            </div>
-            <div class="agent-facts">
-              <div><small>Position</small><strong id="agent-position">—</strong></div>
-              <div><small>Current task</small><strong id="agent-task">—</strong></div>
-              <div><small>Pallet</small><strong id="agent-pallet">—</strong></div>
-              <div><small>Task age</small><strong id="agent-task-age">—</strong></div>
-            </div>
-            <div class="route-card">
-              <div id="route-pickup"><span>01</span><small>Pickup</small><strong id="pickup-coordinate">—</strong></div>
-              <div id="route-unload"><span>02</span><small>Unload</small><strong id="unload-coordinate">—</strong></div>
-              <div id="route-reload"><span>03</span><small>Reload if empty</small><strong id="reload-coordinate">—</strong></div>
-              <div id="route-return"><span>04</span><small>Return</small><strong id="return-coordinate">—</strong></div>
-            </div>
+            <dl class="agent-facts">
+              <div><dt>Pallet</dt><dd id="agent-pallet">—</dd></div>
+              <div><dt>Position</dt><dd id="agent-position">—</dd></div>
+            </dl>
+            <ol id="task-route" class="route-card" role="list" aria-label="Task progress" hidden>
+              <li><span>Pickup</span><strong></strong></li>
+              <li><span>Unload</span><strong></strong></li>
+              <li><span>Reload</span><strong></strong></li>
+              <li><span>Return</span><strong></strong></li>
+            </ol>
             <div class="agent-metrics">
               <div><strong id="agent-distance">0</strong><small>Cells travelled</small></div>
               <div><strong id="agent-waits">0</strong><small>Wait ticks</small></div>
