@@ -11,6 +11,9 @@ inspector shows the executed primitive and the full
 operation selected in that tick. The dashed line shows the remaining moves of
 that operation. EPIBT may revise them at the next tick.
 
+The logarithmic playback control sets a target of 1 to 1,000 steps per
+second. At high rates the worker runs several ticks between screen updates.
+
 The rotation model, operation enumeration, inheritance, reservations and
 backtracking come from [Straple/EPIBT](https://github.com/Straple/EPIBT/tree/3808e832593c9fb46b3e119cbb36035cccd830e1)
 at revision `3808e832593c9fb46b3e119cbb36035cccd830e1`, under the MIT license in

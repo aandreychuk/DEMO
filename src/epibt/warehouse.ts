@@ -26,6 +26,7 @@ const lengthButtons = OPERATION_LENGTHS.map(length => ({
 const error = element('epibt-error');
 const operation = element('epibt-operation');
 const planActionLabels = ['Forward', 'Right', 'Left', 'Wait'] as const;
+const MAX_PLAYBACK_UPDATES_PER_SECOND = 50;
 const headingNames = ['East', 'South', 'West', 'North'] as const;
 const headingGlyphs = ['→', '↓', '←', '↑'] as const;
 
@@ -62,6 +63,11 @@ function actionLabel(action: Action | undefined): string {
   return action === undefined ? '—' : tr(ACTIONS[action]);
 }
 
+function playbackRate(): number {
+  // The slider moves in hundredths of a base-10 exponent.
+  return Math.round(10 ** (speed.valueAsNumber / 100));
+}
+
 function renderError(message: string): void {
   errorText = message;
   error.hidden = !message || !!editor.draft;
@@ -76,7 +82,9 @@ function renderControls(): void {
   const state = !worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…'
     : requestedLength !== null ? 'Changing operation length…' : running ? 'Running' : 'Paused';
   setText('epibt-state', tr(state));
-  setText('epibt-rate-value', fmt('{value} steps/s', { value: speed.valueAsNumber }));
+  const rateLabel = fmt('{value} steps/s', { value: formatNumber(playbackRate()) });
+  setText('epibt-rate-value', rateLabel);
+  if (speed.getAttribute('aria-valuetext') !== rateLabel) speed.setAttribute('aria-valuetext', rateLabel);
   for (const { length, button } of lengthButtons) {
     button.disabled = !ready || requestedLength !== null;
     button.setAttribute('aria-pressed', String(length === operationLength));
@@ -179,7 +187,7 @@ function draw(): void {
     mapView.draw(editor.draft.map, [], [], 1, -1, editor.cursor);
     return;
   }
-  const duration = Math.min(170, 950 / speed.valueAsNumber);
+  const duration = Math.min(170, 950 / playbackRate());
   const blend = previous && snapshot ? Math.min(1, (performance.now() - transitionStarted) / duration) : 1;
   mapView.draw(config.map, snapshot?.agents ?? [], previous?.agents ?? [], blend, selected);
   animationFrame = blend < 1 ? window.requestAnimationFrame(draw) : undefined;
@@ -193,23 +201,24 @@ function schedule(): void {
     busy = true;
     worker.postMessage({ type: 'length', length: requestedLength } satisfies WorkerCommand);
   } else if (running) {
+    const rate = playbackRate();
+    const count = Math.ceil(rate / MAX_PLAYBACK_UPDATES_PER_SECOND);
+    const interval = count * 1000 / rate;
     const now = performance.now();
-    nextStepAt ??= now + 1000 / speed.valueAsNumber;
-    timer = window.setTimeout(requestStep, Math.max(0, Math.ceil(nextStepAt - now)));
+    const deadline = nextStepAt ?? now + interval;
+    timer = window.setTimeout(() => {
+      const started = performance.now();
+      nextStepAt = Math.max(deadline + interval, started + 1);
+      requestSteps(count);
+    }, Math.max(0, Math.ceil(deadline - now)));
   }
 }
 
-function requestStep(): void {
+function requestSteps(count: number): void {
   if (!worker || !snapshot || busy) return;
   busy = true;
-  if (running) {
-    const now = performance.now();
-    const interval = 1000 / speed.valueAsNumber;
-    const deadline = (nextStepAt ?? now) + interval;
-    nextStepAt = deadline > now ? deadline : now + interval;
-  }
   renderControls();
-  worker.postMessage({ type: 'step' } satisfies WorkerCommand);
+  worker.postMessage({ type: 'step', count } satisfies WorkerCommand);
 }
 
 function fail(message: string): void {
@@ -258,7 +267,7 @@ function start(next: WarehouseConfig, autoplay = false): void {
       operationLength = data.operationLength;
       requestedLength = null;
     }
-    previous = snapshot?.step === data.step ? null : snapshot;
+    previous = snapshot && data.step === snapshot.step + 1 ? snapshot : null;
     snapshot = data;
     transitionStarted = performance.now();
     renderSnapshot();
@@ -327,7 +336,7 @@ playButton.addEventListener('click', () => {
   renderControls();
   schedule();
 });
-stepButton.addEventListener('click', requestStep);
+stepButton.addEventListener('click', () => requestSteps(1));
 element('epibt-reset').addEventListener('click', () => start(config));
 previousRobot.addEventListener('click', () => selectAgent((selected + config.agentCount - 1) % config.agentCount));
 nextRobot.addEventListener('click', () => selectAgent((selected + 1) % config.agentCount));

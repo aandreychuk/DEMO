@@ -19,6 +19,7 @@ const scope = self as unknown as {
 
 const INPUT_STRIDE = 4;
 const OUTPUT_FIELDS = 3; // Cell, heading and priority, followed by the planned actions.
+const MAX_BATCH_MS = 25;
 let planner: Planner | null = null;
 let config: WarehouseConfig;
 let width = 0;
@@ -102,9 +103,7 @@ async function changeLength(length: OperationLength): Promise<void> {
   publish(length, null);
 }
 
-function advance(): void {
-  if (!planner) throw new Error('EPIBT is not ready.');
-  const { runtime, length, input, output } = planner;
+function advance({ runtime, length, input, output }: Planner): number {
   const outputStride = OUTPUT_FIELDS + length;
   for (const [id, agent] of agents.entries()) {
     runtime.HEAP32.set([agent.cell, agent.direction, agent.target, agent.dropoff], input / 4 + id * INPUT_STRIDE);
@@ -158,14 +157,24 @@ function advance(): void {
     }
   }
   step++;
-  publish(length, planningMs);
+  return planningMs;
+}
+
+function advanceBatch(count: number): void {
+  if (!planner) throw new Error('EPIBT is not ready.');
+  const deadline = performance.now() + MAX_BATCH_MS;
+  let planningMs = advance(planner);
+  for (let index = 1; index < count && performance.now() < deadline; index++) {
+    planningMs = advance(planner);
+  }
+  publish(planner.length, planningMs);
 }
 
 scope.onmessage = async ({ data }) => {
   try {
     if (data.type === 'configure') await configure(data.config, data.length);
     else if (data.type === 'length') await changeLength(data.length);
-    else advance();
+    else advanceBatch(data.count);
   } catch (error) {
     scope.postMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) });
   }
