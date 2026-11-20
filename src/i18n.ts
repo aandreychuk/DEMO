@@ -40,10 +40,6 @@ const RU: Record<string, string> = {
   'Return': 'Вернуть',
   'Position': 'Позиция',
   'Pallet': 'Палета',
-  'Cells travelled': 'Клеток пройдено',
-  'Wait ticks': 'Тактов ожидания',
-  'Unloads': 'Разгрузок',
-  'Tasks done': 'Задач выполнено',
   'Break agent': 'Сломать агента',
   'Take control': 'Управлять',
   'Release control': 'Вернуть управление DMM',
@@ -236,6 +232,52 @@ const RU: Record<string, string> = {
   'Default maze restored. Run the scenario to apply it.': 'Исходный лабиринт восстановлен. Запустите сценарий, чтобы применить его.',
 };
 
+const COUNT_FORMS = {
+  agents: {
+    en: ['agent', 'agents'],
+    ru: ['агент', 'агента', 'агентов'],
+  },
+  failed: {
+    en: ['Failed', 'Failed'],
+    ru: ['сломан', 'сломаны', 'сломано'],
+  },
+  cellsTravelled: {
+    en: ['cell travelled', 'cells travelled'],
+    ru: ['клетка пройдена', 'клетки пройдены', 'клеток пройдено'],
+  },
+  waitTicks: {
+    en: ['wait tick', 'wait ticks'],
+    ru: ['такт ожидания', 'такта ожидания', 'тактов ожидания'],
+  },
+  unloads: {
+    en: ['unload', 'unloads'],
+    ru: ['разгрузка', 'разгрузки', 'разгрузок'],
+  },
+  tasksDone: {
+    en: ['task done', 'tasks done'],
+    ru: ['задача выполнена', 'задачи выполнены', 'задач выполнено'],
+  },
+  intentsFormed: {
+    en: ['intent formed', 'intents formed'],
+    ru: ['намерение сформировано', 'намерения сформированы', 'намерений сформировано'],
+  },
+  intentsChanged: {
+    en: ['changed intent this round', 'changed intents this round'],
+    ru: ['намерение изменилось в этом раунде', 'намерения изменились в этом раунде', 'намерений изменилось в этом раунде'],
+  },
+  robotStartCells: {
+    en: ['robot start cell', 'robot start cells'],
+    ru: ['стартовая клетка для роботов', 'стартовые клетки для роботов', 'стартовых клеток для роботов'],
+  },
+  palletCells: {
+    en: ['pallet cell', 'pallet cells'],
+    ru: ['клетка с палетой', 'клетки с палетами', 'клеток с палетами'],
+  },
+} as const;
+
+export type CountLabel = keyof typeof COUNT_FORMS;
+const russianPluralRules = new Intl.PluralRules('ru-RU');
+
 function storedLanguage(): Language {
   const fromUrl = new URLSearchParams(location.search).get('lang');
   if (fromUrl === 'ru' || fromUrl === 'en') return fromUrl;
@@ -252,6 +294,15 @@ const attributeBindings: Array<{ node: Element; name: string; english: string }>
 export function getLanguage(): Language { return language; }
 export function tr(english: string): string { return language === 'ru' ? RU[english] ?? english : english; }
 export function formatNumber(value: number): string { return value.toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US'); }
+export function countLabel(count: number, label: CountLabel): string {
+  const forms = COUNT_FORMS[label];
+  if (language === 'en') return forms.en[count === 1 ? 0 : 1];
+  const category = russianPluralRules.select(count);
+  return forms.ru[category === 'one' ? 0 : category === 'few' ? 1 : 2];
+}
+export function formatCount(count: number, label: CountLabel): string {
+  return `${formatNumber(count)} ${countLabel(count, label)}`;
+}
 export function formatFixed(value: number, digits: number): string {
   return value.toLocaleString(language === 'ru' ? 'ru-RU' : 'en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
@@ -265,11 +316,13 @@ export function fmt(english: string, values: Record<string, string | number>): s
 export function translateMessage(english: string): string {
   if (language === 'en') return english;
   if (RU[english]) return RU[english];
+  const startCells = /^The map has only (\d+) robot start cells\.$/.exec(english);
+  if (startCells) return `На карте только ${formatCount(Number(startCells[1]), 'robotStartCells')}.`;
+  const blockedPallets = /^(\d+) pallet cells have no loaded route to an aisle\.?$/.exec(english);
+  if (blockedPallets) return `${formatCount(Number(blockedPallets[1]), 'palletCells')} без маршрута к проходу для робота с грузом.`;
   const patterns: Array<[RegExp, string]> = [
     [/^Enter a whole number of agents from 1 to (\d+)\.$/, 'Введите целое число агентов от 1 до $1.'],
-    [/^The map has only (\d+) robot start cells\.$/, 'На карте только $1 стартовых клеток для роботов.'],
-    [/^(\d+) pallet cells have no loaded route to an aisle\.$/, 'У $1 клеток с палетами нет маршрута с грузом к проходу.'],
-    [/^Choose 1–(\d+) agents\.$/, 'Выберите от 1 до $1 агентов.'],
+    [/^Choose 1–(\d+) agents\.$/, 'Выберите число агентов от 1 до $1.'],
     [/^Agent (\d+) starts on a wall\.$/, 'Агент $1 начинает на стене.'],
     [/^Choose a goal for agent (\d+)\.$/, 'Задайте цель агенту $1.'],
     [/^Agent (\d+) has a goal on a wall\.$/, 'Цель агента $1 находится на стене.'],

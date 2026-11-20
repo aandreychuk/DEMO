@@ -17,7 +17,7 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import './style.css';
 import './qr-links.css';
 import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
-import { fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage } from './i18n';
+import { countLabel, fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage, type CountLabel } from './i18n';
 
 initI18n();
 
@@ -2531,6 +2531,13 @@ function clearAgentSelection(): void {
   renderAgentPanel();
 }
 
+function setCountMetric(value: Element, count: number, label: CountLabel): void {
+  value.textContent = formatNumber(count);
+  const caption = value.nextElementSibling!;
+  const text = countLabel(count, label);
+  if (caption.textContent !== text) caption.textContent = text;
+}
+
 function renderAgentPanel(): void {
   const empty = document.querySelector<HTMLElement>('#agent-empty')!;
   const details = document.querySelector<HTMLElement>('#agent-details')!;
@@ -2642,10 +2649,10 @@ function renderAgentPanel(): void {
     });
   }
 
-  document.querySelector('#agent-distance')!.textContent = stats.distance.toFixed(0);
-  document.querySelector('#agent-waits')!.textContent = String(stats.waitTicks);
-  document.querySelector('#agent-handoffs')!.textContent = String(stats.handoffs);
-  document.querySelector('#agent-completed')!.textContent = String(stats.completedTasks);
+  setCountMetric(document.querySelector('#agent-distance')!, Math.round(stats.distance), 'cellsTravelled');
+  setCountMetric(document.querySelector('#agent-waits')!, stats.waitTicks, 'waitTicks');
+  setCountMetric(document.querySelector('#agent-handoffs')!, stats.handoffs, 'unloads');
+  setCountMetric(document.querySelector('#agent-completed')!, stats.completedTasks, 'tasksDone');
 }
 
 let currentConnection = { state: 'connecting', label: 'Demo source', values: {} as Record<string, string | number> };
@@ -2661,7 +2668,7 @@ function setAgentCount(count: number): void {
   if (selectedAgentId >= agentCount) clearAgentSelection();
   setThinInstanceCount(robotMesh, agentCount);
   setThinInstanceCount(agentPicker, agentCount);
-  agentsValue.textContent = formatNumber(agentCount);
+  setCountMetric(agentsValue, agentCount, 'agents');
   const select = document.querySelector<HTMLSelectElement>('#agent-count')!;
   let option = [...select.options].find((item) => Number(item.value) === agentCount);
   if (!option) {
@@ -2988,7 +2995,8 @@ engine.runRenderLoop(() => {
       : formatNumber(Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed));
     latencyValue.textContent = live ? `${formatFixed(lastInferenceMs, 1)} ${getLanguage() === 'ru' ? 'мс' : 'ms'}` : tr('Demo');
     loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
-    failedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) : 0);
+    const failedCount = liveCurrent?.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) ?? 0;
+    setCountMetric(failedValue, failedCount, 'failed');
     recoveryValue.textContent = String(liveCurrent
       ? liveCurrent.recoveryStates.reduce((sum, state) => sum + (state !== 0 ? 1 : 0), 0)
       : 0);
@@ -3209,10 +3217,11 @@ canvas.addEventListener('wheel', (event) => {
 window.addEventListener('resize', () => engine.resize());
 window.addEventListener('demo:languagechange', () => {
   updateEditorPanel();
-  agentsValue.textContent = formatNumber(agentCount);
+  setCountMetric(agentsValue, agentCount, 'agents');
   renderAgentPanel();
   syncPauseButton();
   setConnection(currentConnection.state, currentConnection.label, currentConnection.values);
   setEditorMessage(editorMessageEnglish, editorMessageIsError);
 });
+setCountMetric(agentsValue, agentCount, 'agents');
 connect();
