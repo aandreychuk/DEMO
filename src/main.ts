@@ -16,7 +16,7 @@ import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
-import './qr-links.css';
+import './demo-header.css';
 import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
 import { countLabel, fmt, formatFixed, formatNumber, initI18n, tr, translateMessage, type CountLabel } from './i18n';
 
@@ -758,7 +758,7 @@ function validateEditorLayout(): { valid: boolean; message: string } {
     + (STORAGE_MAX_X - STORAGE_MIN_X + 1) * interiorRows
     - reservedApproachCells;
   if (availableStartCells < editorAgentCount) {
-    return { valid: false, message: 'The map has only ' + availableStartCells + ' robot start cells.' };
+    return { valid: false, message: 'The map has only ' + availableStartCells + ' agent start cells.' };
   }
   const reachable = new Set<string>();
   const queue: Array<{ x: number; z: number }> = [];
@@ -3036,7 +3036,7 @@ const loadedValue = document.querySelector('#loaded-value')!;
 const recoveryValue = document.querySelector('#recovery-value')!;
 const towStatus = document.querySelector<HTMLElement>('#tow-status')!;
 const towStatusValue = document.querySelector('#tow-status-value')!;
-const towLabels = ['', 'Heading to robot', 'Taking robot to repair', 'Returning to depot', 'Lifting robot'];
+const towLabels = ['', 'Heading to agent', 'Taking agent to repair', 'Returning to depot', 'Lifting agent'];
 let inferenceMs: number | null = null;
 
 function renderInferenceTiming(): void {

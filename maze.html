@@ -4,24 +4,40 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b13" />
-    <title>DMM Communication Maze</title>
+    <link rel="icon" type="image/svg+xml" href="./airi-logo.svg" />
+    <title>DMM communication</title>
   </head>
   <body>
     <div id="maze-app">
-      <header class="maze-top glass">
-        <div class="maze-brand"><img class="maze-brand-logo" src="./airi-logo.svg" alt="AIRI" width="92" height="28" /><div><strong>DMM Communication Maze</strong><small>One action, four rounds of negotiation</small></div></div>
-        <nav class="maze-nav" aria-label="Demo views"><a href="./">Warehouse</a><a href="./epibt.html">EPIBT warehouse</a><span aria-current="page">Communication maze</span></nav>
+      <header class="demo-header">
+        <div class="demo-brand">
+          <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
+          <div id="maze-source" class="demo-source"><span>Loading model</span></div>
+        </div>
+        <nav class="demo-tabs" aria-label="Demo views">
+          <a href="./">Interactive warehouse</a>
+          <a href="./epibt.html">Warehouse with orientations</a>
+          <span aria-current="page">DMM communication</span>
+        </nav>
         <div class="header-actions">
-          <div id="maze-source" class="maze-source"><span>Loading model</span></div>
           <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
           <details class="qr-links">
             <summary>QR links</summary>
-            <div class="qr-panel" aria-label="Demo links">
+            <div class="qr-panel" role="group" aria-label="Demo links">
               <strong>Explore DMM</strong>
               <div class="qr-grid">
-                <a href="https://github.com/CognitiveAISystems/DMM" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation"><img src="./qr/method.svg" alt="QR code for the DMM implementation" width="128" height="128" /><span>Implementation</span><small>github.com/CognitiveAISystems/DMM</small></a>
-                <a href="https://aandreychuk.github.io/DEMO/" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo"><img src="./qr/demo.svg" alt="QR code for the live demo" width="128" height="128" /><span>Live demo</span><small>aandreychuk.github.io/DEMO</small></a>
-                <a href="https://arxiv.org/abs/2609.32019" target="_blank" rel="noopener noreferrer" aria-label="Open the paper"><img src="./qr/paper.svg" alt="QR code for the paper" width="128" height="128" /><span>Paper</span><small>arxiv.org/abs/2609.32019</small></a>
+                <a href="https://github.com/CognitiveAISystems/DMM" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation">
+                  <img src="./qr/method.svg" alt="QR code for the DMM implementation" width="128" height="128" />
+                  <span>Code</span><small>github.com/CognitiveAISystems/DMM</small>
+                </a>
+                <a href="https://aandreychuk.github.io/DEMO/maze.html" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo">
+                  <img src="./qr/maze-demo.svg" alt="QR code for the live demo" width="128" height="128" />
+                  <span>Live demo</span><small>DEMO/maze.html</small>
+                </a>
+                <a href="https://arxiv.org/abs/2609.32019" target="_blank" rel="noopener noreferrer" aria-label="Open the paper">
+                  <img src="./qr/paper.svg" alt="QR code for the paper" width="128" height="128" />
+                  <span>Paper</span><small>arxiv.org/abs/2609.32019</small>
+                </a>
               </div>
             </div>
           </details>
@@ -44,7 +60,7 @@
             <div id="maze-decision" class="maze-decision" hidden><small>Chosen action</small><strong id="maze-chosen-action"></strong></div>
           </section>
           <section class="maze-neighbors-section"><div class="maze-section-title"><h3>Message sources</h3><small id="maze-neighbor-count">0 agents</small></div><div id="maze-neighbors" class="maze-neighbors"></div></section>
-          <section class="maze-all-section"><div class="maze-section-title"><h3>All agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
+          <section class="maze-all-section"><div class="maze-section-title"><h3>Agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
           <p class="maze-model-note">Votes update the intent scores. After the fourth round, the planner uses the scores to choose collision-free moves.</p>
         </aside>
 
@@ -70,7 +86,7 @@
         <button id="maze-play" class="maze-play-button" type="button">Ⅱ <span>Pause</span></button>
         <button id="maze-next" class="maze-step-button" type="button" aria-label="Next communication round">→</button>
         <div class="maze-timeline"><div><strong id="maze-timeline-label">Before communication</strong><small id="maze-step-label">Step 0</small></div><input id="maze-scrub" type="range" min="0" max="4" value="0" aria-label="Recorded communication round"></div>
-        <label class="maze-speed"><span>Playback <output id="maze-speed-value">1.0×</output></span><input id="maze-speed" type="range" min="0.5" max="2" step="0.25" value="1" /></label>
+        <label class="maze-speed"><span>Speed <output id="maze-speed-value">1.0×</output></span><input id="maze-speed" type="range" min="0.5" max="2" step="0.25" value="1" /></label>
         <button id="maze-reset" class="maze-reset-button" type="button">Restart</button>
         <button id="maze-edit" class="maze-reset-button" type="button">Edit maze</button>
       </div>

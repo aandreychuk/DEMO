@@ -55,7 +55,7 @@ export function parseWarehouse(value: unknown): WarehouseConfig {
   const legacy = value.schema === 'epibt-warehouse/v1';
   const agentCount = legacy && Array.isArray(value.agents) ? value.agents.length : value.agentCount;
   if (typeof agentCount !== 'number' || !Number.isInteger(agentCount) || agentCount < 1 || agentCount > MAX_AGENTS) {
-    throw new Error('The warehouse must have 1–200 robots.');
+    throw new Error('The warehouse must have 1–200 agents.');
   }
 
   return { schema: WAREHOUSE_SCHEMA, map: legacy ? migrateMap(map, value.tasks) : [...map], agentCount };
@@ -91,7 +91,7 @@ export function prepareWarehouse(config: WarehouseConfig): {
   if ([...pickups, ...deliveries].some(cell => !reachable.has(cell))) {
     throw new Error('Connect all pickup and delivery bays by aisles.');
   }
-  if (reachable.size < config.agentCount) throw new Error('There are too few reachable cells for this many robots.');
+  if (reachable.size < config.agentCount) throw new Error('There are too few reachable cells for this many agents.');
 
   const floor = Array.from(reachable).filter(cell => tiles[cell] === '.').sort((a, b) => a - b);
   const cells = floor.length >= config.agentCount ? floor : [...floor, ...pickups, ...deliveries];

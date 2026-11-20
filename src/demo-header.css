@@ -1,8 +1,55 @@
+:root {
+  --demo-gutter: clamp(8px, 1.67vh, 16px);
+  --demo-panel-background: #0a1825;
+  --demo-panel-border: #1b394b;
+  --demo-panel-radius: 10px;
+}
+
+.demo-header {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: clamp(54px, 7.1vh, 68px);
+  padding: 8px 16px;
+  border: 1px solid var(--demo-panel-border);
+  border-radius: var(--demo-panel-radius);
+  background: var(--demo-panel-background);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.demo-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.demo-brand img { display: block; flex: none; }
+.demo-source { color: #91afc0; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.demo-source.error { color: #ffb1a4; }
+
+.demo-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #1c3849;
+  border-radius: 7px;
+  background: #07131f;
+  pointer-events: auto;
+}
+.demo-tabs a, .demo-tabs span {
+  padding: 6px 9px;
+  border-radius: 4px;
+  color: #a3c1d1;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.demo-tabs a:hover, .demo-tabs [aria-current="page"] { background: #123445; color: #e4f8ff; }
+
 .header-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 10px;
   pointer-events: auto;
 }
 
@@ -39,7 +86,7 @@
 
 .qr-panel {
   position: absolute;
-  top: calc(100% + 17px);
+  top: calc(100% + 12px);
   right: 0;
   width: min(480px, calc(100vw - 32px));
   padding: 18px;
@@ -68,13 +115,15 @@
 .qr-grid span { margin-top: 9px; font-size: 11px; font-weight: 600; }
 .qr-grid small { overflow: hidden; width: 100%; margin-top: 4px; color: #83a5b6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 
-@media (max-width: 760px) {
-  .header-actions { gap: 8px; }
+@media (min-width: 851px) and (max-height: 690px) {
+  :root { --demo-gutter: 8px; }
+}
+
+@media (max-width: 780px) {
+  .demo-header { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 12px; }
+  .demo-tabs { grid-column: 1 / -1; grid-row: 2; justify-self: start; max-width: 100%; overflow-x: auto; }
+  .header-actions { grid-column: 2; grid-row: 1; gap: 8px; }
   .qr-panel { padding: 12px; }
   .qr-grid { gap: 6px; }
   .qr-grid a { padding: 6px 4px 8px; }
-}
-
-@media (max-width: 850px) {
-  .maze-source { display: none; }
 }

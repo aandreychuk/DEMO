@@ -201,7 +201,7 @@ export class LayoutEditor {
   }
 
   private mapProblem(config: WarehouseConfig | null): string {
-    if (!config) return 'The warehouse must have 1–200 robots.';
+    if (!config) return 'The warehouse must have 1–200 agents.';
     try {
       prepareWarehouse(config);
       return '';

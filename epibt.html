@@ -5,21 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b13" />
     <link rel="icon" type="image/svg+xml" href="./airi-logo.svg" />
-    <title>EPIBT warehouse</title>
+    <title>Warehouse with orientations</title>
   </head>
   <body>
     <div class="epibt-app">
-      <header class="epibt-header epibt-panel">
-        <div class="epibt-brand">
+      <header class="demo-header">
+        <div class="demo-brand">
           <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
-          <strong>EPIBT warehouse</strong>
+          <div class="demo-source">EPIBT · WebAssembly</div>
         </div>
-        <nav class="epibt-nav" aria-label="Demo views">
-          <a href="./">Warehouse</a>
-          <span aria-current="page">EPIBT warehouse</span>
-          <a href="./maze.html">Communication maze</a>
+        <nav class="demo-tabs" aria-label="Demo views">
+          <a href="./">Interactive warehouse</a>
+          <span aria-current="page">Warehouse with orientations</span>
+          <a href="./maze.html">DMM communication</a>
         </nav>
-        <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
+        <div class="header-actions">
+          <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
+          <details class="qr-links">
+            <summary>QR links</summary>
+            <div class="qr-panel" role="group" aria-label="Demo links">
+              <strong>Explore EPIBT</strong>
+              <div class="qr-grid">
+                <a href="https://github.com/Straple/EPIBT" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation">
+                  <img src="./qr/epibt-code.svg" alt="QR code for the EPIBT implementation" width="128" height="128" />
+                  <span>Code</span><small>github.com/Straple/EPIBT</small>
+                </a>
+                <a href="https://aandreychuk.github.io/DEMO/epibt.html" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo">
+                  <img src="./qr/epibt-demo.svg" alt="QR code for the live demo" width="128" height="128" />
+                  <span>Live demo</span><small>DEMO/epibt.html</small>
+                </a>
+                <a href="https://ojs.aaai.org/index.php/AAAI/article/download/40233/44194" target="_blank" rel="noopener noreferrer" aria-label="Open the paper">
+                  <img src="./qr/epibt-paper.svg" alt="QR code for the paper" width="128" height="128" />
+                  <span>Paper</span><small>AAAI 2026 · PDF</small>
+                </a>
+              </div>
+            </div>
+          </details>
+        </div>
       </header>
 
       <main class="epibt-main">
@@ -43,12 +65,12 @@
           </div>
           <p id="epibt-error" class="epibt-error" role="alert" hidden></p>
           <div class="epibt-map-space">
-            <canvas id="epibt-map" aria-label="Warehouse map with oriented robots"></canvas>
+            <canvas id="epibt-map" aria-label="Warehouse map with oriented agents"></canvas>
           </div>
           <div id="epibt-legend" class="epibt-legend">
             <span><i class="epibt-pickup"></i>Pickup bay</span>
             <span><i class="epibt-delivery"></i>Delivery bay</span>
-            <span><i class="epibt-robot"></i>Robot</span>
+            <span><i class="epibt-robot"></i>Agent</span>
             <span><i class="epibt-loaded"></i>With cargo</span>
           </div>
         </section>
@@ -67,10 +89,10 @@
           <section class="epibt-inspector">
             <div class="epibt-section-head">
               <div class="epibt-robot-heading">
-                <h2 id="epibt-selected">Robot</h2>
+                <h2 id="epibt-selected">Agent</h2>
                 <div class="epibt-robot-nav">
-                  <button id="epibt-prev-robot" class="epibt-button" type="button" aria-label="Previous robot" title="Previous robot" disabled>‹</button>
-                  <button id="epibt-next-robot" class="epibt-button" type="button" aria-label="Next robot" title="Next robot" disabled>›</button>
+                  <button id="epibt-prev-robot" class="epibt-button" type="button" aria-label="Previous agent" title="Previous agent" disabled>‹</button>
+                  <button id="epibt-next-robot" class="epibt-button" type="button" aria-label="Next agent" title="Next agent" disabled>›</button>
                 </div>
               </div>
               <span id="epibt-stage">—</span>
@@ -96,10 +118,10 @@
           </section>
 
           <section class="epibt-fleet">
-            <div class="epibt-section-head"><h2>Fleet</h2><span id="epibt-agent-count"></span></div>
+            <div class="epibt-section-head"><h2>Agents</h2><span id="epibt-agent-count"></span></div>
             <div id="epibt-fleet-scroll" class="epibt-fleet-scroll">
               <table>
-                <thead><tr><th scope="col">Robot</th><th scope="col">Position</th><th scope="col">Heading</th><th scope="col">Last action</th></tr></thead>
+                <thead><tr><th scope="col">Agent</th><th scope="col">Position</th><th scope="col">Heading</th><th scope="col">Last action</th></tr></thead>
                 <tbody id="epibt-agents"></tbody>
               </table>
             </div>
@@ -114,7 +136,7 @@
           <div class="epibt-editor-config">
             <label for="epibt-preset">Warehouse preset</label>
             <select id="epibt-preset"><option value="" disabled>Custom layout</option></select>
-            <label for="epibt-robot-count">Number of robots</label>
+            <label for="epibt-robot-count">Number of agents</label>
             <input id="epibt-robot-count" type="number" min="1" step="1" required />
             <div class="epibt-editor-files">
               <button id="epibt-import" class="epibt-button" type="button">Import JSON</button>
@@ -144,7 +166,7 @@
         <button id="epibt-next" type="button" disabled>Single step</button>
         <button id="epibt-reset" type="button">Stop</button>
         <div class="epibt-speed">
-          <label for="epibt-rate">Playback</label>
+          <label for="epibt-rate">Speed</label>
           <div class="epibt-speed-slider">
             <input id="epibt-rate" type="range" min="0" max="27" step="1" value="4" aria-valuetext="5 steps/s" />
             <div class="epibt-speed-marks" aria-hidden="true">
@@ -153,26 +175,6 @@
           </div>
           <output id="epibt-rate-value" for="epibt-rate">5 steps/s</output>
         </div>
-        <details class="qr-links">
-          <summary>QR links</summary>
-          <div class="qr-panel" role="group" aria-label="Demo links">
-            <strong>Explore EPIBT</strong>
-            <div class="qr-grid">
-              <a href="https://github.com/Straple/EPIBT" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation">
-                <img src="./qr/epibt-code.svg" alt="QR code for the EPIBT implementation" width="128" height="128" />
-                <span>Code</span><small>github.com/Straple/EPIBT</small>
-              </a>
-              <a href="https://aandreychuk.github.io/DEMO/epibt.html" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo">
-                <img src="./qr/epibt-demo.svg" alt="QR code for the live demo" width="128" height="128" />
-                <span>Live demo</span><small>DEMO/epibt.html</small>
-              </a>
-              <a href="https://arxiv.org/abs/2511.09193" target="_blank" rel="noopener noreferrer" aria-label="Open the paper">
-                <img src="./qr/epibt-paper.svg" alt="QR code for the paper" width="128" height="128" />
-                <span>Paper</span><small>arxiv.org/abs/2511.09193</small>
-              </a>
-            </div>
-          </div>
-        </details>
       </footer>
     </div>
     <script type="module" src="/src/epibt/warehouse.ts"></script>
