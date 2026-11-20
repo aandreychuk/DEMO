@@ -2258,6 +2258,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   const step = view.getUint32(8, true);
   const priorFrame = liveCurrent && step > liveCurrent.step ? liveCurrent : null;
   if (liveCurrent && step < liveCurrent.step) {
+    setInferenceTiming(null);
     resetServiceAnimations();
     resetAgentStats();
   }
@@ -2739,6 +2740,7 @@ function connect(): void {
       paused = false;
       syncPauseButton();
       liveTickRate = Number(message.tickRate) || 5;
+      setInferenceTiming(message.inferenceMs);
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
       setConnection('live', 'DMM-0.8M simulator');
@@ -2751,6 +2753,7 @@ function connect(): void {
     } else if (message.type === 'status' && message.state === 'planning') {
       livePrevious = null;
       liveCurrent = null;
+      setInferenceTiming(null);
       renderTelemetry();
       resetServiceAnimations();
       resetPalletInventory();
@@ -2759,8 +2762,11 @@ function connect(): void {
       setConnection('planning', 'Planning {count}', { count: Number(message.agents) });
     } else if (message.type === 'status' && message.state === 'stopped') {
       paused = true;
+      setInferenceTiming(null);
       syncPauseButton();
       setConnection('stopped', 'Simulation stopped');
+    } else if (message.type === 'metrics') {
+      setInferenceTiming(message.inferenceMs);
     } else if (message.type === 'error') {
       setConnection('error', 'Runtime error');
       console.error(message.message);
@@ -2771,6 +2777,7 @@ function connect(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
+    setInferenceTiming(null);
     renderTelemetry();
     resetServiceAnimations();
     resetPalletInventory();
@@ -2959,11 +2966,24 @@ function updateGamepadActions(pad: Gamepad | null): void {
 
 const agentsValue = document.querySelector('#agents-value')!;
 const completedTasksValue = document.querySelector('#completed-tasks-value')!;
+const taskThroughputValue = document.querySelector('#task-throughput-value')!;
+const stepValue = document.querySelector('#step-value')!;
+const latencyValue = document.querySelector('#latency-value')!;
 const loadedValue = document.querySelector('#loaded-value')!;
 const recoveryValue = document.querySelector('#recovery-value')!;
 const towStatus = document.querySelector<HTMLElement>('#tow-status')!;
 const towStatusValue = document.querySelector('#tow-status-value')!;
 const towLabels = ['', 'Heading to robot', 'Taking robot to repair', 'Returning to depot', 'Lifting robot'];
+let inferenceMs: number | null = null;
+
+function renderInferenceTiming(): void {
+  latencyValue.textContent = inferenceMs === null ? '—' : formatFixed(inferenceMs, 1);
+}
+
+function setInferenceTiming(value: unknown): void {
+  inferenceMs = typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+  renderInferenceTiming();
+}
 
 function renderTelemetry(): void {
   const frame = liveCurrent;
@@ -2978,7 +2998,17 @@ function renderTelemetry(): void {
 
   // The frame header saturates this counter at the uint16 limit.
   const completed = frame?.completedTasks ?? null;
-  setCountMetric(completedTasksValue, completed, 'tasksDone', completed === 0xffff ? '+' : '');
+  const capped = completed === 0xffff;
+  setCountMetric(completedTasksValue, completed, 'tasksDone', capped ? '+' : '');
+  stepValue.textContent = frame ? formatNumber(frame.step) : '—';
+  if (frame && frame.step > 0) {
+    const throughput = frame.completedTasks / frame.step;
+    taskThroughputValue.textContent = capped
+      ? `≥ ${formatFixed(Math.floor(throughput * 1000) / 1000, 3)}`
+      : formatFixed(throughput, 3);
+  } else {
+    taskThroughputValue.textContent = '—';
+  }
   loadedValue.textContent = frame ? formatNumber(loaded) : '—';
   recoveryValue.textContent = frame ? formatNumber(inRecovery) : '—';
 
@@ -3203,6 +3233,7 @@ window.addEventListener('demo:languagechange', () => {
   updateEditorPanel();
   setCountMetric(agentsValue, agentCount, 'agents');
   renderTelemetry();
+  renderInferenceTiming();
   renderAgentPanel();
   syncPauseButton();
   setConnection(currentConnection.state, currentConnection.label, currentConnection.values);

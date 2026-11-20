@@ -169,13 +169,14 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .agent-control-hint { margin: 0 0 8px; color: #a7c4d5; font-size: 10px; line-height: 1.4; }
 
 .telemetry-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(143, 214, 255, .1); }
-.telemetry-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 11px; }
-.metric { padding: 0 4px; text-align: center; }
+.telemetry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.15fr); gap: 11px 8px; margin-top: 12px; }
+.metric { text-align: center; }
 .metric span { display: block; color: #eaf8ff; font: 500 16px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .metric small { display: block; margin-top: 3px; color: #93afc0; font-size: 10px; }
-.tasks-total { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; padding: 9px 10px; border-radius: 7px; background: rgba(42, 177, 211, .08); }
-.tasks-total strong { color: #84eaff; font: 600 22px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-.tasks-total small { color: #accbd9; font-size: 11px; }
+.telemetry-throughput { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 9px 10px; border: 1px solid rgba(84, 216, 246, .16); border-radius: 7px; background: rgba(42, 177, 211, .1); }
+.telemetry-throughput span { display: block; color: #d4edf7; font-size: 11px; font-weight: 600; }
+.telemetry-throughput small { display: block; margin-top: 3px; color: #accbd9; font-size: 10px; }
+.telemetry-throughput strong { color: #84eaff; font: 600 22px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tow-status { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 10px; padding: 8px 10px; border: 1px solid rgba(83, 245, 193, .1); border-radius: 7px; background: rgba(31, 138, 112, .07); }
 .tow-status small { color: #93afc0; font-size: 10px; }
 .tow-status strong { color: #8de7ce; font-size: 10px; font-weight: 600; text-align: right; }
