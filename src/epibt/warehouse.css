@@ -60,7 +60,7 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-facts dd, .epibt-robot-totals dd { margin: 3px 0 0; color: #d7edf6; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .epibt-operation h3 { margin: 10px 0 5px; font-size: 10px; font-weight: 600; color: #a5bfcd; }
 .epibt-operation ol { margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; list-style: none; }
-.epibt-operation li { display: grid; align-content: center; border: 1px solid #244656; border-radius: 5px; padding: 5px 3px; text-align: center; font-size: 10px; color: #b8d4df; }
+.epibt-operation li { border: 1px solid #244656; border-radius: 5px; padding: 5px 3px; text-align: center; font-size: 10px; line-height: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #b8d4df; }
 .epibt-operation li:first-child { border-color: #42889b; color: #9ff2fc; background: #123542; }
 .epibt-robot-totals { grid-template-columns: repeat(2, 1fr); }
 .epibt-fleet { flex: 1; display: flex; flex-direction: column; min-height: 80px; }
@@ -137,6 +137,9 @@ button:disabled { opacity: .42; cursor: default; }
   .epibt-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .epibt-robot-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .epibt-legend { padding-block: 7px; }
+}
+@media (min-width: 851px) and (max-width: 1030px) and (max-height: 690px) {
+  #epibt-action { min-height: 2lh; }
 }
 @media (min-width: 851px) and (max-height: 640px) {
   .epibt-metrics { grid-template-columns: minmax(97px, 1.45fr) repeat(3, minmax(0, 1fr)); }

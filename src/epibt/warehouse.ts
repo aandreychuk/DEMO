@@ -25,6 +25,7 @@ const lengthButtons = OPERATION_LENGTHS.map(length => ({
 }));
 const error = element('epibt-error');
 const operation = element('epibt-operation');
+const planActionLabels = ['Forward', 'Right', 'Left', 'Wait'] as const;
 const headingNames = ['East', 'South', 'West', 'North'] as const;
 const headingGlyphs = ['→', '↓', '←', '↑'] as const;
 
@@ -102,7 +103,12 @@ function renderInspector(): void {
   operation.replaceChildren(...Array.from({ length: operationLength }, (_, index) => {
     const action = entries[index];
     const item = document.createElement('li');
-    item.textContent = action === undefined ? '—' : `${ACTION_CODES[action]} · ${actionLabel(action)}`;
+    item.textContent = action === undefined ? '—' : tr(planActionLabels[action]);
+    if (action !== undefined) {
+      const description = actionLabel(action);
+      item.title = `${ACTION_CODES[action]} · ${description}`;
+      item.setAttribute('aria-label', description);
+    }
     return item;
   }));
 
