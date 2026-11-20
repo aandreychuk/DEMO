@@ -83,18 +83,13 @@
 
         <section class="telemetry-panel">
           <p class="eyebrow">Live telemetry</p>
+          <div class="tasks-total"><strong id="completed-tasks-value">—</strong><small>tasks done</small></div>
           <div class="telemetry-grid">
             <div class="metric"><span id="agents-value">100</span><small>Agents</small></div>
-            <div class="metric"><span id="fps-value">--</span><small>FPS</small></div>
-            <div class="metric"><span id="step-value">0</span><small>Step</small></div>
-            <div class="metric"><span id="throughput-value">--</span><small>Moves/s</small></div>
-            <div class="metric"><span id="latency-value">--</span><small>Inference</small></div>
-            <div class="metric"><span id="loaded-value">0</span><small>Loaded</small></div>
-            <div class="metric"><span id="failed-value">0</span><small>Failed</small></div>
-            <div class="metric"><span id="recovery-value">0</span><small>Recovery</small></div>
+            <div class="metric"><span id="loaded-value">—</span><small>Loaded</small></div>
+            <div class="metric"><span id="recovery-value">—</span><small>In recovery</small></div>
           </div>
-          <div class="tasks-total"><small>Throughput: tasks/step</small><strong id="task-throughput-value">0.000</strong></div>
-          <div class="tow-status"><small>Recovery unit</small><strong id="tow-status-value">Idle</strong></div>
+          <div id="tow-status" class="tow-status" hidden><small>Recovery unit</small><strong id="tow-status-value"></strong></div>
         </section>
 
         <section class="legend">
