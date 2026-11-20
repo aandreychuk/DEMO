@@ -18,7 +18,7 @@ import BrowserRuntimeWorker from './browser-runtime.worker?worker';
 import './style.css';
 import './qr-links.css';
 import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
-import { countLabel, fmt, formatFixed, formatNumber, getLanguage, initI18n, tr, translateMessage, type CountLabel } from './i18n';
+import { countLabel, fmt, formatFixed, formatNumber, initI18n, tr, translateMessage, type CountLabel } from './i18n';
 
 initI18n();
 
@@ -97,7 +97,6 @@ type TowFrame = {
   z: number;
   state: number;
   targetAgent: number;
-  queuedRescues: number;
 };
 
 type PalletCell = { id: number; x: number; z: number; cargoType: number };
@@ -227,7 +226,6 @@ let liveTickRate = 5;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
 let towLoadingStartedStep = 0;
-let lastInferenceMs = 0;
 let hiddenPalletKey = '';
 let palletInventoryRevision = 0;
 let selectedAgentId = -1;
@@ -2344,7 +2342,6 @@ function parseFrame(buffer: ArrayBuffer): void {
     z: TOW_DEPOT_Z,
     state: 0,
     targetAgent: 0xffff,
-    queuedRescues: 0,
   };
   if (protocol >= 4) {
     const towOffset = 16 + count * recordSize;
@@ -2353,7 +2350,6 @@ function parseFrame(buffer: ArrayBuffer): void {
       z: view.getFloat32(towOffset + 4, true),
       state: view.getUint8(towOffset + 8),
       targetAgent: view.getUint16(towOffset + 10, true),
-      queuedRescues: view.getUint16(towOffset + 12, true),
     };
   }
   if (tow.state === 4
@@ -2495,6 +2491,7 @@ function parseFrame(buffer: ArrayBuffer): void {
   };
   robotMesh.thinInstanceBufferUpdated('color');
   renderAgentPanel();
+  renderTelemetry();
 }
 
 function createAgentStats(): AgentStats {
@@ -2548,10 +2545,11 @@ function clearAgentSelection(): void {
   renderAgentPanel();
 }
 
-function setCountMetric(value: Element, count: number, label: CountLabel): void {
-  value.textContent = formatNumber(count);
+function setCountMetric(value: Element, count: number | null, label: CountLabel, suffix = ''): void {
+  const formatted = count === null ? '—' : formatNumber(count) + suffix;
+  if (value.textContent !== formatted) value.textContent = formatted;
   const caption = value.nextElementSibling!;
-  const text = countLabel(count, label);
+  const text = countLabel(count ?? 0, label);
   if (caption.textContent !== text) caption.textContent = text;
 }
 
@@ -2778,7 +2776,6 @@ function handleRuntimeMessage(data: unknown): void {
     paused = false;
     syncPauseButton();
     liveTickRate = Number(message.tickRate) || 5;
-    lastInferenceMs = Number(message.inferenceMs) || 0;
     setAgentCount(Number(message.agents));
     sendControl('speed', { value: speed });
     setRuntimeConnection();
@@ -2792,6 +2789,7 @@ function handleRuntimeMessage(data: unknown): void {
   } else if (message.type === 'status' && message.state === 'planning') {
     livePrevious = null;
     liveCurrent = null;
+    renderTelemetry();
     resetServiceAnimations();
     resetPalletInventory();
     resetAgentStats();
@@ -2804,7 +2802,6 @@ function handleRuntimeMessage(data: unknown): void {
   } else if (message.type === 'metrics') {
     runtimeBackend = String(message.backend ?? runtimeBackend);
     runtimeAdapter = String(message.backendAdapter ?? runtimeAdapter);
-    lastInferenceMs = Number(message.inferenceMs) || 0;
   } else if (message.type === 'error') {
     setConnection('error', 'Error: {message}', { message: String(message.message ?? 'runtime') });
     console.error(message.message);
@@ -2823,6 +2820,7 @@ function connectServer(): void {
     live = false;
     livePrevious = null;
     liveCurrent = null;
+    renderTelemetry();
     resetServiceAnimations();
     resetPalletInventory();
     resetAgentStats();
@@ -3023,17 +3021,35 @@ function updateGamepadActions(pad: Gamepad | null): void {
   else if (justPressed & GamepadButton.create) stopSimulation();
 }
 
-const fpsValue = document.querySelector('#fps-value')!;
-const stepValue = document.querySelector('#step-value')!;
 const agentsValue = document.querySelector('#agents-value')!;
-const throughputValue = document.querySelector('#throughput-value')!;
-const latencyValue = document.querySelector('#latency-value')!;
+const completedTasksValue = document.querySelector('#completed-tasks-value')!;
 const loadedValue = document.querySelector('#loaded-value')!;
-const failedValue = document.querySelector('#failed-value')!;
 const recoveryValue = document.querySelector('#recovery-value')!;
+const towStatus = document.querySelector<HTMLElement>('#tow-status')!;
 const towStatusValue = document.querySelector('#tow-status-value')!;
-const taskThroughputValue = document.querySelector('#task-throughput-value')!;
-let telemetryElapsed = 0;
+const towLabels = ['', 'Heading to robot', 'Taking robot to repair', 'Returning to depot', 'Lifting robot'];
+
+function renderTelemetry(): void {
+  const frame = liveCurrent;
+  let loaded = 0;
+  let inRecovery = 0;
+  if (frame) {
+    for (const [id, status] of frame.statuses.entries()) {
+      if ((status & 2) !== 0) loaded++;
+      if ((status & 16) !== 0 || frame.recoveryStates[id] !== 0) inRecovery++;
+    }
+  }
+
+  // The frame header saturates this counter at the uint16 limit.
+  const completed = frame?.completedTasks ?? null;
+  setCountMetric(completedTasksValue, completed, 'tasksDone', completed === 0xffff ? '+' : '');
+  loadedValue.textContent = frame ? formatNumber(loaded) : '—';
+  recoveryValue.textContent = frame ? formatNumber(inRecovery) : '—';
+
+  const towState = frame?.tow.state ?? 0;
+  towStatus.hidden = towState === 0;
+  towStatusValue.textContent = towState ? tr(towLabels[towState] ?? 'Active') : '';
+}
 
 engine.runRenderLoop(() => {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
@@ -3047,38 +3063,6 @@ engine.runRenderLoop(() => {
   }
   scene.render();
   updateGamepadActions(pad);
-  telemetryElapsed += dt;
-  if (telemetryElapsed > 0.25) {
-    telemetryElapsed = 0;
-    fpsValue.textContent = String(Math.round(engine.getFps()));
-    const step = liveCurrent?.step ?? Math.floor(simTime / FALLBACK_STEP_SECONDS);
-    stepValue.textContent = String(step).padStart(4, '0');
-    throughputValue.textContent = paused
-      || backgroundSuspended
-      ? '0'
-      : formatNumber(Math.round(agentCount * (live ? liveTickRate : 1 / FALLBACK_STEP_SECONDS) * speed));
-    latencyValue.textContent = live ? `${formatFixed(lastInferenceMs, 1)} ${getLanguage() === 'ru' ? 'мс' : 'ms'}` : tr('Demo');
-    loadedValue.textContent = String(liveCurrent ? liveCurrent.statuses.reduce((sum, status) => sum + ((status & 2) !== 0 ? 1 : 0), 0) : 0);
-    const failedCount = liveCurrent?.statuses.reduce((sum, status) => sum + ((status & 16) !== 0 ? 1 : 0), 0) ?? 0;
-    setCountMetric(failedValue, failedCount, 'failed');
-    recoveryValue.textContent = String(liveCurrent
-      ? liveCurrent.recoveryStates.reduce((sum, state) => sum + (state !== 0 ? 1 : 0), 0)
-      : 0);
-    if (liveCurrent) {
-      const towLabels = ['Idle', 'To agent', 'Transporting', 'Returning', 'Loading'];
-      const target = liveCurrent.tow.targetAgent === 0xffff
-        ? ''
-        : ` A${String(liveCurrent.tow.targetAgent).padStart(3, '0')}`;
-      const queued = liveCurrent.tow.queuedRescues > 0
-        ? `, queue ${liveCurrent.tow.queuedRescues}`
-        : '';
-      towStatusValue.textContent = `${tr(towLabels[liveCurrent.tow.state] ?? 'Active')}${target}${queued ? fmt(', queue {count}', { count: liveCurrent.tow.queuedRescues }) : ''}`;
-    } else {
-      towStatusValue.textContent = tr('Idle');
-    }
-    const completedTasks = liveCurrent?.completedTasks ?? 0;
-    taskThroughputValue.textContent = formatFixed(step > 0 ? completedTasks / step : 0, 3);
-  }
 });
 
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
@@ -3289,6 +3273,7 @@ window.addEventListener('resize', () => engine.resize());
 window.addEventListener('demo:languagechange', () => {
   updateEditorPanel();
   setCountMetric(agentsValue, agentCount, 'agents');
+  renderTelemetry();
   renderAgentPanel();
   syncPauseButton();
   if (currentConnection.state === 'live' && live) setRuntimeConnection();
@@ -3296,4 +3281,5 @@ window.addEventListener('demo:languagechange', () => {
   setEditorMessage(editorMessageEnglish, editorMessageIsError);
 });
 setCountMetric(agentsValue, agentCount, 'agents');
+renderTelemetry();
 connect();

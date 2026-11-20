@@ -155,7 +155,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .route-card li.done { color: #7895a7; }
 .route-card li[aria-current='step'] { color: #84eaff; background: rgba(61, 207, 242, .12); font-weight: 600; }
 .route-card strong { font-weight: inherit; font-variant-numeric: tabular-nums; }
-.agent-metrics small, .tasks-total small { display: block; color: #567286; font: 600 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
+.agent-metrics small { display: block; color: #567286; font: 600 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
 
 .agent-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 10px; overflow: hidden; border: 1px solid rgba(126, 210, 240, .08); border-radius: 7px; background: rgba(126, 210, 240, .08); }
 .agent-metrics > div { padding: 9px; background: rgba(7, 21, 32, .88); }
@@ -169,14 +169,16 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
 .agent-control-hint { margin: 0 0 8px; color: #a7c4d5; font-size: 10px; line-height: 1.4; }
 
 .telemetry-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(143, 214, 255, .1); }
-.telemetry-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; margin-top: 14px; }
-.metric span { display: block; color: #eaf8ff; font: 500 14px 'Inter', system-ui, sans-serif; letter-spacing: 0; }
-.metric small { display: block; margin-top: 4px; color: #587388; font: 500 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
-.tasks-total { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; padding: 9px 10px; border-radius: 7px; background: rgba(42, 177, 211, .08); }
-.tasks-total strong { color: #62e1ff; font: 500 17px 'Inter', system-ui, sans-serif; }
-.tow-status { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 8px 10px; border: 1px solid rgba(83, 245, 193, .1); border-radius: 7px; background: rgba(31, 138, 112, .07); }
-.tow-status small { color: #567286; font: 600 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
-.tow-status strong { color: #71efca; font: 600 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
+.telemetry-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 11px; }
+.metric { padding: 0 4px; text-align: center; }
+.metric span { display: block; color: #eaf8ff; font: 500 16px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.metric small { display: block; margin-top: 3px; color: #93afc0; font-size: 10px; }
+.tasks-total { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; padding: 9px 10px; border-radius: 7px; background: rgba(42, 177, 211, .08); }
+.tasks-total strong { color: #84eaff; font: 600 22px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.tasks-total small { color: #accbd9; font-size: 11px; }
+.tow-status { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 10px; padding: 8px 10px; border: 1px solid rgba(83, 245, 193, .1); border-radius: 7px; background: rgba(31, 138, 112, .07); }
+.tow-status small { color: #93afc0; font-size: 10px; }
+.tow-status strong { color: #8de7ce; font-size: 10px; font-weight: 600; text-align: right; }
 
 .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(143, 214, 255, .1); pointer-events: none; }
 .legend > span { display: flex; align-items: center; gap: 7px; color: #718b9c; font-size: 9px; }
