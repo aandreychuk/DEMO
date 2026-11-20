@@ -26,6 +26,11 @@ const lengthButtons = OPERATION_LENGTHS.map(length => ({
 const error = element('epibt-error');
 const operation = element('epibt-operation');
 const planActionLabels = ['Forward', 'Right', 'Left', 'Wait'] as const;
+const playbackRates = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  20, 30, 40, 50, 60, 70, 80, 90, 100,
+  200, 300, 400, 500, 600, 700, 800, 900, 1000,
+];
 const MAX_PLAYBACK_UPDATES_PER_SECOND = 50;
 const headingNames = ['East', 'South', 'West', 'North'] as const;
 const headingGlyphs = ['→', '↓', '←', '↑'] as const;
@@ -64,8 +69,7 @@ function actionLabel(action: Action | undefined): string {
 }
 
 function playbackRate(): number {
-  // The slider moves in hundredths of a base-10 exponent.
-  return Math.round(10 ** (speed.valueAsNumber / 100));
+  return playbackRates[speed.valueAsNumber];
 }
 
 function renderError(message: string): void {

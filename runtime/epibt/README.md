@@ -11,8 +11,9 @@ inspector shows the executed primitive and the full
 operation selected in that tick. The dashed line shows the remaining moves of
 that operation. EPIBT may revise them at the next tick.
 
-The logarithmic playback control sets a target of 1 to 1,000 steps per
-second. At high rates the worker runs several ticks between screen updates.
+The playback control sets a target of 1 to 1,000 steps per second. The
+slider increments are 1 up to 10, 10 up to 100, and 100 up to 1,000.
+At high rates the worker runs several ticks between screen updates.
 **Stop** resets the active map to tick zero and pauses playback.
 
 The rotation model, operation enumeration, inheritance, reservations and
