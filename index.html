@@ -83,8 +83,14 @@
 
         <section class="telemetry-panel">
           <p class="eyebrow">Live telemetry</p>
-          <div class="tasks-total"><strong id="completed-tasks-value">—</strong><small>tasks done</small></div>
+          <div class="telemetry-throughput">
+            <div><span>Throughput</span><small>Tasks per step</small></div>
+            <strong id="task-throughput-value">—</strong>
+          </div>
           <div class="telemetry-grid">
+            <div class="metric"><span id="completed-tasks-value">—</span><small>tasks done</small></div>
+            <div class="metric"><span id="step-value">—</span><small>Environment steps</small></div>
+            <div class="metric"><span id="latency-value">—</span><small>Inference, ms</small></div>
             <div class="metric"><span id="agents-value">100</span><small>Agents</small></div>
             <div class="metric"><span id="loaded-value">—</span><small>Loaded</small></div>
             <div class="metric"><span id="recovery-value">—</span><small>In recovery</small></div>
