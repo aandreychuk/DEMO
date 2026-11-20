@@ -132,8 +132,6 @@ type AgentStats = {
   waitTicks: number;
   handoffs: number;
   completedTasks: number;
-  taskStartedAt: number;
-  lastTaskId: number;
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -2384,8 +2382,6 @@ function parseFrame(buffer: ArrayBuffer): void {
         && (statuses[id] & 2) !== 0;
       if (taskIds[id] !== priorFrame.taskIds[id]) {
         if (priorFrame.taskIds[id] !== 0xffffffff) stats.completedTasks += 1;
-        stats.taskStartedAt = step;
-        stats.lastTaskId = taskIds[id];
       }
       const palletId = palletIds[id];
       const x = Math.round(positions[id * 2]);
@@ -2479,13 +2475,6 @@ function parseFrame(buffer: ArrayBuffer): void {
         palletMotions[id] = null;
       }
     }
-  } else {
-    for (let id = 0; id < count; id++) {
-      if (agentStats[id].lastTaskId === 0xffffffff) {
-        agentStats[id].lastTaskId = taskIds[id];
-        agentStats[id].taskStartedAt = step;
-      }
-    }
   }
   livePrevious = priorFrame;
   liveCurrent = {
@@ -2515,8 +2504,6 @@ function createAgentStats(): AgentStats {
     waitTicks: 0,
     handoffs: 0,
     completedTasks: 0,
-    taskStartedAt: 0,
-    lastTaskId: 0xffffffff,
   };
 }
 
@@ -2580,7 +2567,6 @@ function renderAgentPanel(): void {
   const nativeStage = Math.min(3, frame.stages[id]);
   const status = frame.statuses[id];
   const palletId = frame.palletIds[id];
-  const taskId = frame.taskIds[id];
   const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
   const stationX = frame.stationPositions[id * 2];
   const stationZ = frame.stationPositions[id * 2 + 1];
@@ -2643,9 +2629,7 @@ function renderAgentPanel(): void {
     : 'Break agent');
 
   document.querySelector('#selected-agent')!.textContent = fmt('Agent {id}', { id: String(id).padStart(3, '0') });
-  document.querySelector('#agent-position')!.textContent =
-    `${Math.round(frame.positions[id * 2])}, ${Math.round(frame.positions[id * 2 + 1])}`;
-  document.querySelector('#agent-task')!.textContent = taskId === 0xffffffff ? '—' : `#${taskId}`;
+  document.querySelector('#agent-position')!.textContent = `${agentX}, ${agentZ}`;
   const cargoNames = ['Crate', 'Cartons', 'Drums'];
   const physicalPalletX = frame.palletPositions[id * 2];
   const physicalPalletZ = frame.palletPositions[id * 2 + 1];
@@ -2653,44 +2637,27 @@ function renderAgentPanel(): void {
       && physicalPalletX >= 0 && physicalPalletZ >= 0
       && pallet !== null
       && (physicalPalletX !== pallet.x || physicalPalletZ !== pallet.z)
-    ? fmt(', at {x},{z}', { x: physicalPalletX, z: physicalPalletZ })
+    ? fmt(' · at {x}, {z}', { x: physicalPalletX, z: physicalPalletZ })
     : '';
   document.querySelector('#agent-pallet')!.textContent = pallet
-    ? `P${String(palletId).padStart(3, '0')}, ${tr(cargoNames[pallet.cargoType])}, ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
+    ? `${tr(cargoNames[pallet.cargoType])} · ${frame.palletItems[id]}/${PALLET_CAPACITY}${droppedLabel}`
     : '—';
-  document.querySelector('#agent-task-age')!.textContent = fmt('{count} ticks', { count: Math.max(0, frame.step - stats.taskStartedAt) });
 
-  const formatCoordinate = (x: number, z: number): string => x >= 0 && z >= 0 ? `${x}, ${z}` : '—';
-  document.querySelector('#pickup-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
-  document.querySelector('#unload-coordinate')!.textContent = formatCoordinate(stationX, stationZ);
-  document.querySelector('#reload-coordinate')!.textContent = formatCoordinate(reloadX, reloadZ);
-  document.querySelector('#return-coordinate')!.textContent = pallet ? formatCoordinate(pallet.x, pallet.z) : '—';
-
-  const stageElements = [
-    document.querySelector<HTMLElement>('#stage-pickup')!,
-    document.querySelector<HTMLElement>('#stage-unload')!,
-    document.querySelector<HTMLElement>('#stage-reload')!,
-    document.querySelector<HTMLElement>('#stage-return')!,
-  ];
-  const routeElements = [
-    document.querySelector<HTMLElement>('#route-pickup')!,
-    document.querySelector<HTMLElement>('#route-unload')!,
-    document.querySelector<HTMLElement>('#route-reload')!,
-    document.querySelector<HTMLElement>('#route-return')!,
-  ];
-  const reloadRequired = (status & 8) !== 0 || (nativeStage <= 1 && frame.palletItems[id] <= 1);
-  for (let index = 0; index < 4; index++) {
-    const state = index === 2 && !reloadRequired
-      ? (stage > 1 ? 'skipped' : '')
-      : index < stage
-        ? 'done'
-        : index === stage
-          ? 'active'
-          : '';
-    stageElements[index].className = state;
-    routeElements[index].className = state;
+  const route = document.querySelector<HTMLOListElement>('#task-route')!;
+  route.hidden = pallet === null;
+  if (pallet) {
+    const reloadRequired = stage === 2 || (status & 8) !== 0
+      || (nativeStage <= 1 && frame.palletItems[id] <= 1 && reloadX >= 0 && reloadZ >= 0);
+    const coordinates = [[pallet.x, pallet.z], [stationX, stationZ], [reloadX, reloadZ], [pallet.x, pallet.z]];
+    route.querySelectorAll('li').forEach((row, index) => {
+      const current = index === stage && recoveryState === 0 && !failed;
+      const [x, z] = coordinates[index];
+      row.hidden = index === 2 && !reloadRequired;
+      row.classList.toggle('done', index < stage);
+      row.setAttribute('aria-current', current ? 'step' : 'false');
+      row.querySelector('strong')!.textContent = current && x >= 0 && z >= 0 ? `${x}, ${z}` : '';
+    });
   }
-  routeElements[3].classList.toggle('return-marked', loaded && pallet !== null);
 
   document.querySelector('#agent-distance')!.textContent = stats.distance.toFixed(0);
   document.querySelector('#agent-waits')!.textContent = String(stats.waitTicks);

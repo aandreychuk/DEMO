@@ -39,8 +39,8 @@ simulation steps; the rendered pallet rises and lowers smoothly during those
 steps at every playback speed.
 
 Click a robot or its carried pallet to open the right-side inspector. It shows
-the assigned task, pallet inventory, all four possible route goals, the active
-task stage, and per-agent distance, waiting, unloading, and completion counters. Global live
+the robot's position, pallet inventory, the task route with its active
+destination, and per-agent distance, waiting, unloading, and completion counters. Global live
 telemetry is grouped in the same panel. Selecting an agent also highlights its
 physical pallet, assigned unloading bay, and the loading bay when the pallet is
 about to become empty.
