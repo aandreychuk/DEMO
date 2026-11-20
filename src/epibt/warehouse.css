@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root { color-scheme: dark; color: #e8f6fb; background: #050b13; font: 400 13px Inter, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .42; cursor: default; }
+:focus-visible { outline: 2px solid #65dcf4; outline-offset: 2px; }
+.epibt-app { min-height: 100vh; display: grid; grid-template-rows: 66px minmax(660px, 1fr) auto; gap: 14px; padding: 16px; background: radial-gradient(ellipse at 38% 35%, #102b3b, #060e19 72%); }
+.epibt-panel { border: 1px solid #1b394b; border-radius: 10px; background: #0a1825; }
+.epibt-header, .epibt-controls { display: flex; align-items: center; gap: 12px; padding: 11px 16px; }
+.epibt-header { justify-content: space-between; }
+.epibt-brand { display: flex; align-items: center; gap: 12px; }
+.epibt-brand img { flex: none; }
+.epibt-brand strong { font-size: 14px; }
+.epibt-nav { display: flex; gap: 4px; padding: 4px; border: 1px solid #1c3849; border-radius: 7px; background: #07131f; }
+.epibt-nav a, .epibt-nav span { padding: 6px 9px; border-radius: 4px; color: #a3c1d1; font-size: 11px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.epibt-nav a:hover, .epibt-nav span { background: #123445; color: #e4f8ff; }
+.epibt-main { display: grid; grid-template-columns: minmax(0, 1fr) 365px; gap: 14px; min-height: 0; }
+.epibt-board { min-width: 0; display: flex; flex-direction: column; }
+.epibt-board-header, .epibt-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.epibt-board-header { padding: 16px 18px 10px; }
+.epibt-board-header h1 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+.epibt-board-header p { margin: 4px 0 0; color: #a4bac7; font-size: 11px; font-variant-numeric: tabular-nums; }
+.epibt-file-actions { display: flex; gap: 6px; }
+.epibt-file-actions button, .epibt-controls button { border: 1px solid #2a5267; border-radius: 5px; padding: 7px 10px; background: #102939; color: #d5edf8; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.epibt-file-actions button:hover, .epibt-controls button:hover:not(:disabled) { background: #18465a; }
+.epibt-error { margin: 3px 18px 8px; padding: 8px 10px; border: 1px solid #864b47; border-radius: 5px; background: #281b26; color: #ffb1a4; }
+.epibt-map-space { flex: 1; min-height: 0; position: relative; margin: 0 10px; }
+#epibt-map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.epibt-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px 20px; padding: 11px 12px; color: #acc4d3; font-size: 10px; }
+.epibt-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.epibt-legend i { width: 9px; height: 9px; border: 1px solid currentColor; border-radius: 2px; background: currentColor; }
+.epibt-pickup { color: #bb8b51; }
+.epibt-delivery { color: #63cba3; }
+.epibt-robot { color: #55c6e7; }
+.epibt-loaded { color: #ffc878; }
+.epibt-sidebar { min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 14px; }
+.epibt-section-head h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.epibt-section-head > span { color: #9dbccd; font-size: 10px; }
+.epibt-metrics { margin: 11px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 5px; }
+.epibt-metrics > div { background: #0d2332; padding: 8px; border-radius: 5px; }
+.epibt-metrics dt, .epibt-facts dt, .epibt-robot-totals dt { color: #a5bfcd; font-size: 10px; }
+.epibt-metrics dd { margin: 3px 0 0; font-size: 17px; color: #def2fb; font-variant-numeric: tabular-nums; }
+.epibt-metrics .epibt-throughput { grid-column: 1/-1; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1px 8px; border: 1px solid #245369; }
+.epibt-throughput dt { color: #d3eef8; font-weight: 600; }
+.epibt-throughput dd { grid-column: 2; grid-row: 1/3; margin: 0; color: #7ee9f7; font-size: 24px; font-weight: 600; }
+.epibt-throughput small { color: #a5bfcd; font-size: 9px; }
+.epibt-inspector, .epibt-fleet { margin-top: 13px; border-top: 1px solid #204052; padding-top: 13px; }
+#epibt-stage { border-radius: 4px; padding: 4px 7px; background: #132f40; color: #95dded; }
+.epibt-facts, .epibt-robot-totals { display: grid; margin: 10px 0 0; gap: 6px; }
+.epibt-facts { grid-template-columns: 1fr 1fr; }
+.epibt-facts > div, .epibt-robot-totals > div { padding: 6px 7px; border-radius: 5px; background: #0e2231; }
+.epibt-facts dd, .epibt-robot-totals dd { margin: 3px 0 0; color: #d7edf6; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.epibt-operation h3 { margin: 10px 0 5px; font-size: 10px; font-weight: 600; color: #a5bfcd; }
+.epibt-operation ol { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; list-style: none; }
+.epibt-operation li { border: 1px solid #244656; border-radius: 5px; padding: 5px; text-align: center; font-size: 10px; color: #b8d4df; }
+.epibt-operation li:first-child { border-color: #42889b; color: #9ff2fc; background: #123542; }
+.epibt-robot-totals { grid-template-columns: repeat(2, 1fr); }
+.epibt-fleet { flex: 1; display: flex; flex-direction: column; min-height: 130px; }
+.epibt-fleet-scroll { margin-top: 6px; flex: 1; max-height: 238px; overflow: auto; scrollbar-color: #315466 #0a1825; }
+.epibt-fleet table { width: 100%; border-collapse: collapse; text-align: left; font-size: 10px; font-variant-numeric: tabular-nums; }
+.epibt-fleet th { position: sticky; top: 0; z-index: 1; padding: 5px; background: #0a1825; color: #a5bfcd; font-weight: 600; }
+.epibt-fleet td { padding: 4px 5px; border-top: 1px solid #183342; white-space: nowrap; color: #c1dae8; }
+.epibt-fleet tr[data-selected] td { background: #143648; }
+.epibt-fleet td button { border: 0; border-radius: 4px; padding: 2px 3px; background: transparent; color: #8edfed; font-size: 10px; font-weight: 700; }
+.epibt-fleet td button:hover { background: #234b61; }
+.epibt-controls .epibt-primary { background: #65d7ea; border-color: #65d7ea; color: #092330; min-width: 72px; }
+.epibt-controls .epibt-primary:hover:not(:disabled) { background: #a2ecf6; }
+.epibt-speed { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
+.epibt-speed input { width: 114px; accent-color: #65d7ea; }
+.epibt-speed output { min-width: 30px; color: #d2eef5; font-variant-numeric: tabular-nums; }
+.epibt-method { margin-left: auto; color: #a5c5d4; font-size: 11px; text-decoration: none; }
+.epibt-method:hover { color: #ddf8ff; }
+
+@media (max-width: 1030px) {
+  .epibt-main { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+@media (max-width: 850px) {
+  .epibt-app { grid-template-rows: auto auto auto; }
+  .epibt-header, .epibt-controls { flex-wrap: wrap; }
+  .epibt-main { grid-template-columns: minmax(0, 1fr); }
+  .epibt-map-space { min-height: 390px; }
+}
