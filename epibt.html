@@ -143,7 +143,16 @@
         <button id="epibt-play" class="epibt-primary" type="button" disabled>Run</button>
         <button id="epibt-next" type="button" disabled>Single step</button>
         <button id="epibt-reset" type="button">Restart</button>
-        <label class="epibt-speed"><span>Playback</span><input id="epibt-rate" type="range" min="0" max="300" step="1" value="70" aria-valuetext="5 steps/s" /><output id="epibt-rate-value" for="epibt-rate">5 steps/s</output></label>
+        <div class="epibt-speed">
+          <label for="epibt-rate">Playback</label>
+          <div class="epibt-speed-slider">
+            <input id="epibt-rate" type="range" min="0" max="300" step="1" value="70" aria-valuetext="5 steps/s" />
+            <div class="epibt-speed-marks" aria-hidden="true">
+              <span>1</span><span>10</span><span>100</span><span>1000</span>
+            </div>
+          </div>
+          <output id="epibt-rate-value" for="epibt-rate">5 steps/s</output>
+        </div>
         <a class="epibt-method" href="https://sites.google.com/view/epibt" target="_blank" rel="noopener noreferrer">About EPIBT ↗</a>
       </footer>
     </div>

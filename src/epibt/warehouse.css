@@ -73,8 +73,12 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-fleet td button:hover { background: #234b61; }
 .epibt-app .epibt-primary { background: #65d7ea; border-color: #65d7ea; color: #092330; min-width: 72px; }
 .epibt-app .epibt-primary:hover:not(:disabled) { background: #a2ecf6; }
-.epibt-speed { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
-.epibt-speed input { width: 114px; accent-color: #65d7ea; }
+.epibt-speed { display: flex; flex: 1 1 300px; align-items: center; gap: 10px; min-width: 0; color: #a6c3d1; font-size: 11px; }
+.epibt-speed-slider { flex: 1; min-width: 0; max-width: 440px; }
+.epibt-speed input { display: block; width: 100%; margin: 0; accent-color: #65d7ea; }
+.epibt-speed-marks { display: flex; justify-content: space-between; margin-inline: 8px; font-size: 10px; line-height: 12px; font-variant-numeric: tabular-nums; }
+.epibt-speed-marks span { display: grid; justify-content: center; justify-items: center; width: 0; gap: 1px; }
+.epibt-speed-marks span::before { content: ''; width: 1px; height: 4px; background: #7da9bb; }
 .epibt-speed output { min-width: 74px; color: #d2eef5; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .epibt-length { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
 .epibt-length-options { display: flex; gap: 2px; padding: 2px; border: 1px solid #2a5267; border-radius: 5px; background: #071822; }
