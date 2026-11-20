@@ -241,9 +241,7 @@ input[type='range'] { width: 100%; height: 3px; accent-color: #52dafe; cursor: p
 .scanline { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(93, 197, 235, .011) 4px); }
 
 @media (max-width: 720px) {
-  .topbar { top: 10px; left: 10px; right: 10px; padding-inline: 10px; }
-  .brand { gap: 9px; }
-  .brand-logo { width: 69px; height: auto; }
+  .topbar { top: 10px; left: 10px; right: 10px; }
   .inspector { top: 90px; right: 10px; bottom: 82px; width: 270px; transform: scale(.88); transform-origin: top right; }
   .layout-editor { top: 90px; right: 10px; bottom: 10px; width: 270px; }
   .gamepad-help { left: 10px; bottom: 76px; }
