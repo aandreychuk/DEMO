@@ -44,7 +44,6 @@ const RU: Record<string, string> = {
   'West': 'запад',
   'North': 'север',
   'Robot {id}': 'Робот {id}',
-  '{value} steps/s': '{value} шаг/с',
   'Running': 'В работе',
   'Paused': 'Пауза',
   'EPIBT stopped': 'EPIBT остановлен',
@@ -301,6 +300,10 @@ const COUNT_FORMS = {
   agents: {
     en: ['agent', 'agents'],
     ru: ['агент', 'агента', 'агентов'],
+  },
+  stepsPerSecond: {
+    en: ['step/s', 'steps/s'],
+    ru: ['шаг/с', 'шага/с', 'шагов/с'],
   },
   cellsTravelled: {
     en: ['cell travelled', 'cells travelled'],

@@ -79,7 +79,7 @@ button:disabled { opacity: .42; cursor: default; }
 .epibt-speed-marks { display: flex; justify-content: space-between; margin-inline: 8px; font-size: 10px; line-height: 12px; font-variant-numeric: tabular-nums; }
 .epibt-speed-marks span { display: grid; justify-content: center; justify-items: center; width: 0; gap: 1px; }
 .epibt-speed-marks span::before { content: ''; width: 1px; height: 4px; background: #7da9bb; }
-.epibt-speed output { min-width: 74px; color: #d2eef5; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.epibt-speed output { min-width: 84px; color: #d2eef5; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .epibt-length { display: flex; align-items: center; gap: 8px; color: #a6c3d1; font-size: 11px; }
 .epibt-length-options { display: flex; gap: 2px; padding: 2px; border: 1px solid #2a5267; border-radius: 5px; background: #071822; }
 .epibt-length-options .epibt-button { min-width: 27px; padding: 4px 6px; border-color: transparent; border-radius: 3px; background: transparent; }

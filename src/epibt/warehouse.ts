@@ -86,7 +86,7 @@ function renderControls(): void {
   const state = !worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…'
     : requestedLength !== null ? 'Changing the planning horizon…' : running ? 'Running' : 'Paused';
   setText('epibt-state', tr(state));
-  const rateLabel = fmt('{value} steps/s', { value: formatNumber(playbackRate()) });
+  const rateLabel = formatCount(playbackRate(), 'stepsPerSecond');
   setText('epibt-rate-value', rateLabel);
   if (speed.getAttribute('aria-valuetext') !== rateLabel) speed.setAttribute('aria-valuetext', rateLabel);
   for (const { length, button } of lengthButtons) {
