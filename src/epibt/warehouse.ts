@@ -38,6 +38,7 @@ let requestedLength: OperationLength | null = null;
 let running = false;
 let busy = true;
 let timer: number | undefined;
+let nextStepAt: number | undefined;
 let animationFrame: number | undefined;
 let transitionStarted = 0;
 let errorText = '';
@@ -74,7 +75,7 @@ function renderControls(): void {
   const state = !worker ? 'EPIBT stopped' : !snapshot ? 'Loading EPIBT…'
     : requestedLength !== null ? 'Changing operation length…' : running ? 'Running' : 'Paused';
   setText('epibt-state', tr(state));
-  setText('epibt-rate-value', fmt('{value} Hz', { value: speed.valueAsNumber }));
+  setText('epibt-rate-value', fmt('{value} steps/s', { value: speed.valueAsNumber }));
   for (const { length, button } of lengthButtons) {
     button.disabled = !ready || requestedLength !== null;
     button.setAttribute('aria-pressed', String(length === operationLength));
@@ -186,13 +187,21 @@ function schedule(): void {
     busy = true;
     worker.postMessage({ type: 'length', length: requestedLength } satisfies WorkerCommand);
   } else if (running) {
-    timer = window.setTimeout(requestStep, 1000 / speed.valueAsNumber);
+    const now = performance.now();
+    nextStepAt ??= now + 1000 / speed.valueAsNumber;
+    timer = window.setTimeout(requestStep, Math.max(0, Math.ceil(nextStepAt - now)));
   }
 }
 
 function requestStep(): void {
   if (!worker || !snapshot || busy) return;
   busy = true;
+  if (running) {
+    const now = performance.now();
+    const interval = 1000 / speed.valueAsNumber;
+    const deadline = (nextStepAt ?? now) + interval;
+    nextStepAt = deadline > now ? deadline : now + interval;
+  }
   renderControls();
   worker.postMessage({ type: 'step' } satisfies WorkerCommand);
 }
@@ -215,6 +224,7 @@ function start(next: WarehouseConfig, autoplay = false): void {
   config = next;
   snapshot = null;
   previous = null;
+  nextStepAt = undefined;
   selected = Math.min(selected, config.agentCount - 1);
   running = autoplay;
   busy = true;
@@ -307,6 +317,7 @@ editButton.addEventListener('click', () => {
 
 playButton.addEventListener('click', () => {
   running = !running;
+  nextStepAt = undefined;
   renderControls();
   schedule();
 });
@@ -324,6 +335,7 @@ for (const { length, button } of lengthButtons) {
   });
 }
 speed.addEventListener('input', () => {
+  nextStepAt = undefined;
   renderControls();
   schedule();
 });
