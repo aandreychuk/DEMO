@@ -1,5 +1,5 @@
 import { parseWarehouse, prepareWarehouse, type WarehouseConfig } from './config';
-import { nextPose, type Action, type Agent, type WorkerCommand, type WorkerReply } from './model';
+import { nextPose, type Action, type Agent, type OperationLength, type WorkerCommand, type WorkerReply } from './model';
 
 type Runtime = {
   HEAPU8: Uint8Array;
@@ -10,14 +10,16 @@ type Runtime = {
   _epibt_step(count: number, input: number, output: number): void;
 };
 
+type Planner = { runtime: Runtime; length: OperationLength; input: number; output: number };
+
 const scope = self as unknown as {
   onmessage: ((event: MessageEvent<WorkerCommand>) => void) | null;
   postMessage(message: WorkerReply): void;
 };
 
 const INPUT_STRIDE = 4;
-const OUTPUT_STRIDE = 6;
-let runtime: Runtime;
+const OUTPUT_FIELDS = 3; // Cell, heading and priority, followed by the planned actions.
+let planner: Planner | null = null;
 let config: WarehouseConfig;
 let width = 0;
 let pickups: number[] = [];
@@ -25,8 +27,6 @@ let deliveries: number[] = [];
 let step = 0;
 let completed = 0;
 let nextTask = 0;
-let input = 0;
-let output = 0;
 let agents: Array<Agent & { dropoff: number }> = [];
 
 function assignTask(agent: Agent & { dropoff: number }): void {
@@ -39,18 +39,14 @@ function assignTask(agent: Agent & { dropoff: number }): void {
   agent.target = agent.stage === 'Pickup' ? pickup : agent.dropoff;
 }
 
-async function configure(request: WarehouseConfig): Promise<void> {
-  config = parseWarehouse(request);
-  const plan = prepareWarehouse(config);
-  pickups = plan.pickups;
-  deliveries = plan.deliveries;
-  width = config.map[0].length;
-  const moduleUrl = new URL(`${import.meta.env.BASE_URL}runtime/epibt.mjs`, self.location.origin);
+async function loadPlanner(length: OperationLength): Promise<Planner> {
+  const name = length === 3 ? 'epibt' : `epibt-${length}`;
+  const moduleUrl = new URL(`${import.meta.env.BASE_URL}runtime/${name}.mjs`, self.location.origin);
   const createRuntime = (await import(/* @vite-ignore */ moduleUrl.href)).default as (options: {
     locateFile: (name: string) => string;
     print: (text: string) => void;
   }) => Promise<Runtime>;
-  runtime = await createRuntime({
+  const runtime = await createRuntime({
     locateFile: name => new URL(name, moduleUrl).href,
     print: () => {},
   });
@@ -62,7 +58,22 @@ async function configure(request: WarehouseConfig): Promise<void> {
   } finally {
     runtime._free(mapPointer);
   }
+  const input = runtime._malloc(config.agentCount * INPUT_STRIDE * Int32Array.BYTES_PER_ELEMENT);
+  const output = runtime._malloc(config.agentCount * (OUTPUT_FIELDS + length) * Int32Array.BYTES_PER_ELEMENT);
+  return { runtime, length, input, output };
+}
 
+function publish(operationLength: OperationLength, planningMs: number | null): void {
+  scope.postMessage({ type: 'snapshot', step, completed, operationLength, planningMs, agents });
+}
+
+async function configure(request: WarehouseConfig, length: OperationLength): Promise<void> {
+  config = parseWarehouse(request);
+  const plan = prepareWarehouse(config);
+  pickups = plan.pickups;
+  deliveries = plan.deliveries;
+  width = config.map[0].length;
+  planner = await loadPlanner(length);
   agents = plan.starts.map((cell, index) => {
     const agent: Agent & { dropoff: number } = {
       cell, direction: index % 4, target: 0, task: 0, stage: 'Pickup',
@@ -71,13 +82,30 @@ async function configure(request: WarehouseConfig): Promise<void> {
     assignTask(agent);
     return agent;
   });
-  input = runtime._malloc(agents.length * INPUT_STRIDE * Int32Array.BYTES_PER_ELEMENT);
-  output = runtime._malloc(agents.length * OUTPUT_STRIDE * Int32Array.BYTES_PER_ELEMENT);
-  scope.postMessage({ type: 'snapshot', step, completed, planningMs: null, agents });
+  publish(length, null);
+}
+
+async function changeLength(length: OperationLength): Promise<void> {
+  try {
+    const next = await loadPlanner(length);
+    if (planner) {
+      planner.runtime._free(planner.input);
+      planner.runtime._free(planner.output);
+    }
+    planner = next;
+  } catch (error) {
+    console.warn('Could not load the EPIBT planner:', error);
+    scope.postMessage({ type: 'length-error' });
+    return;
+  }
+  for (const agent of agents) agent.operation = [];
+  publish(length, null);
 }
 
 function advance(): void {
-  if (!input || !output) throw new Error('EPIBT is not ready.');
+  if (!planner) throw new Error('EPIBT is not ready.');
+  const { runtime, length, input, output } = planner;
+  const outputStride = OUTPUT_FIELDS + length;
   for (const [id, agent] of agents.entries()) {
     runtime.HEAP32.set([agent.cell, agent.direction, agent.target, agent.dropoff], input / 4 + id * INPUT_STRIDE);
   }
@@ -89,9 +117,9 @@ function advance(): void {
   const origins = new Map(agents.map((agent, id) => [agent.cell, id]));
 
   const moves = agents.map((agent, id) => {
-    const offset = output / 4 + id * OUTPUT_STRIDE;
-    const [destination, direction, priority] = runtime.HEAP32.subarray(offset, offset + 3);
-    const operation = Array.from(runtime.HEAP32.subarray(offset + 3, offset + OUTPUT_STRIDE)) as Action[];
+    const offset = output / 4 + id * outputStride;
+    const [destination, direction, priority] = runtime.HEAP32.subarray(offset, offset + OUTPUT_FIELDS);
+    const operation = Array.from(runtime.HEAP32.subarray(offset + OUTPUT_FIELDS, offset + outputStride)) as Action[];
     const tile = config.map[Math.floor(destination / width)]?.[destination % width];
     if (operation.some(action => action < 0 || action > 3) || !tile || tile === '#' || destinations.has(destination)) {
       throw new Error('EPIBT returned an invalid move.');
@@ -99,7 +127,7 @@ function advance(): void {
     const expected = nextPose(agent, operation[0], width);
     const other = origins.get(destination);
     const swapped = other !== undefined && other !== id
-      && runtime.HEAP32[output / 4 + other * OUTPUT_STRIDE] === agent.cell;
+      && runtime.HEAP32[output / 4 + other * outputStride] === agent.cell;
     const wrapped = operation[0] === 0 && Math.abs(destination % width - agent.cell % width) > 1;
     if (swapped || wrapped || expected.cell !== destination || expected.direction !== direction) {
       throw new Error('EPIBT returned an invalid move.');
@@ -114,8 +142,9 @@ function advance(): void {
     agent.direction = move.direction;
     agent.priority = move.priority;
     agent.operation = move.operation;
-    if (move.operation[0] === 0) agent.distance++;
-    else if (move.operation[0] === 3) agent.waits++;
+    agent.lastAction = move.operation[0];
+    if (agent.lastAction === 0) agent.distance++;
+    else if (agent.lastAction === 3) agent.waits++;
     else agent.turns++;
     if (agent.cell === agent.target) {
       if (agent.stage === 'Pickup') {
@@ -128,12 +157,14 @@ function advance(): void {
       }
     }
   }
-  scope.postMessage({ type: 'snapshot', step: ++step, completed, planningMs, agents });
+  step++;
+  publish(length, planningMs);
 }
 
 scope.onmessage = async ({ data }) => {
   try {
-    if (data.type === 'configure') await configure(data.config);
+    if (data.type === 'configure') await configure(data.config, data.length);
+    else if (data.type === 'length') await changeLength(data.length);
     else advance();
   } catch (error) {
     scope.postMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) });

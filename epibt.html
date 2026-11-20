@@ -29,7 +29,17 @@
               <h1>Warehouse map</h1>
               <p id="epibt-dimensions"></p>
             </div>
-            <button id="epibt-open-editor" class="epibt-button" type="button" aria-controls="epibt-editor">Edit map</button>
+            <div class="epibt-board-actions">
+              <div id="epibt-length-control" class="epibt-length" role="group" aria-labelledby="epibt-length-label">
+                <span id="epibt-length-label">Operation length</span>
+                <div class="epibt-length-options">
+                  <button id="epibt-length-3" class="epibt-button" type="button" aria-pressed="true" disabled>3</button>
+                  <button id="epibt-length-4" class="epibt-button" type="button" aria-pressed="false" disabled>4</button>
+                  <button id="epibt-length-5" class="epibt-button" type="button" aria-pressed="false" disabled>5</button>
+                </div>
+              </div>
+              <button id="epibt-open-editor" class="epibt-button" type="button" aria-controls="epibt-editor">Edit map</button>
+            </div>
           </div>
           <p id="epibt-error" class="epibt-error" role="alert" hidden></p>
           <div class="epibt-map-space">
@@ -55,7 +65,16 @@
           </section>
 
           <section class="epibt-inspector">
-            <div class="epibt-section-head"><h2 id="epibt-selected">Robot</h2><span id="epibt-stage">—</span></div>
+            <div class="epibt-section-head">
+              <div class="epibt-robot-heading">
+                <h2 id="epibt-selected">Robot</h2>
+                <div class="epibt-robot-nav">
+                  <button id="epibt-prev-robot" class="epibt-button" type="button" aria-label="Previous robot" title="Previous robot" disabled>‹</button>
+                  <button id="epibt-next-robot" class="epibt-button" type="button" aria-label="Next robot" title="Next robot" disabled>›</button>
+                </div>
+              </div>
+              <span id="epibt-stage">—</span>
+            </div>
             <dl class="epibt-facts">
               <div><dt>Position</dt><dd id="epibt-position">—</dd></div>
               <div><dt>Heading</dt><dd id="epibt-heading">—</dd></div>
@@ -78,7 +97,7 @@
 
           <section class="epibt-fleet">
             <div class="epibt-section-head"><h2>Fleet</h2><span id="epibt-agent-count"></span></div>
-            <div class="epibt-fleet-scroll">
+            <div id="epibt-fleet-scroll" class="epibt-fleet-scroll">
               <table>
                 <thead><tr><th scope="col">Robot</th><th scope="col">Position</th><th scope="col">Heading</th><th scope="col">Last action</th></tr></thead>
                 <tbody id="epibt-agents"></tbody>
