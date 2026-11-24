@@ -14,13 +14,10 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
-import './style.css';
-import './demo-header.css';
 import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
-import { countLabel, fmt, formatFixed, formatNumber, initI18n, tr, translateMessage, type CountLabel } from './i18n';
+import { countLabel, fmt, formatFixed, formatNumber, tr, translateMessage, type CountLabel } from './i18n';
 import { warehouseStartup } from './warehouse-startup';
-
-initI18n();
+import { onViewActivityChange } from './demo-view';
 
 const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
@@ -204,6 +201,7 @@ let paused = false;
 let speed = 1;
 let socket: WebSocket | null = null;
 let live = false;
+let warehouseActive = false;
 let liveTickRate = 5;
 let livePrevious: LiveFrame | null = null;
 let liveCurrent: LiveFrame | null = null;
@@ -2655,6 +2653,10 @@ function sendControl(action: string, extra: Record<string, unknown> = {}): void 
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'control', action, ...extra }));
 }
 
+function syncRuntimeActivity(): void {
+  if (live) sendControl(warehouseActive && !paused && !editorActive ? 'run' : 'pause');
+}
+
 function setControlledAgent(agent: number): void {
   if (controlledAgentId !== agent) followGamepadAgent = false;
   controlledAgentId = agent;
@@ -2723,6 +2725,7 @@ function connect(): void {
       setInferenceTiming(message.inferenceMs);
       setAgentCount(Number(message.agents));
       sendControl('speed', { value: speed });
+      syncRuntimeActivity();
       setConnection('live', 'DMM-0.8M simulator');
     } else if (message.type === 'layout-applied') {
       closeLayoutEditor(false, false);
@@ -3004,7 +3007,7 @@ function renderTelemetry(): void {
   towStatusValue.textContent = towState ? tr(towLabels[towState] ?? 'Active') : '';
 }
 
-engine.runRenderLoop(() => {
+function renderWarehouse(): void {
   const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
   const pad = updateControls(dt);
   if (!editorActive) {
@@ -3014,7 +3017,7 @@ engine.runRenderLoop(() => {
   }
   scene.render();
   updateGamepadActions(pad);
-});
+}
 
 const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const stopButton = document.querySelector<HTMLButtonElement>('#stop-button')!;
@@ -3168,6 +3171,7 @@ function applyLayoutEditor(): void {
 document.querySelector('#editor-apply')!.addEventListener('click', applyLayoutEditor);
 
 window.addEventListener('keydown', (event) => {
+  if (!warehouseActive) return;
   if (event.metaKey || event.ctrlKey || event.altKey) {
     clearMovementKeys();
     return;
@@ -3202,9 +3206,6 @@ function clearInputOnFocusLoss(): void {
   clearMovementKeys();
 }
 window.addEventListener('blur', clearInputOnFocusLoss);
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) clearInputOnFocusLoss();
-});
 
 canvas.addEventListener('wheel', (event) => {
   if (!editorActive) return;
@@ -3212,7 +3213,9 @@ canvas.addEventListener('wheel', (event) => {
   camera.radius = Math.max(38, Math.min(84, camera.radius + event.deltaY * 0.018));
 }, { passive: false });
 
-window.addEventListener('resize', () => engine.resize());
+window.addEventListener('resize', () => {
+  if (warehouseActive) engine.resize();
+});
 window.addEventListener('demo:languagechange', () => {
   updateEditorPanel();
   setCountMetric(agentsValue, agentCount, 'agents');
@@ -3225,4 +3228,15 @@ window.addEventListener('demo:languagechange', () => {
 });
 setCountMetric(agentsValue, agentCount, 'agents');
 renderTelemetry();
+onViewActivityChange('warehouse', (active) => {
+  warehouseActive = active;
+  if (active) {
+    engine.resize();
+    engine.runRenderLoop(renderWarehouse);
+  } else {
+    engine.stopRenderLoop(renderWarehouse);
+    clearInputOnFocusLoss();
+  }
+  syncRuntimeActivity();
+});
 connect();

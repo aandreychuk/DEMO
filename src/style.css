@@ -1,23 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-:root {
-  font-family: 'Inter', system-ui, sans-serif;
-  color: #e7f5ff;
-  background: #050b13;
-  font-synthesis: none;
-}
-
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
-
-html, body, #app {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-}
-
-body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
+#app { width: 100%; height: 100%; overflow: hidden; }
 
 #scene {
   display: block;
@@ -27,7 +8,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
   touch-action: none;
 }
 
-.glass {
+:where(#app) .glass {
   background: linear-gradient(135deg, rgba(11, 24, 37, 0.88), rgba(5, 14, 24, 0.64));
   border: 1px solid rgba(135, 219, 255, 0.13);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.04);
@@ -227,8 +208,7 @@ body { background: radial-gradient(circle at 50% 40%, #0b2230, #04090f 68%); }
   border-radius: var(--demo-panel-radius);
 }
 
-button, select, input { font: inherit; }
-button { border: 0; cursor: pointer; }
+:where(#app) button { border: 0; }
 .primary { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 17px; border-radius: 8px; color: #021016; background: #55dcff; font: 700 9px 'Inter', system-ui, sans-serif; letter-spacing: .02em; box-shadow: 0 0 22px rgba(63, 215, 255, .23); }
 .primary:hover { background: #8ce9ff; }
 .stop-button { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 13px; border: 1px solid rgba(255, 111, 87, .28); border-radius: 8px; color: #ff9b82; background: rgba(255, 91, 67, .08); font: 700 9px 'Inter', system-ui, sans-serif; letter-spacing: .02em; }
@@ -237,12 +217,12 @@ button { border: 0; cursor: pointer; }
 .layout-button { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 12px; border: 1px solid rgba(91, 213, 245, .2); border-radius: 8px; color: #79dff7; background: rgba(42, 177, 211, .08); font: 700 9px 'Inter', system-ui, sans-serif; letter-spacing: .01em; }
 .layout-button:hover { color: #e2f9ff; border-color: rgba(91, 213, 245, .4); background: rgba(42, 177, 211, .16); }
 .controls label { display: flex; flex-direction: column; gap: 5px; color: #5f7c90; font: 600 9px 'Inter', system-ui, sans-serif; letter-spacing: .02em; }
-select { width: 96px; border: 0; outline: 0; color: #cbe4f3; background: transparent; font: 500 12px 'Inter', system-ui, sans-serif; }
-select option { background: #0b1825; }
+:where(#app) select { width: 96px; border: 0; outline: 0; color: #cbe4f3; background: transparent; font: 500 12px 'Inter', system-ui, sans-serif; }
+:where(#app) select option { background: #0b1825; }
 .speed-control { width: 150px; }
 .speed-control > span { display: flex; justify-content: space-between; }
-output { color: #54d9fc; }
-input[type='range'] { width: 100%; height: 3px; accent-color: #52dafe; cursor: pointer; }
+:where(#app) output { color: #54d9fc; }
+:where(#app) input[type='range'] { width: 100%; height: 3px; accent-color: #52dafe; cursor: pointer; }
 .icon-button { width: 40px; height: 40px; border-radius: 8px; color: #7d9bad; background: rgba(90, 184, 221, .08); font-size: 21px; }
 .icon-button:hover { color: #dff7ff; background: rgba(90, 184, 221, .15); }
 

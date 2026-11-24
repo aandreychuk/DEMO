@@ -1,11 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-:root { font-family: Inter, system-ui, sans-serif; color: #e7f6ff; background: #050b13; font-synthesis: none; }
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 700px; background: radial-gradient(circle at 37% 35%, #103148 0, #071523 44%, #050b13 78%); }
-button, input { font: inherit; }
-button { cursor: pointer; }
-.glass { border: 1px solid rgba(126, 211, 242, .15); background: linear-gradient(135deg, rgba(12, 30, 45, .92), rgba(5, 16, 28, .88)); box-shadow: 0 18px 52px rgba(0, 0, 0, .22), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(16px); }
+:where(#maze-app) .glass { border: 1px solid rgba(126, 211, 242, .15); background: linear-gradient(135deg, rgba(12, 30, 45, .92), rgba(5, 16, 28, .88)); box-shadow: 0 18px 52px rgba(0, 0, 0, .22), inset 0 1px rgba(255,255,255,.04); backdrop-filter: blur(16px); }
 #maze-app { display: grid; grid-template-rows: auto minmax(0, 1fr) 84px; gap: 16px; min-height: 100vh; height: 100vh; padding: var(--demo-gutter); }
 .maze-main { display: grid; grid-template-columns: minmax(0, 1fr) 365px; gap: 14px; min-height: 0; }
 .maze-stage, .maze-analysis, .maze-editor, .maze-player {
@@ -125,7 +118,7 @@ button.maze-vote-heading:hover, .maze-vote-heading[aria-current='step'] { color:
 .maze-timeline small, .maze-speed span { color: #7d9dae; font-size: 9px; }
 .maze-speed { display: block; width: 125px; flex: none; }
 .maze-speed output { color: #6cdbf7; font-weight: 700; }
-input[type='range'] { display: block; width: 100%; height: 14px; margin: 7px 0 0; accent-color: #56d8f4; cursor: pointer; }
+:where(#maze-app) input[type='range'] { display: block; width: 100%; height: 14px; margin: 7px 0 0; accent-color: #56d8f4; cursor: pointer; }
 .maze-reset-button { padding: 0 13px; border: 1px solid rgba(126, 211, 242, .19); color: #93b7c8; background: rgba(72, 144, 174, .07); }
 .maze-reset-button:hover, .maze-step-button:hover:not(:disabled) { color: #e7f6ff; background: rgba(72, 173, 211, .2); }
 @media (max-width: 1030px) { .maze-main { grid-template-columns: minmax(0, 1fr) 320px; } }
