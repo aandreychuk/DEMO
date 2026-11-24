@@ -11,6 +11,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
@@ -183,6 +184,7 @@ const robotLoad = createCarriedPalletMeshes();
 const agentPicker = createAgentPicker();
 const selectionHalo = createSelectionHalo();
 const taskMarkers = createTaskMarkers();
+const taskMarkersByStage = [taskMarkers.pallet, taskMarkers.station, taskMarkers.reload, taskMarkers.returnCell];
 const matrices = new Float32Array(MAX_AGENTS * 16);
 const loadMatrices = new Float32Array(MAX_AGENTS * 16);
 const cargoMatrices = [
@@ -427,7 +429,7 @@ function createSelectionHalo(): Mesh {
   return halo;
 }
 
-function createTaskMarkers(): { pallet: Mesh; station: Mesh; reload: Mesh; returnCell: Mesh } {
+function createTaskMarkers() {
   const pallet = MeshBuilder.CreateTorus('selected-task-pallet', {
     diameter: CELL_SIZE * 1.08,
     thickness: 0.055,
@@ -487,20 +489,79 @@ function createTaskMarkers(): { pallet: Mesh; station: Mesh; reload: Mesh; retur
   returnCell.isVisible = false;
   returnCell.alwaysSelectAsActiveMesh = true;
 
+  const direction = new Mesh('selected-task-direction', scene);
+  const arrow = new VertexData();
+  arrow.positions = [
+    -0.075, 0, -0.36, 0.075, 0, -0.36, 0.075, 0, 0.06, -0.075, 0, 0.06,
+    -0.23, 0, 0.06, 0.23, 0, 0.06, 0, 0, 0.42,
+  ];
+  arrow.indices = [0, 1, 2, 0, 2, 3, 4, 5, 6];
+  arrow.applyToMesh(direction);
+  const directionMaterial = new StandardMaterial('selected-task-direction-material', scene);
+  directionMaterial.emissiveColor = Color3.FromHexString('#9af3ff');
+  directionMaterial.disableLighting = true;
+  directionMaterial.backFaceCulling = false;
+  direction.material = directionMaterial;
+  direction.isPickable = false;
+  direction.isVisible = false;
+
   const markerGlow = new GlowLayer('task-marker-glow', scene, { blurKernelSize: 22 });
   markerGlow.intensity = 0.72;
   markerGlow.addIncludedOnlyMesh(pallet);
   markerGlow.addIncludedOnlyMesh(station);
   markerGlow.addIncludedOnlyMesh(reload);
   markerGlow.addIncludedOnlyMesh(returnCell);
-  return { pallet, station, reload, returnCell };
+  markerGlow.addIncludedOnlyMesh(direction);
+  return { pallet, station, reload, returnCell, direction };
 }
 
 function hideTaskMarkers(): void {
-  taskMarkers.pallet.isVisible = false;
-  taskMarkers.station.isVisible = false;
-  taskMarkers.reload.isVisible = false;
-  taskMarkers.returnCell.isVisible = false;
+  for (const marker of taskMarkersByStage) marker.isVisible = false;
+  taskMarkers.direction.isVisible = false;
+}
+
+function getManualTaskGoal(frame: LiveFrame, agent: number): { stage: number; x: number; z: number } | null {
+  const pallet = palletCells[frame.palletIds[agent]];
+  if (!pallet || frame.recoveryStates[agent] !== 0 || (frame.statuses[agent] & 16) !== 0) return null;
+  const stage = frame.stages[agent];
+  const offset = agent * 2;
+  let { x, z } = pallet;
+  // The simulator publishes the next goal as soon as it accounts for the unload.
+  if (stage === 1 || stage === 2) {
+    const station = stage === 1 ? frame.stationPositions : frame.reloadPositions;
+    x = station[offset];
+    z = station[offset + 1];
+  } else if (stage === 0 && frame.palletPositions[offset] >= 0 && frame.palletPositions[offset + 1] >= 0) {
+    x = frame.palletPositions[offset];
+    z = frame.palletPositions[offset + 1];
+  }
+  return stage <= 3 && x >= 0 && z >= 0 ? { stage, x, z } : null;
+}
+
+function updateManualTaskMarkers(frame: LiveFrame, agent: number): void {
+  const goal = getManualTaskGoal(frame, agent);
+  if (!goal) {
+    hideTaskMarkers();
+    return;
+  }
+
+  const marker = taskMarkersByStage[goal.stage];
+  for (const entry of taskMarkersByStage) entry.isVisible = entry === marker;
+  marker.position.copyFrom(worldAt(goal.x, goal.z, goal.stage === 0 ? 1.02 : 0.065));
+  marker.scaling.setAll(1);
+
+  const offset = agent * 16;
+  const agentX = matrices[offset + 12];
+  const agentZ = matrices[offset + 14];
+  const dx = marker.position.x - agentX;
+  const dz = marker.position.z - agentZ;
+  const distance = Math.hypot(dx, dz);
+  const arrow = taskMarkers.direction;
+  arrow.isVisible = distance > 0.08;
+  if (!arrow.isVisible) return;
+  const lead = Math.min(0.64, distance) / distance;
+  arrow.position.set(agentX + dx * lead, matrices[offset + 13] + 1.64, agentZ + dz * lead);
+  arrow.rotation.y = Math.atan2(dx, dz);
 }
 
 function updateTaskMarkers(now: number): void {
@@ -510,6 +571,11 @@ function updateTaskMarkers(now: number): void {
     hideTaskMarkers();
     return;
   }
+  if (id === controlledAgentId) {
+    updateManualTaskMarkers(frame, id);
+    return;
+  }
+  taskMarkers.direction.isVisible = false;
   const palletId = frame.palletIds[id];
   const pallet = palletId < palletCells.length ? palletCells[palletId] : null;
   const palletX = frame.palletPositions[id * 2];
@@ -2589,15 +2655,18 @@ function renderAgentPanel(): void {
     : '—';
 
   const route = document.querySelector<HTMLOListElement>('#task-route')!;
-  route.hidden = pallet === null;
+  const manualGoal = controlling ? getManualTaskGoal(frame, id) : null;
+  route.hidden = pallet === null || (controlling && manualGoal === null);
   if (pallet) {
     const reloadRequired = stage === 2 || (status & 8) !== 0
       || (nativeStage <= 1 && frame.palletItems[id] <= 1 && reloadX >= 0 && reloadZ >= 0);
     const coordinates = [[pallet.x, pallet.z], [stationX, stationZ], [reloadX, reloadZ], [pallet.x, pallet.z]];
     route.querySelectorAll('li').forEach((row, index) => {
-      const current = index === stage && recoveryState === 0 && !failed;
-      const [x, z] = coordinates[index];
-      row.hidden = index === 2 && !reloadRequired;
+      const current = controlling
+        ? index === manualGoal?.stage
+        : index === stage && recoveryState === 0 && !failed;
+      const [x, z] = manualGoal ? [manualGoal.x, manualGoal.z] : coordinates[index];
+      row.hidden = controlling ? !current : index === 2 && !reloadRequired;
       row.classList.toggle('done', index < stage);
       row.setAttribute('aria-current', current ? 'step' : 'false');
       row.querySelector('strong')!.textContent = current && x >= 0 && z >= 0 ? `${x}, ${z}` : '';
