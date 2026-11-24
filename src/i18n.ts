@@ -174,6 +174,7 @@ const RU: Record<string, string> = {
   'Switch agent': 'Сменить агента',
   'Toggle manual control': 'Ручное управление',
   'Clear selection': 'Снять выбор',
+  'Touchpad': 'Тачпад',
   'Pause / resume': 'Пауза / продолжить',
   'Stop simulation': 'Остановить симуляцию',
   'Open layout editor': 'Открыть редактор склада',

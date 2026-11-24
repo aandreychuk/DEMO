@@ -1,10 +1,11 @@
 export type MoveKey = 'w' | 'a' | 's' | 'd';
 
+const TOUCHPAD_BUTTON_INDEX = 17;
+
 export const GamepadButton = {
   cross: 1 << 0,
   circle: 1 << 1,
   square: 1 << 2,
-  triangle: 1 << 3,
   l1: 1 << 4,
   r1: 1 << 5,
   create: 1 << 8,
@@ -15,6 +16,7 @@ export const GamepadButton = {
   down: 1 << 13,
   left: 1 << 14,
   right: 1 << 15,
+  touchpad: 1 << TOUCHPAD_BUTTON_INDEX,
 } as const;
 
 const STICK_DEAD_ZONE = 0.22;
@@ -34,11 +36,17 @@ export function getActiveGamepad(): Gamepad | null {
   }
 }
 
+export function hasGamepadTouchpad(pad: Gamepad): boolean {
+  // Some controllers use this extra button for Share or Capture instead.
+  return pad.buttons.length > TOUCHPAD_BUTTON_INDEX && /dualsense|dualshock|vendor:\s*054c\b/i.test(pad.id);
+}
+
 export function pressedGamepadButtons(pad: Gamepad): number {
   let pressed = 0;
   for (let index = 0; index <= 15; index++) {
     if (pad.buttons[index]?.pressed) pressed |= 1 << index;
   }
+  if (pad.buttons[TOUCHPAD_BUTTON_INDEX]?.pressed && hasGamepadTouchpad(pad)) pressed |= GamepadButton.touchpad;
   return pressed;
 }
 
