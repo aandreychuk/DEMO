@@ -19,6 +19,7 @@ import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getAc
 import { countLabel, fmt, formatFixed, formatNumber, tr, translateMessage, type CountLabel } from './i18n';
 import { warehouseStartup, type StartupUpdate } from './warehouse-startup';
 import { onViewActivityChange } from './demo-view';
+import { pallets as defaultPallets } from '../runtime/scenarios/warehouse-lifelong-44x33.layout.json';
 
 const MAP_WIDTH = 44;
 const MAP_DEPTH = 33;
@@ -177,7 +178,7 @@ floor.material = floorMaterial;
 floor.position.y = -0.05;
 
 createGrid();
-const palletCells = buildPalletCells();
+const palletCells: PalletCell[] = defaultPallets.map(({ id, x, y, cargoType }) => ({ id, x, z: y, cargoType }));
 let palletInventory = new Uint8Array(palletCells.length);
 palletInventory.fill(PALLET_CAPACITY);
 const palletScene = createWarehousePallets(palletCells);
@@ -595,21 +596,6 @@ function createGrid(): void {
   const grid = MeshBuilder.CreateLineSystem('navigation-grid', { lines: points }, scene);
   grid.color = Color3.FromHexString('#14506b');
   grid.alpha = 0.24;
-}
-
-function buildPalletCells(): PalletCell[] {
-  const result: PalletCell[] = [];
-  let id = 0;
-  for (let x = 4; x < MAP_WIDTH - 4; x++) {
-    for (let z = 0; z < MAP_DEPTH; z++) {
-      const edgeStorageRow = z === 0 || z === MAP_DEPTH - 1;
-      const pairedStorageRow = z >= 2 && z <= MAP_DEPTH - 3 && z % 3 !== 1;
-      if ((edgeStorageRow || pairedStorageRow) && !isRecoveryReservedCell(x, z)) {
-        result.push({ id: id++, x, z, cargoType: (x * 31 + z * 17) % 3 });
-      }
-    }
-  }
-  return result;
 }
 
 function isRecoveryServiceCell(x: number, z: number): boolean {

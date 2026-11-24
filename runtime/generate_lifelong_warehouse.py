@@ -11,7 +11,8 @@ from pathlib import Path
 
 WIDTH = 44
 HEIGHT = 33
-PALLET_X = range(4, WIDTH - 4)
+STORAGE_X = range(4, WIDTH - 4)
+PALLET_X = range(STORAGE_X.start + 1, STORAGE_X.stop - 1)
 PALLET_Y = (
     0,
     *(
@@ -36,7 +37,7 @@ RECOVERY_APPROACH = {
 }
 EDITABLE_EDGE_CELLS = {
     (x, y)
-    for x in PALLET_X
+    for x in STORAGE_X
     for y in (0, HEIGHT - 1)
 }
 
