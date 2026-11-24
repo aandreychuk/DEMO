@@ -15,7 +15,7 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Scene } from '@babylonjs/core/scene';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
-import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, pressedGamepadButtons, type MoveKey } from './gamepad';
+import { cameraStick, GamepadButton, gamepadMoveKey, gamepadSpeedModifier, getActiveGamepad, hasGamepadTouchpad, pressedGamepadButtons, type MoveKey } from './gamepad';
 import { countLabel, fmt, formatFixed, formatNumber, tr, translateMessage, type CountLabel } from './i18n';
 import { warehouseStartup } from './warehouse-startup';
 import { onViewActivityChange } from './demo-view';
@@ -259,6 +259,7 @@ let followGamepadAgent = false;
 let gamepadEditorAiming = false;
 const gamepadReticle = document.querySelector<HTMLElement>('#gamepad-reticle')!;
 const gamepadHelp = document.querySelector<HTMLElement>('#gamepad-help')!;
+const gamepadTouchpadHelp = document.querySelector<HTMLElement>('#gamepad-touchpad-help')!;
 const gamepadEditorHelp = document.querySelector<HTMLElement>('#gamepad-editor-help')!;
 const aimWorld = Vector3.Zero();
 const aimProjected = Vector3.Zero();
@@ -2951,6 +2952,7 @@ function updateGamepadActions(pad: Gamepad | null): void {
   const editing = pad !== null && editorActive;
   const aiming = editing || (active && controlledAgentId < 0);
   if (gamepadHelp.hidden === active) gamepadHelp.hidden = !active;
+  if (active) gamepadTouchpadHelp.hidden = !hasGamepadTouchpad(pad);
   if (gamepadEditorHelp.hidden === editing) gamepadEditorHelp.hidden = !editing;
   if (gamepadReticle.hidden === aiming) gamepadReticle.hidden = !aiming;
   const aimedAgent = aiming && !editing ? agentAtReticle() : -1;
@@ -3003,7 +3005,7 @@ function updateGamepadActions(pad: Gamepad | null): void {
   else if (justPressed & GamepadButton.cross) {
     if (aimedAgent >= 0) selectAgent(aimedAgent);
   } else if (justPressed & GamepadButton.square) toggleManualControl(true);
-  else if (justPressed & GamepadButton.triangle) breakSelectedAgent();
+  else if (justPressed & GamepadButton.touchpad) breakSelectedAgent();
   else if (justPressed & GamepadButton.options) togglePause();
   else if (justPressed & GamepadButton.r3) resetCamera();
   else if (justPressed & GamepadButton.create) stopSimulation();
