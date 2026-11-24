@@ -65,6 +65,7 @@ type WasmCore = {
 type ControlMessage = {
   type: 'control';
   action: string;
+  active?: boolean;
   agents?: number;
   agent?: number;
   value?: number;
@@ -117,6 +118,7 @@ let backendAdapter = '';
 let agentCount = SMALL_POLICY_SLOTS;
 let speed = 1;
 let paused = false;
+let active = false;
 let timer: number | null = null;
 let stepping = false;
 let generation = 0;
@@ -748,7 +750,7 @@ function hello(): void {
 }
 
 async function tick(): Promise<void> {
-  if (stepping || paused) return;
+  if (stepping || paused || !active) return;
   stepping = true;
   const tickGeneration = generation;
   try {
@@ -770,7 +772,7 @@ async function tick(): Promise<void> {
 function schedule(): void {
   if (timer !== null) workerScope.clearTimeout(timer);
   timer = null;
-  if (!paused) timer = workerScope.setTimeout(() => void tick(), 1000 / (TICK_RATE * speed));
+  if (booted && active && !paused) timer = workerScope.setTimeout(() => void tick(), 1000 / (TICK_RATE * speed));
 }
 
 function setControlledAgent(agent: number): void {
@@ -852,7 +854,13 @@ async function reconfigure(count: number, pallets: Array<{ x: number; y: number 
 
 workerScope.onmessage = (event): void => {
   const message = event.data;
-  if (message.type !== 'control' || reconfiguring) return;
+  if (message.type !== 'control') return;
+  if (message.action === 'activity') {
+    active = message.active === true;
+    schedule();
+    return;
+  }
+  if (reconfiguring) return;
   if (!booted) {
     if (message.action === 'load') requestedAgentCount = Math.max(1, Math.min(MAX_AGENTS, Number(message.agents) || MAX_AGENTS));
     else if (message.action === 'speed') speed = Math.max(0.25, Math.min(5, Number(message.value) || 1));

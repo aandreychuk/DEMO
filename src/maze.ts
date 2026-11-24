@@ -1,9 +1,6 @@
-import './maze.css';
-import './demo-header.css';
+import { onViewActivityChange } from './demo-view';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
-import { fmt, formatCount, formatFixed, initI18n, tr, translateMessage } from './i18n';
-
-initI18n();
+import { fmt, formatCount, formatFixed, tr, translateMessage } from './i18n';
 
 const ROUNDS = 4;
 const ACTIONS = [
@@ -79,6 +76,7 @@ let frames: Snapshot[] = [];
 let cursor = 0;
 let selectedAgent = 0;
 let playing = true;
+let mazeActive = false;
 let busy = true;
 let speed = 1;
 let timer: number | undefined;
@@ -271,13 +269,13 @@ function setPlaying(value: boolean): void {
 function schedule(): void {
   if (timer !== undefined) window.clearTimeout(timer);
   timer = undefined;
-  if (!playing || busy || draft || frames.length === 0) return;
+  if (!mazeActive || !playing || busy || draft || frames.length === 0) return;
   if (frames[frames.length - 1].solved && cursor === frames.length * (ROUNDS + 1) - 1) return;
   timer = window.setTimeout(() => { advanceRound(); }, BASE_ROUND_MS / speed);
 }
 
 function advanceRound(): void {
-  if (busy || draft || frames.length === 0) return;
+  if (!mazeActive || busy || draft || frames.length === 0) return;
   const lastRecorded = frames.length * (ROUNDS + 1) - 1;
   if (cursor < lastRecorded) {
     cursor++;
@@ -567,13 +565,18 @@ window.addEventListener('demo:languagechange', () => {
   else agentSummary.textContent = tr('Loading the selected maze scenario…');
 });
 window.addEventListener('keydown', (event) => {
+  if (!mazeActive) return;
   if (draft) {
     if (event.key === 'Escape') { closeEditor(); editButton.disabled = false; }
     return;
   }
-  if (event.metaKey || event.ctrlKey || event.altKey || event.target instanceof HTMLInputElement) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || (event.target instanceof Element && event.target.closest('a, button, input, summary'))) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); setPlaying(false); advanceRound(); }
   if (event.key === 'ArrowLeft') { event.preventDefault(); seek(cursor - 1); }
   if (event.key === ' ') { event.preventDefault(); setPlaying(!playing); }
+});
+onViewActivityChange('maze', (active) => {
+  mazeActive = active;
+  schedule();
 });
 bootWorker();

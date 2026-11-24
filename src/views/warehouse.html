@@ -1,0 +1,201 @@
+<main id="app" data-demo-panel="warehouse">
+  <canvas id="scene" aria-label="3D MAPF simulation"></canvas>
+
+  <section id="warehouse-startup" class="warehouse-startup glass" aria-labelledby="warehouse-startup-title">
+    <div class="warehouse-startup-heading">
+      <h2 id="warehouse-startup-title">Starting the simulation</h2>
+      <span id="warehouse-startup-count" aria-live="polite"></span>
+    </div>
+    <progress id="warehouse-startup-progress" aria-labelledby="warehouse-startup-title"></progress>
+    <ul id="warehouse-startup-tasks"></ul>
+    <p id="warehouse-startup-notice" role="status" hidden></p>
+  </section>
+
+  <header class="demo-header topbar">
+    <div class="demo-brand">
+      <img src="./airi-logo.svg" alt="AIRI" width="92" height="28" />
+    </div>
+    <nav class="demo-tabs" aria-label="Demo views">
+      <a href="./" data-demo-link="warehouse">Interactive warehouse</a>
+      <a href="./maze.html" data-demo-link="maze">DMM communication</a>
+    </nav>
+    <div class="header-actions">
+      <div class="demo-source connection"><span id="source-label">Demo source</span></div>
+      <button class="lang-toggle" type="button" aria-label="Переключить на русский">RU</button>
+      <details class="qr-links">
+        <summary>QR links</summary>
+        <div class="qr-panel" role="group" aria-label="Demo links">
+          <strong>Explore DMM</strong>
+          <div class="qr-grid">
+            <a href="https://github.com/CognitiveAISystems/DMM" target="_blank" rel="noopener noreferrer" aria-label="Open the method implementation">
+              <img src="./qr/method.svg" alt="QR code for the DMM implementation" width="128" height="128" />
+              <span>Code</span><small>github.com/CognitiveAISystems/DMM</small>
+            </a>
+            <a href="https://aandreychuk.github.io/DEMO/" target="_blank" rel="noopener noreferrer" aria-label="Open the live demo">
+              <img src="./qr/demo.svg" alt="QR code for the live demo" width="128" height="128" />
+              <span>Live demo</span><small>aandreychuk.github.io/DEMO</small>
+            </a>
+            <a href="https://arxiv.org/abs/2609.32019" target="_blank" rel="noopener noreferrer" aria-label="Open the paper">
+              <img src="./qr/paper.svg" alt="QR code for the paper" width="128" height="128" />
+              <span>Paper</span><small>arxiv.org/abs/2609.32019</small>
+            </a>
+          </div>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <aside class="inspector glass">
+    <section class="demo-guide" aria-label="About this demo">
+      <p class="eyebrow">What to watch</p>
+      <p>Agents carry pallets to unloading arms, refill empty ones, then return them to storage.</p>
+      <p>Select an agent to inspect its task, steer it, or trigger a breakdown. Use Layout to edit pallets and agent count.</p>
+    </section>
+    <section class="agent-inspector">
+      <div class="section-heading">
+        <p class="eyebrow">Agent inspector</p>
+        <button id="clear-selection" class="clear-selection" type="button" aria-label="Clear agent selection">×</button>
+      </div>
+      <div id="agent-empty" class="agent-empty">
+        <span class="target-glyph">◎</span>
+        <strong>Select an agent</strong>
+        <small>Click an agent or its carried pallet</small>
+      </div>
+      <div id="agent-details" class="agent-details" hidden>
+        <div class="agent-title-row">
+          <strong id="selected-agent">Agent 000</strong>
+          <span id="selected-agent-state" class="state-pill">Empty</span>
+        </div>
+        <button id="control-agent-button" class="control-agent-button" type="button" aria-pressed="false">Take control</button>
+        <p id="agent-control-hint" class="agent-control-hint" hidden>Move the agent with WASD, the left stick, or the D-pad. Esc returns control to DMM.</p>
+        <dl class="agent-facts">
+          <div><dt>Pallet</dt><dd id="agent-pallet">—</dd></div>
+          <div><dt>Position</dt><dd id="agent-position">—</dd></div>
+        </dl>
+        <ol id="task-route" class="route-card" role="list" aria-label="Task progress" hidden>
+          <li><span>Pickup</span><strong></strong></li>
+          <li><span>Unload</span><strong></strong></li>
+          <li><span>Reload</span><strong></strong></li>
+          <li><span>Return</span><strong></strong></li>
+        </ol>
+        <div class="agent-metrics">
+          <div><strong id="agent-distance">0</strong><small>Cells travelled</small></div>
+          <div><strong id="agent-waits">0</strong><small>Wait ticks</small></div>
+          <div><strong id="agent-handoffs">0</strong><small>Unloads</small></div>
+          <div><strong id="agent-completed">0</strong><small>Tasks done</small></div>
+        </div>
+        <button id="fail-agent-button" class="fail-agent-button" type="button">
+          <span>⚠</span><span id="fail-agent-label">Break agent</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="telemetry-panel">
+      <p class="eyebrow">Live telemetry</p>
+      <div class="telemetry-throughput">
+        <div><span>Throughput</span><small>Tasks per step</small></div>
+        <strong id="task-throughput-value">—</strong>
+      </div>
+      <div class="telemetry-grid">
+        <div class="metric"><span id="completed-tasks-value">—</span><small>tasks done</small></div>
+        <div class="metric"><span id="step-value">—</span><small>Environment steps</small></div>
+        <div class="metric"><span id="latency-value">—</span><small>Inference, ms</small></div>
+        <div class="metric"><span id="agents-value">100</span><small>Agents</small></div>
+        <div class="metric"><span id="loaded-value">—</span><small>Loaded</small></div>
+        <div class="metric"><span id="recovery-value">—</span><small>In recovery</small></div>
+      </div>
+      <div id="tow-status" class="tow-status" hidden><small>Recovery unit</small><strong id="tow-status-value"></strong></div>
+    </section>
+
+    <section class="legend">
+      <span><i class="cyan"></i>Empty</span>
+      <span><i class="violet"></i>Loaded</span>
+      <span><i class="amber"></i>Waiting</span>
+      <span><i class="green"></i>Handoff</span>
+      <span><i class="red"></i>Failed</span>
+      <span><i class="mint"></i>Recovery</span>
+    </section>
+  </aside>
+
+  <aside id="layout-editor" class="layout-editor glass" hidden>
+    <p class="eyebrow">Warehouse configuration</p>
+    <h2>Pallet layout</h2>
+    <p class="editor-copy">Click a cell to add or remove a pallet. Drag to paint. Pan with WASD or the left stick. Zoom with the wheel or L2/R2.</p>
+    <div class="editor-stats">
+      <div><small>Pallets</small><strong id="editor-pallet-count">792</strong></div>
+      <div><small>Density</small><strong id="editor-density">66.7%</strong></div>
+    </div>
+    <div class="editor-agent-control">
+      <div class="editor-agent-header">
+        <label for="editor-agent-number">Agents</label>
+        <input id="editor-agent-number" type="number" min="1" max="1000" value="100" step="1" required aria-label="Number of agents">
+      </div>
+      <input id="editor-agent-count" type="range" min="1" max="1000" value="100" step="1" aria-label="Number of agents slider">
+      <small>1 <span id="editor-agent-limit">1000 max</span></small>
+    </div>
+    <div id="editor-validation" class="editor-validation valid">
+      <span></span><strong>Layout valid</strong>
+      <small>Every pallet has a route to the service aisles.</small>
+    </div>
+    <div class="editor-legend">
+      <span><i class="pallet-cell"></i>Pallet</span>
+      <span><i class="aisle-cell"></i>Aisle</span>
+      <span><i class="locked-cell"></i>Service zone</span>
+    </div>
+    <div class="editor-tools">
+      <button id="editor-undo" type="button">↶ Undo</button>
+      <button id="editor-reset" type="button">Reset</button>
+      <button id="editor-clear" type="button">Clear</button>
+    </div>
+    <p id="editor-message" class="editor-message">Changes are applied to the local simulator.</p>
+    <div class="editor-actions">
+      <button id="editor-cancel" type="button">Cancel</button>
+      <button id="editor-apply" class="primary" type="button">Apply &amp; restart</button>
+    </div>
+  </aside>
+
+  <section class="controls glass">
+    <button id="pause-button" class="primary" type="button"><span id="pause-icon">Ⅱ</span><span id="pause-label">Pause</span></button>
+    <button id="stop-button" class="stop-button" type="button"><span>■</span><span>Stop</span></button>
+    <label>
+      <span>Agents</span>
+      <select id="agent-count">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+      </select>
+    </label>
+    <label class="speed-control">
+      <span>Speed <output id="speed-value">1.0×</output></span>
+      <input id="speed" type="range" min="0.25" max="5" value="1" step="0.25" />
+    </label>
+    <button id="layout-editor-button" class="layout-button" type="button"><span>▦</span><span>Layout</span></button>
+    <button id="reset-camera" class="icon-button" type="button" title="Reset camera" aria-label="Reset camera">⌖</button>
+  </section>
+
+  <div id="gamepad-reticle" aria-hidden="true" hidden></div>
+  <aside id="gamepad-help" class="gamepad-help glass" aria-label="Gamepad controls" hidden>
+    <span><kbd>✕</kbd> Select at reticle</span>
+    <span><kbd>L1 / R1</kbd> Switch agent</span>
+    <span><kbd>□</kbd> Toggle manual control</span>
+    <span><kbd>○</kbd> Clear selection</span>
+    <span><kbd>△</kbd> Break agent</span>
+    <span><kbd>Options</kbd> Pause / resume</span>
+    <span><kbd>R3</kbd> Reset camera</span>
+    <span><kbd>Create</kbd> Stop simulation</span>
+    <span><kbd>L3</kbd> Open layout editor</span>
+    <span><kbd>↑ / ↓</kbd> Simulation speed</span>
+    <small>Left stick to move, right stick to orbit, L2/R2 to zoom</small>
+    <small>Hold L2 + R2 in manual mode to change speed with ↑ / ↓.</small>
+  </aside>
+  <aside id="gamepad-editor-help" class="gamepad-help glass" aria-label="Layout editor gamepad controls" hidden>
+    <span><kbd>✕</kbd> Add or remove pallet</span>
+    <span><kbd>□</kbd> Undo edit</span>
+    <span><kbd>↑ / ↓</kbd> Change agent count by 1</span>
+    <span><kbd>← / →</kbd> Change agent count by 10</span>
+    <span><kbd>Options</kbd> Apply &amp; restart</span>
+    <span><kbd>○ / L3</kbd> Cancel</span>
+    <small>Left stick to aim at a cell, L2/R2 to zoom</small>
+  </aside>
+  <div class="scanline"></div>
+</main>
