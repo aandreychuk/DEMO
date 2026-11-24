@@ -139,12 +139,12 @@ fourth round agrees with the ordinary deployment output.
 
 ## Verified 100-agent lifelong run
 
-The included 44×33 warehouse has 792 pallet cells, filling exactly two thirds of
-the storage grid while preserving load-bearing aisles. It also has 31 unloading
+The default 44×33 warehouse has 748 pallet cells and two clear columns beside
+the storage area on each side. It also has 31 unloading
 cells along one full inner edge and 31 batch-loading cells shifted to one end of
 the opposite edge. The two cells at the other end hold the tow depot and repair
-station. A deterministic FastDMM 0.8M + PIBT run on the current machine completed
-this 600-step horizon as follows:
+station. The following 600-step FastDMM 0.8M + PIBT run used the earlier
+792-pallet layout:
 
 | Metric | Result |
 | --- | ---: |

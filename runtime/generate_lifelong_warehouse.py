@@ -11,7 +11,8 @@ from pathlib import Path
 
 WIDTH = 44
 HEIGHT = 33
-PALLET_X = range(4, WIDTH - 4)
+STORAGE_X = range(4, WIDTH - 4)
+PALLET_X = range(STORAGE_X.start + 1, STORAGE_X.stop - 1)
 PALLET_Y = (
     0,
     *(
@@ -37,7 +38,7 @@ RECOVERY_APPROACH = {
 }
 EDITABLE_EDGE_CELLS = {
     (x, y)
-    for x in PALLET_X
+    for x in STORAGE_X
     for y in (0, HEIGHT - 1)
 }
 
@@ -109,8 +110,8 @@ def main() -> None:
     if not 1 <= args.agents <= MAX_AGENTS or args.agents > len(starts_pool):
         raise SystemExit(f"agents must be between 1 and {min(MAX_AGENTS, len(starts_pool))}")
 
-    # Keep the historic first 100 starts and task sequence stable while allowing
-    # additional empty robots to begin under parked pallets.
+    # Start the first 100 robots in aisles and allow additional empty robots
+    # to begin under parked pallets.
     rng = random.Random(args.seed)
     pallet_set = set(pallets)
     open_starts = [cell for cell in starts_pool if cell not in pallet_set]
