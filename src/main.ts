@@ -213,6 +213,7 @@ let hiddenPalletKey = '';
 let palletInventoryRevision = 0;
 let selectedAgentId = -1;
 let controlledAgentId = -1;
+let activeControlledAgentId = -1;
 let editorActive = false;
 let editorAwaitingApply = false;
 let editorWasPaused = false;
@@ -521,10 +522,15 @@ function hideTaskMarkers(): void {
   taskMarkers.direction.isVisible = false;
 }
 
+function canControlAgent(frame: LiveFrame, agent: number): boolean {
+  const recovery = frame.recoveryStates[agent];
+  return (frame.statuses[agent] & 16) === 0 && (recovery === 0 || recovery === 4);
+}
+
 function getManualTaskGoal(frame: LiveFrame, agent: number): { stage: number; x: number; z: number } | null {
   const pallet = palletCells[frame.palletIds[agent]];
-  if (!pallet || frame.recoveryStates[agent] !== 0 || (frame.statuses[agent] & 16) !== 0) return null;
-  const stage = frame.stages[agent];
+  if (!pallet || !canControlAgent(frame, agent)) return null;
+  const stage = frame.recoveryStates[agent] === 4 ? 0 : frame.stages[agent];
   const offset = agent * 2;
   let { x, z } = pallet;
   // The simulator publishes the next goal as soon as it accounts for the unload.
@@ -2496,6 +2502,7 @@ function parseFrame(buffer: ArrayBuffer): boolean {
     receivedAt,
   };
   robotMesh.thinInstanceBufferUpdated('color');
+  syncManualControl();
   renderAgentPanel();
   renderTelemetry();
   return true;
@@ -2590,13 +2597,17 @@ function renderAgentPanel(): void {
   const transitioned = (status & 4) !== 0;
   const failed = (status & 16) !== 0;
   const recoveryState = frame.recoveryStates[id];
-  if (controlledAgentId === id && (failed || recoveryState !== 0)) setControlledAgent(-1);
   const controlling = controlledAgentId === id;
+  const controlSuspended = controlling && activeControlledAgentId !== id;
   const controlButton = document.querySelector<HTMLButtonElement>('#control-agent-button')!;
-  controlButton.disabled = socket?.readyState !== WebSocket.OPEN || failed || recoveryState !== 0;
+  controlButton.disabled = socket?.readyState !== WebSocket.OPEN || (!controlling && !canControlAgent(frame, id));
   controlButton.setAttribute('aria-pressed', String(controlling));
   controlButton.textContent = tr(controlling ? 'Release control' : 'Take control');
-  document.querySelector<HTMLElement>('#agent-control-hint')!.hidden = !controlling;
+  const controlHint = document.querySelector<HTMLElement>('#agent-control-hint')!;
+  controlHint.hidden = !controlling;
+  controlHint.textContent = tr(controlSuspended
+    ? 'Manual control will resume after recovery.'
+    : 'Move the agent with WASD, the left stick, or the D-pad. Esc returns control to DMM.');
   const agentX = Math.round(frame.positions[id * 2]);
   const agentZ = Math.round(frame.positions[id * 2 + 1]);
   const atUnloadingBay = nativeStage >= 2 && agentX === UNLOAD_X && agentZ === stationZ;
@@ -2716,12 +2727,21 @@ function syncRuntimeActivity(): void {
 function setControlledAgent(agent: number): void {
   if (controlledAgentId !== agent) followGamepadAgent = false;
   controlledAgentId = agent;
+  syncManualControl(true);
+}
+
+function syncManualControl(resetInput = false): void {
+  const id = controlledAgentId;
+  const available = liveCurrent && canControlAgent(liveCurrent, id);
+  const active = available ? id : -1;
+  if (active === activeControlledAgentId && !resetInput) return;
+  activeControlledAgentId = active;
   cameraKeys.clear();
   driveKeys.clear();
   gamepadDriveKey = null;
   gamepadDriveArmed = false;
   sentDriveDirection = 0;
-  sendControl('control-agent', { agent });
+  sendControl('control-agent', { agent: active });
 }
 
 function clearMovementKeys(): void {
@@ -2730,7 +2750,7 @@ function clearMovementKeys(): void {
 }
 
 function sendDriveDirection(): void {
-  if (controlledAgentId < 0) return;
+  if (activeControlledAgentId < 0) return;
   let key = gamepadDriveKey;
   for (const heldKey of driveKeys) key = heldKey;
   // Snap camera-relative directions to the four legal moves of the grid.
@@ -2738,7 +2758,7 @@ function sendDriveDirection(): void {
   const direction = key ? gridActionsByTurn[mod(cameraTurn + driveTurnByKey[key], gridActionsByTurn.length)] : 0;
   if (direction === sentDriveDirection) return;
   sentDriveDirection = direction;
-  sendControl('drive-agent', { agent: controlledAgentId, value: direction });
+  sendControl('drive-agent', { agent: activeControlledAgentId, value: direction });
 }
 
 function connect(): void {
@@ -2895,7 +2915,7 @@ function updateControls(dt: number): Gamepad | null {
     if (controlledAgentId < 0) {
       [panX, panY] = cameraStick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
       if (editorActive && (panX !== 0 || panY !== 0)) gamepadEditorAiming = true;
-    } else if (!paused) {
+    } else if (!paused && activeControlledAgentId >= 0) {
       const key = gamepadMoveKey(pad, gamepadDriveKey, !gamepadDpadSuppressed);
       // Require a neutral position after taking control or returning to the tab.
       if (key === null) gamepadDriveArmed = true;
@@ -2999,12 +3019,12 @@ function updateGamepadActions(pad: Gamepad | null): void {
     }
   }
 
-  if (justPressed & GamepadButton.circle) clearAgentSelection();
+  if (justPressed & GamepadButton.square) clearAgentSelection();
   else if (justPressed & GamepadButton.l1) cycleAgent(-1);
   else if (justPressed & GamepadButton.r1) cycleAgent(1);
   else if (justPressed & GamepadButton.cross) {
     if (aimedAgent >= 0) selectAgent(aimedAgent);
-  } else if (justPressed & GamepadButton.square) toggleManualControl(true);
+  } else if (justPressed & GamepadButton.circle) toggleManualControl(true);
   else if (justPressed & GamepadButton.touchpad) breakSelectedAgent();
   else if (justPressed & GamepadButton.options) togglePause();
   else if (justPressed & GamepadButton.r3) resetCamera();
@@ -3116,10 +3136,7 @@ stopButton.addEventListener('click', stopSimulation);
 function breakSelectedAgent(): void {
   if (failAgentButton.disabled || selectedAgentId < 0 || !liveCurrent) return;
   if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
-  if (controlledAgentId === selectedAgentId) {
-    setControlledAgent(-1);
-    renderAgentPanel();
-  }
+  if (controlledAgentId === selectedAgentId) clearMovementKeys();
   failAgentButton.disabled = true;
   document.querySelector('#fail-agent-label')!.textContent = tr('Breaking…');
   sendControl('fail', { agent: selectedAgentId });
@@ -3244,7 +3261,7 @@ window.addEventListener('keydown', (event) => {
   const key = cameraKeyByCode[event.code];
   if (!key) return;
   if (controlledAgentId < 0) cameraKeys.add(key);
-  else if (!paused && !event.repeat) {
+  else if (activeControlledAgentId >= 0 && !paused && !event.repeat) {
     driveKeys.add(key);
     sendDriveDirection();
   }

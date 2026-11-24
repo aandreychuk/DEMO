@@ -1046,7 +1046,8 @@ int main(int argc, char** argv)
             if (lifelong && args.mode == "pibt" && input >> agent >> direction &&
                 agent >= 0 && agent < static_cast<int>(ins.N) &&
                 direction >= 0 && direction <= 4 &&
-                recovery_state[agent] == RecoveryState::Normal) {
+                (recovery_state[agent] == RecoveryState::Normal ||
+                 recovery_state[agent] == RecoveryState::RecoveringPallet)) {
               manual.agent = agent;
               for (auto* neighbor : current[agent]->neighbor) {
                 if (action_index(current[agent], neighbor) != direction) continue;

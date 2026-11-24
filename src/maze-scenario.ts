@@ -17,7 +17,9 @@ export const MAZE_HEIGHT = MAZE_ROWS.length;
 export const MAZE_MODEL_SLOTS = 16;
 export type MazeAgent = { start: number; goal: number | null };
 export type MazeConfig = { walls: number[]; agents: MazeAgent[]; lifelong: boolean };
-export const MAZE_ROUTES: ReadonlyArray<readonly [readonly [number, number], readonly [number, number]]> = [
+type MazeRoutes = ReadonlyArray<readonly [readonly [number, number], readonly [number, number]]>;
+
+export const MAZE_ROUTES: MazeRoutes = [
   [[5, 3], [13, 9]],
   [[6, 3], [1, 9]],
   [[7, 3], [13, 1]],
@@ -28,6 +30,28 @@ export const MAZE_ROUTES: ReadonlyArray<readonly [readonly [number, number], rea
   [[9, 5], [3, 5]],
 ] as const;
 
+const border = '###############';
+const hall = '#.............#';
+const crossArm = '######...######';
+const rooms = '#......#......#';
+const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
+  {
+    id: 'passing',
+    rows: [border, border, border, border, '#####.....#####', hall, '#####.....#####', border, border, border, border],
+    routes: [[[2, 5], [12, 5]], [[12, 5], [2, 5]]],
+  },
+  {
+    id: 'crossing',
+    rows: [border, crossArm, crossArm, crossArm, hall, hall, hall, crossArm, crossArm, crossArm, border],
+    routes: [[[6, 1], [6, 9]], [[8, 9], [8, 1]], [[2, 4], [12, 4]], [[12, 6], [2, 6]]],
+  },
+  {
+    id: 'rooms',
+    rows: [border, rooms, rooms, rooms, rooms, hall, rooms, rooms, rooms, rooms, border],
+    routes: [[[2, 3], [11, 3]], [[4, 8], [11, 8]], [[12, 7], [2, 7]], [[11, 3], [10, 4]]],
+  },
+];
+
 export const MAZE_COLORS = [
   '#49d9f8', '#ffa861', '#a8a0ff', '#62e4b9',
   '#ffd574', '#ff83b5', '#7eb8ff', '#d1ef8a',
@@ -36,16 +60,26 @@ export const MAZE_COLORS = [
 ] as const;
 
 export function defaultMazeConfig(): MazeConfig {
+  return configFromRows(MAZE_ROWS, MAZE_ROUTES, true);
+}
+
+export function mazePresetConfig(id: string): MazeConfig | undefined {
+  if (id === 'default') return defaultMazeConfig();
+  const preset = MAZE_PRESETS.find((entry) => entry.id === id);
+  if (preset) return configFromRows(preset.rows, preset.routes, false);
+}
+
+function configFromRows(rows: readonly string[], routes: MazeRoutes, lifelong: boolean): MazeConfig {
   const walls: number[] = [];
   for (let y = 0; y < MAZE_HEIGHT; y++) {
     for (let x = 0; x < MAZE_WIDTH; x++) {
-      if (MAZE_ROWS[y][x] === '#') walls.push(mazeCell(x, y));
+      if (rows[y][x] === '#') walls.push(mazeCell(x, y));
     }
   }
   return {
     walls,
-    agents: MAZE_ROUTES.map(([start, goal]) => ({ start: mazeCell(...start), goal: mazeCell(...goal) })),
-    lifelong: true,
+    agents: routes.map(([start, goal]) => ({ start: mazeCell(...start), goal: mazeCell(...goal) })),
+    lifelong,
   };
 }
 

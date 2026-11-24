@@ -95,6 +95,12 @@ export function setTow(current: i32, previous: i32): void {
 }
 export function resetHistory(): void { history.fill(-1); }
 
+export function recordAction(agent: i32, action: i32): void {
+  const offset = agent * 5;
+  for (let h: i32 = 0; h < 4; ++h) history[offset + h] = history[offset + h + 1];
+  history[offset + 4] = <i8>action;
+}
+
 function row(cell: i32): i32 { return cell / width; }
 function col(cell: i32): i32 { return cell % width; }
 function clampI(value: i32, low: i32, high: i32): i32 {
@@ -374,8 +380,7 @@ export function plan(): void {
   for (let i: i32 = 0; i < agents; ++i) {
     const action = actionBetween(positions[i], nextPositions[i]);
     executedActions[i] = action;
-    for (let h: i32 = 0; h < 4; ++h) history[i * 5 + h] = history[i * 5 + h + 1];
-    history[i * 5 + 4] = <i8>action;
+    recordAction(i, action);
     if (nextPositions[i] != goals[i]) priorities[i] += 1.0;
     else priorities[i] -= <f32>Math.floor(priorities[i]);
   }

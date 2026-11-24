@@ -50,7 +50,7 @@
       </section>
       <section class="maze-neighbors-section"><div class="maze-section-title"><h3>Message sources</h3><small id="maze-neighbor-count">0 agents</small></div><div id="maze-neighbors" class="maze-neighbors"></div></section>
       <section class="maze-all-section"><div class="maze-section-title"><h3>Agents</h3><small>Tap to inspect</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
-      <p class="maze-model-note">Votes update the intent scores. After the fourth round, the planner uses the scores to choose collision-free moves.</p>
+      <p id="maze-model-note" class="maze-model-note">Votes update the intent scores. After the fourth round, the planner uses the scores to choose collision-free moves.</p>
     </aside>
 
     <aside id="maze-editor" class="maze-editor glass" hidden>
@@ -77,6 +77,9 @@
     <div class="maze-timeline"><div><strong id="maze-timeline-label">Before communication</strong><small id="maze-step-label">Step 0</small></div><input id="maze-scrub" type="range" min="0" max="4" value="0" aria-label="Recorded communication round"></div>
     <label class="maze-speed"><span>Speed <output id="maze-speed-value">1.0×</output></span><input id="maze-speed" type="range" min="0.5" max="2" step="0.25" value="1" /></label>
     <button id="maze-reset" class="maze-reset-button" type="button">Restart</button>
+    <select id="maze-preset" class="maze-reset-button" aria-label="Maze scenario">
+      <option value="default">Continuous maze</option><option value="passing">Head-on passage</option><option value="crossing">Crossroads</option><option value="rooms">Two rooms</option><option value="custom" hidden>Custom scenario</option>
+    </select>
     <button id="maze-edit" class="maze-reset-button" type="button">Edit maze</button>
   </div>
 </div>
