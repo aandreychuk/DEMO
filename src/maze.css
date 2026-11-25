@@ -41,7 +41,7 @@
 .maze-agent .agent-number { position: absolute; z-index: 1; right: 2px; bottom: 1px; color: #052536; font-size: 8px; font-weight: 700; }
 .maze-board:not(.ready) .maze-agent, .maze-board:not(.ready) .maze-goal { opacity: 0; }
 .maze-board.editing { cursor: crosshair; touch-action: none; }
-.maze-board.editing .maze-agent, .maze-board.editing .maze-goal { transition: none; }
+.maze-board:is(.editing, .resetting) :is(.maze-agent, .maze-goal) { transition: none; }
 .maze-board.editing .maze-agent { pointer-events: none; }
 .maze-board.editing .maze-tile { cursor: crosshair; }
 .maze-stage-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 17px; min-height: 37px; padding: 4px 22px 10px; color: #7899a9; font-size: 9px; }
