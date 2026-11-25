@@ -393,6 +393,8 @@ function renderRoundCopy(frame: Snapshot, round: number, changes: number): void 
 
 function render(): void {
   if (frames.length === 0 || draft) return;
+  const starting = !board.classList.contains('ready');
+  if (starting) board.classList.add('resetting');
   board.classList.add('ready');
   const { frame, round } = frameAt(cursor);
   selectedAgent = Math.min(selectedAgent, frame.positions.length - 1);
@@ -437,6 +439,10 @@ function render(): void {
   renderRoundCopy(frame, round, changes);
   renderLinks(frame, round);
   renderInspector(frame, round);
+  if (starting) {
+    void board.offsetWidth;
+    board.classList.remove('resetting');
+  }
 }
 
 function renderModelNote(): void {
