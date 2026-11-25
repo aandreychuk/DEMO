@@ -776,7 +776,8 @@ function schedule(): void {
 }
 
 function setControlledAgent(agent: number): void {
-  controlledAgent = Number.isInteger(agent) && agent >= 0 && agent < agentCount && recovery[agent] === 0
+  controlledAgent = Number.isInteger(agent) && agent >= 0 && agent < agentCount
+    && (recovery[agent] === 0 || recovery[agent] === 4)
     ? agent : -1;
   heldMove = 0;
   pendingMove = 0;

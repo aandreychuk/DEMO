@@ -646,7 +646,7 @@ class Bridge:
                         elif (
                             type(agent) is int
                             and 0 <= agent < count
-                            and previous[agent].recovery_state == 0
+                            and previous[agent].recovery_state in (0, 4)
                         ):
                             session.set_controlled_agent(agent)
                     elif action == "drive-agent":

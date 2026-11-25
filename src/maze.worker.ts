@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web';
+import { applyMazeActions, bestMazeAction } from './maze-motion';
 import { MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, defaultMazeConfig, validateMazeConfig, type MazeConfig } from './maze-scenario';
 
 const ROUNDS = 4;
@@ -14,6 +15,7 @@ type MazeCore = {
   setAgentState: (agent: number, position: number, goal: number, loaded: number, failed: number, pinned: number) => void;
   setTow: (current: number, goal: number, pickupAgent: number, sharedAgent: number, carrying: number) => void;
   buildInputs: () => void;
+  recordAction: (agent: number, action: number) => void;
   plan: () => void;
   observationsPointer: () => number;
   chatPointer: () => number;
@@ -22,9 +24,11 @@ type MazeCore = {
   executedActionsPointer: () => number;
 };
 
+type Command = { type: 'configure'; config: MazeConfig; revision: number } | { type: 'advance'; revision: number };
+
 const scope = self as unknown as {
   postMessage: (message: unknown) => void;
-  onmessage: ((event: MessageEvent<{ type: 'start' | 'advance' | 'reset' | 'configure'; config?: MazeConfig }>) => void) | null;
+  onmessage: ((event: MessageEvent<Command>) => void) | null;
 };
 
 let core: MazeCore;
@@ -33,10 +37,14 @@ let config = defaultMazeConfig();
 let positions = new Int32Array(0);
 let goals = new Int32Array(0);
 let finished = new Uint8Array(0);
+let walls = new Set<number>();
+let plannedActions: number[] = [];
 let action = 0;
 const backend = 'WASM';
 let initialized = false;
 let pending: Promise<void> = Promise.resolve();
+let revision = 0;
+let latestRevision = 0;
 
 const observations = new BigInt64Array(MODEL_SLOTS * OBS_TOKENS);
 const chat = new BigInt64Array(MODEL_SLOTS * CHAT_SLOTS);
@@ -45,10 +53,10 @@ const feeds = {
   chat: new ort.Tensor('int64', chat, [1, MODEL_SLOTS, CHAT_SLOTS]),
 };
 
-function post(message: unknown): void { scope.postMessage(message); }
+function post(message: object): void { scope.postMessage({ ...message, revision }); }
 
 async function loadCore(): Promise<MazeCore> {
-  const url = new URL(`${import.meta.env.BASE_URL}runtime/mapf-core.wasm`, self.location.origin);
+  const url = new URL(`${import.meta.env.BASE_URL}runtime/mapf-core.wasm?v=2`, self.location.origin);
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Maze WASM core could not load (${response.status}).`);
   const result = await WebAssembly.instantiate(await response.arrayBuffer(), {
@@ -69,6 +77,7 @@ function resetScenario(): void {
   const error = validateMazeConfig(config);
   if (error) throw new Error(error);
   const agents = config.agents.length;
+  walls = new Set(config.walls);
   core.configure(MAZE_WIDTH, MAZE_HEIGHT, agents);
   for (const cell of config.walls) core.setWall(cell, 1);
   positions = Int32Array.from(config.agents, (agent) => agent.start);
@@ -89,7 +98,39 @@ function syncCore(): void {
   }
 }
 
+function publishSnapshot(trace: number[], votes: number[], chat: number[], inferenceMs: number, solved = false): void {
+  post({
+    type: 'snapshot', action, positions: Array.from(positions), goals: Array.from(goals),
+    chat, trace, votes, plannedActions, finished: Array.from(finished), solved, inferenceMs, backend,
+  });
+}
+
+function chooseActions(trace: number[]): number[] {
+  const final = trace.slice((ROUNDS - 1) * positions.length * ACTIONS);
+  if (!config.lifelong) {
+    return Array.from(finished, (done, i) => done ? 0 : bestMazeAction(final.slice(i * ACTIONS, (i + 1) * ACTIONS)));
+  }
+  const probabilities = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS);
+  for (let agent = 0; agent < positions.length; agent++) {
+    const offset = agent * ACTIONS;
+    const maxZ = Math.max(...final.slice(offset, offset + ACTIONS));
+    let sum = 0;
+    for (let action = 0; action < ACTIONS; action++) {
+      probabilities[offset + action] = Math.exp(final[offset + action] - maxZ);
+      sum += probabilities[offset + action];
+    }
+    for (let action = 0; action < ACTIONS; action++) probabilities[offset + action] /= sum;
+  }
+  core.plan();
+  return Array.from(new Int32Array(core.memory.buffer, core.executedActionsPointer(), positions.length));
+}
+
 async function infer(): Promise<void> {
+  if (!config.lifelong && finished.every((value) => value !== 0)) {
+    plannedActions = [];
+    publishSnapshot([], [], Array(positions.length * CHAT_SLOTS).fill(-1), 0, true);
+    return;
+  }
   syncCore();
   core.buildInputs();
   const memory = core.memory.buffer;
@@ -123,39 +164,16 @@ async function infer(): Promise<void> {
     if (!votes.every((vote) => Number.isInteger(vote) && vote >= 0 && vote < ACTIONS)) {
       throw new Error('The model returned invalid communication votes.');
     }
-    const final = trace.slice((ROUNDS - 1) * positions.length * ACTIONS);
-    const probabilities = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS);
-    for (let agent = 0; agent < positions.length; agent++) {
-      const offset = agent * ACTIONS;
-      const maxZ = Math.max(...final.slice(offset, offset + ACTIONS));
-      let sum = 0;
-      for (let action = 0; action < ACTIONS; action++) {
-        probabilities[offset + action] = Math.exp(final[offset + action] - maxZ);
-        sum += probabilities[offset + action];
-      }
-      for (let action = 0; action < ACTIONS; action++) probabilities[offset + action] /= sum;
-    }
   } finally {
     for (const tensor of Object.values(output)) tensor.dispose();
   }
   const messageSources = Array.from(chat32.subarray(0, positions.length * CHAT_SLOTS));
   const inferenceMs = performance.now() - started;
-  const solved = !config.lifelong && finished.every((value) => value !== 0);
-  let plannedActions: number[] = [];
-  if (!solved) {
-    // Plan once per snapshot. The advance command applies these same positions.
-    core.plan();
-    plannedActions = Array.from(new Int32Array(core.memory.buffer, core.executedActionsPointer(), positions.length));
-  }
-  post({
-    type: 'snapshot', action, positions: Array.from(positions), goals: Array.from(goals),
-    chat: messageSources, trace, votes, plannedActions, finished: Array.from(finished),
-    solved, inferenceMs, backend,
-  });
+  plannedActions = chooseActions(trace);
+  publishSnapshot(trace, votes, messageSources, inferenceMs);
 }
 
 function nextGoal(agent: number): number {
-  const blocked = new Set(config.walls);
   const used = new Set(Array.from(goals).filter((_, index) => index !== agent));
   const seen = new Set([positions[agent]]);
   const queue = [positions[agent]];
@@ -164,7 +182,7 @@ function nextGoal(agent: number): number {
     const x = cell % MAZE_WIDTH;
     const y = Math.floor(cell / MAZE_WIDTH);
     for (const neighbor of [x > 0 ? cell - 1 : -1, x + 1 < MAZE_WIDTH ? cell + 1 : -1, y > 0 ? cell - MAZE_WIDTH : -1, y + 1 < MAZE_HEIGHT ? cell + MAZE_WIDTH : -1]) {
-      if (neighbor < 0 || blocked.has(neighbor) || seen.has(neighbor)) continue;
+      if (neighbor < 0 || walls.has(neighbor) || seen.has(neighbor)) continue;
       seen.add(neighbor);
       queue.push(neighbor);
     }
@@ -175,30 +193,28 @@ function nextGoal(agent: number): number {
   return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : positions[agent];
 }
 
-async function handle(type: 'start' | 'advance' | 'reset' | 'configure', nextConfig?: MazeConfig): Promise<void> {
-  if ((type === 'configure' || type === 'start') && nextConfig) {
-    const error = validateMazeConfig(nextConfig);
-    if (error) throw new Error(error);
-    config = nextConfig;
-  }
-  if (!initialized) {
-    post({ type: 'status', text: 'Loading DMM-0.8M communication trace…' });
-    [core, session] = await Promise.all([loadCore(), loadModel()]);
-    initialized = true;
+async function handle(command: Command): Promise<void> {
+  if (command.type === 'configure') {
+    if (!initialized) {
+      post({ type: 'status', text: 'Loading DMM-0.8M communication trace…' });
+      [core, session] = await Promise.all([loadCore(), loadModel()]);
+      initialized = true;
+    }
+    if (revision !== latestRevision) return;
+    config = command.config;
     resetScenario();
     post({ type: 'status', text: 'Computing the first communication trace…' });
     await infer();
     return;
   }
-  if (type === 'reset' || type === 'configure') {
-    resetScenario();
-    await infer();
-    return;
+  if (config.lifelong) {
+    positions.set(new Int32Array(core.memory.buffer, core.nextPositionsPointer(), positions.length));
+  } else {
+    if (finished.every((value) => value !== 0)) return;
+    const next = applyMazeActions(positions, plannedActions, walls);
+    for (let i = 0; i < positions.length; i++) core.recordAction(i, next[i] === positions[i] ? 0 : plannedActions[i]);
+    positions.set(next);
   }
-  if (type !== 'advance') return;
-  if (!config.lifelong && finished.every((value) => value !== 0)) return;
-  const next = new Int32Array(core.memory.buffer, core.nextPositionsPointer(), positions.length);
-  positions.set(next);
   for (let i = 0; i < positions.length; i++) {
     if (positions[i] !== goals[i]) continue;
     if (config.lifelong) goals[i] = nextGoal(i);
@@ -209,7 +225,13 @@ async function handle(type: 'start' | 'advance' | 'reset' | 'configure', nextCon
 }
 
 scope.onmessage = (event) => {
-  pending = pending.then(() => handle(event.data.type, event.data.config)).catch((error: unknown) => {
+  const command = event.data;
+  latestRevision = Math.max(latestRevision, command.revision);
+  pending = pending.then(() => {
+    if (command.revision !== latestRevision) return;
+    revision = command.revision;
+    return handle(command);
+  }).catch((error: unknown) => {
     post({ type: 'error', text: error instanceof Error ? error.message : String(error) });
   });
 };

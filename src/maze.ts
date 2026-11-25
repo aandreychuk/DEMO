@@ -1,5 +1,6 @@
 import { onViewActivityChange } from './demo-view';
-import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
+import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazePresetConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
+import { bestMazeAction as winner } from './maze-motion';
 import { fmt, formatCount, formatFixed, tr, translateMessage } from './i18n';
 
 const ROUNDS = 4;
@@ -11,6 +12,7 @@ const ACTIONS = [
   { name: 'Right', color: '#66e5aa' },
 ] as const;
 const BASE_ROUND_MS = 1300;
+const LIFELONG_NOTE = 'Votes update the intent scores. After the fourth round, the planner uses the scores to choose collision-free moves.';
 
 function formatIntentScore(value: number): string {
   return `${value > 0 ? '+' : ''}${formatFixed(value, 2)}`;
@@ -38,7 +40,7 @@ type Snapshot = {
   inferenceMs: number;
   backend: string;
 };
-type WorkerMessage = Snapshot | { type: 'status'; text: string } | { type: 'error'; text: string };
+type WorkerMessage = (Snapshot | { type: 'status'; text: string } | { type: 'error'; text: string }) & { revision: number };
 
 function element<T extends Element = HTMLElement>(selector: string): T {
   const found = document.querySelector<T>(selector);
@@ -52,6 +54,7 @@ const source = element('#maze-source');
 const agentTitle = element('#maze-agent-title');
 const agentSummary = element('#maze-agent-summary');
 const voteGrid = element('#maze-votes');
+const votesSection = element<HTMLElement>('.maze-votes-section');
 const decision = element<HTMLElement>('#maze-decision');
 const chosenAction = element('#maze-chosen-action');
 const neighbors = element('#maze-neighbors');
@@ -67,8 +70,12 @@ const editorAgents = element('#maze-editor-agents');
 const editorMessage = element('#maze-editor-message');
 const editorLifelong = element<HTMLInputElement>('#maze-lifelong');
 const solvedBanner = element('#maze-solved');
+const presetSelect = element<HTMLSelectElement>('#maze-preset');
+const customPresetOption = element<HTMLOptionElement>('#maze-preset option[value="custom"]');
+const modelNote = element('#maze-model-note');
 
 let worker: Worker | null = null;
+let revision = 0;
 let config = defaultMazeConfig();
 let draft: MazeConfig | null = null;
 let editorTool: 'wall' | 'erase' | 'agent' | 'start' | 'goal' = 'wall';
@@ -177,6 +184,7 @@ function openEditor(): void {
   setPlaying(false);
   solvedBanner.hidden = true;
   draft = cloneMazeConfig(config);
+  presetSelect.disabled = true;
   editorTool = 'wall';
   setEditorMessage('');
   analysis.hidden = true;
@@ -186,6 +194,7 @@ function openEditor(): void {
 
 function closeEditor(): void {
   draft = null;
+  presetSelect.disabled = false;
   editor.hidden = true;
   analysis.hidden = false;
   board.classList.remove('editing');
@@ -254,10 +263,8 @@ function zValues(frame: Snapshot, round: number, agent: number): number[] {
   return frame.trace.slice(start, start + ACTIONS.length);
 }
 
-function winner(values: readonly number[]): number {
-  let best = 0;
-  for (let i = 1; i < values.length; i++) if (values[i] > values[best]) best = i;
-  return best;
+function lastRecordedStep(): number {
+  return (frames.length - 1) * (ROUNDS + 1) + (frames[frames.length - 1].solved ? 0 : ROUNDS);
 }
 
 function setPlaying(value: boolean): void {
@@ -270,13 +277,13 @@ function schedule(): void {
   if (timer !== undefined) window.clearTimeout(timer);
   timer = undefined;
   if (!mazeActive || !playing || busy || draft || frames.length === 0) return;
-  if (frames[frames.length - 1].solved && cursor === frames.length * (ROUNDS + 1) - 1) return;
+  if (frames[frames.length - 1].solved && cursor === lastRecordedStep()) return;
   timer = window.setTimeout(() => { advanceRound(); }, BASE_ROUND_MS / speed);
 }
 
 function advanceRound(): void {
   if (!mazeActive || busy || draft || frames.length === 0) return;
-  const lastRecorded = frames.length * (ROUNDS + 1) - 1;
+  const lastRecorded = lastRecordedStep();
   if (cursor < lastRecorded) {
     cursor++;
     if (cursor === lastRecorded && frames[frames.length - 1].solved) setPlaying(false);
@@ -287,13 +294,13 @@ function advanceRound(): void {
   if (frames[frames.length - 1]?.solved) return;
   busy = true;
   nextButton.disabled = true;
-  worker?.postMessage({ type: 'advance' });
+  worker?.postMessage({ type: 'advance', revision });
 }
 
 function seek(step: number): void {
   if (frames.length === 0) return;
   setPlaying(false);
-  cursor = Math.max(0, Math.min(frames.length * (ROUNDS + 1) - 1, step));
+  cursor = Math.max(0, Math.min(lastRecordedStep(), step));
   render();
 }
 
@@ -351,7 +358,8 @@ function renderInspector(frame: Snapshot, round: number): void {
   agentSummary.textContent = frame.finished[selectedAgent]
     ? fmt('Goal ({x}, {y}) reached.', goalPosition)
     : fmt('Goal ({x}, {y}).', goalPosition);
-  renderVotes(frame, round);
+  votesSection.hidden = frame.solved;
+  if (!frame.solved) renderVotes(frame, round);
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
@@ -373,9 +381,10 @@ function renderInspector(frame: Snapshot, round: number): void {
 }
 
 function renderRoundCopy(frame: Snapshot, round: number, changes: number): void {
-  element('#maze-timeline-label').textContent = round === 0 ? tr('Before communication') : fmt('Communication round {round} of {total}', { round, total: ROUNDS });
+  element('#maze-timeline-label').textContent = frame.solved ? tr('All goals reached')
+    : round === 0 ? tr('Before communication') : fmt('Communication round {round} of {total}', { round, total: ROUNDS });
   element('#maze-step-label').textContent = fmt('Step {step}', { step: cursor });
-  element('#maze-changed').textContent = round === 0
+  element('#maze-changed').textContent = frame.solved ? '' : round === 0
     ? tr('Intents begin in the next round')
     : round === 1
       ? formatCount(frame.positions.length, 'intentsFormed')
@@ -391,7 +400,7 @@ function render(): void {
   solvedBanner.hidden = !frame.solved;
   element('#maze-action').textContent = String(frame.action + 1).padStart(3, '0');
   element('#maze-round').textContent = `${round} / ${ROUNDS}`;
-  scrub.max = String(frames.length * (ROUNDS + 1) - 1);
+  scrub.max = String(lastRecordedStep());
   scrub.value = String(cursor);
   previousButton.disabled = cursor === 0;
   nextButton.disabled = busy || (cursor === Number(scrub.max) && frame.solved);
@@ -430,26 +439,48 @@ function render(): void {
   renderInspector(frame, round);
 }
 
-function bootWorker(): void {
-  worker?.terminate();
+function renderModelNote(): void {
+  modelNote.textContent = tr(config.lifelong ? LIFELONG_NOTE
+    : 'One-shot without PIBT. Agents follow the model’s decisions and stop at their goals.');
+}
+
+function startScenario(): void {
   frames = [];
   cursor = 0;
   busy = true;
   board.classList.remove('ready');
+  links.innerHTML = '';
+  paintWalls(config.walls);
   solvedBanner.hidden = true;
   agentSummary.textContent = tr('Loading the selected maze scenario…');
   voteGrid.innerHTML = '';
+  votesSection.hidden = false;
   decision.hidden = true;
   allAgents.innerHTML = '';
-  source.classList.remove('error', 'ready');
-  setSource('Loading model');
+  renderModelNote();
+  if (source.classList.contains('error') || !worker) setSource('Loading model');
+  source.classList.remove('error');
   nextButton.disabled = true;
   previousButton.disabled = true;
+  playButton.disabled = false;
+  scrub.max = '0';
+  scrub.value = '0';
+  element('#maze-action').textContent = '001';
+  element('#maze-round').textContent = `0 / ${ROUNDS}`;
+  element('#maze-timeline-label').textContent = tr('Before communication');
+  element('#maze-step-label').textContent = fmt('Step {step}', { step: 0 });
+  element('#maze-changed').textContent = '';
+  setPlaying(true);
+  worker ??= createWorker();
+  worker.postMessage({ type: 'configure', config, revision: ++revision });
+}
+
+function createWorker(): Worker {
   const instance = new Worker(new URL('./maze.worker.ts', import.meta.url), { type: 'module' });
-  worker = instance;
   instance.onmessage = (event: MessageEvent<WorkerMessage>) => {
     if (worker !== instance) return;
     const message = event.data;
+    if (message.revision !== revision) return;
     if (message.type === 'status') {
       setSource(message.text);
     } else if (message.type === 'error') {
@@ -459,9 +490,8 @@ function bootWorker(): void {
       setPlaying(false);
       console.error(message.text);
     } else {
-      const wasEmpty = frames.length === 0;
       frames.push(message);
-      cursor = wasEmpty ? 0 : (frames.length - 1) * (ROUNDS + 1);
+      cursor = (frames.length - 1) * (ROUNDS + 1);
       busy = false;
       source.classList.add('ready');
       setSource('DMM-0.8M on {backend}', { backend: message.backend });
@@ -471,12 +501,15 @@ function bootWorker(): void {
     }
   };
   instance.onerror = (error) => {
+    if (worker !== instance) return;
+    instance.terminate();
+    worker = null;
     source.classList.add('error');
     setSource('Maze worker failed');
     setPlaying(false);
     console.error(error);
   };
-  instance.postMessage({ type: 'start', config });
+  return instance;
 }
 
 buildBoard();
@@ -497,7 +530,15 @@ speedInput.addEventListener('input', () => {
   element<HTMLOutputElement>('#maze-speed-value').value = `${speed.toFixed(decimals)}×`;
   schedule();
 });
-element<HTMLButtonElement>('#maze-reset').addEventListener('click', () => { if (!draft) { setPlaying(true); bootWorker(); } });
+element<HTMLButtonElement>('#maze-reset').addEventListener('click', () => { if (!draft) startScenario(); });
+presetSelect.addEventListener('change', () => {
+  const next = mazePresetConfig(presetSelect.value);
+  if (draft || !next) return;
+  customPresetOption.hidden = true;
+  config = next;
+  selectedAgent = 0;
+  startScenario();
+});
 const editButton = element<HTMLButtonElement>('#maze-edit');
 editButton.addEventListener('click', () => { openEditor(); editButton.disabled = true; });
 for (const button of editor.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
@@ -522,11 +563,12 @@ element<HTMLButtonElement>('#maze-editor-apply').addEventListener('click', () =>
   const error = validateMazeConfig(draft);
   if (error) { setEditorMessage(error); return; }
   config = cloneMazeConfig(draft);
+  customPresetOption.hidden = false;
+  presetSelect.value = 'custom';
   selectedAgent = Math.min(selectedAgent, config.agents.length - 1);
   closeEditor();
   editButton.disabled = false;
-  setPlaying(true);
-  bootWorker();
+  startScenario();
 });
 let lastPaintedCell = -1;
 board.addEventListener('pointerdown', (event) => {
@@ -554,6 +596,7 @@ window.addEventListener('demo:languagechange', () => {
   playButton.innerHTML = playing ? `Ⅱ <span>${tr('Pause')}</span>` : `▶ <span>${tr('Play')}</span>`;
   setSource(sourceEnglish, sourceValues);
   setEditorMessage(editorMessageEnglish, editorMessageValues);
+  renderModelNote();
   if (draft) {
     renderEditor();
     if (frames.length) {
@@ -570,7 +613,7 @@ window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { closeEditor(); editButton.disabled = false; }
     return;
   }
-  if (event.metaKey || event.ctrlKey || event.altKey || (event.target instanceof Element && event.target.closest('a, button, input, summary'))) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || (event.target instanceof Element && event.target.closest('a, button, input, select, summary'))) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); setPlaying(false); advanceRound(); }
   if (event.key === 'ArrowLeft') { event.preventDefault(); seek(cursor - 1); }
   if (event.key === ' ') { event.preventDefault(); setPlaying(!playing); }
@@ -579,4 +622,4 @@ onViewActivityChange('maze', (active) => {
   mazeActive = active;
   schedule();
 });
-bootWorker();
+startScenario();
