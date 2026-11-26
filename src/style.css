@@ -229,9 +229,30 @@
 #gamepad-reticle { position: fixed; left: 50%; top: 50%; z-index: 18; width: 24px; height: 24px; transform: translate(-50%, -50%); border: 1px solid rgba(218, 243, 255, .8); border-radius: 50%; box-shadow: 0 0 0 1px rgba(5, 15, 25, .85); pointer-events: none; }
 #gamepad-reticle::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: currentColor; }
 #gamepad-reticle[data-target] { color: #ffdc6b; border-color: currentColor; box-shadow: 0 0 12px rgba(255, 220, 107, .45); }
-.gamepad-help { position: fixed; left: 20px; bottom: 96px; display: grid; grid-template-columns: repeat(2, max-content); gap: 6px 14px; padding: 10px 12px; border-radius: 8px; color: #c6deeb; font-size: 10px; pointer-events: none; }
-.gamepad-help small { grid-column: 1 / -1; color: #a9c5d2; font-size: 9px; }
-.gamepad-help kbd { display: inline-block; min-width: 16px; margin-right: 3px; padding: 1px 4px; border: 1px solid rgba(135, 219, 255, .23); border-radius: 4px; color: #e4f6ff; background: rgba(126, 210, 240, .1); font: inherit; text-align: center; }
+.gamepad-help { position: fixed; z-index: 16; left: 20px; bottom: 96px; color: #d9edf6; }
+.gamepad-help summary { display: flex; align-items: center; gap: 12px; width: max-content; padding: 9px 12px; border-radius: 8px; cursor: pointer; list-style: none; font: 600 11px Inter, system-ui, sans-serif; }
+.gamepad-help summary::-webkit-details-marker { display: none; }
+.gamepad-help summary::after { content: ''; width: 6px; height: 6px; border: solid #79c0d7; border-width: 0 1px 1px 0; transform: rotate(225deg) translate(-1px, -1px); }
+.gamepad-help[open] summary::after { transform: rotate(45deg) translate(-1px, -1px); }
+.gamepad-help summary:focus-visible { outline: 2px solid #60d8f6; outline-offset: 3px; }
+#app .gamepad-diagram { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(620px, calc(100vw - 40px)); max-height: calc(100dvh - 200px); overflow: auto; border-color: #254659; border-radius: 11px; background: #0a1926; box-shadow: 0 13px 36px #040d17a0; }
+.gamepad-view { display: block; width: 100%; height: auto; font-family: Inter, system-ui, sans-serif; }
+.gamepad-shoulder-view { border-top: 1px solid #1c3749; }
+.gamepad-view-title { fill: #9cbacb; font-size: 11px; font-weight: 600; }
+.gamepad-shell { fill: url(#gamepad-shell); stroke: #65889d; stroke-width: 1.3px; }
+.gamepad-inset { fill: #0c2130; stroke: #36586d; }
+.gamepad-trackpad, .gamepad-key, .gamepad-stick { fill: #112635; stroke: #7190a1; }
+.gamepad-trackpad { fill: #233f51; }
+.gamepad-stick-rim { fill: #2c495c; stroke: #55798d; }
+.gamepad-port { fill: #081522; stroke: #6b8b9c; }
+.gamepad-symbol, .gamepad-detail, .gamepad-light { fill: none; stroke: #b6cbd4; stroke-width: 1.15px; stroke-linecap: round; }
+.gamepad-detail { stroke: #4d7084; }
+.gamepad-light { stroke: #52b9d6; stroke-width: 1.8px; }
+.gamepad-leader, .gamepad-chord-line { fill: none; stroke: #60889f; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
+.gamepad-chord-line { stroke-dasharray: 3 3; }
+.gamepad-anchor { fill: #75e0f7; }
+.gamepad-control-label { fill: #75d4ee; font-size: 10px; font-weight: 700; }
+.gamepad-action-label { fill: #e1eff6; font-size: 11px; font-weight: 500; }
 .scanline { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(93, 197, 235, .011) 4px); }
 
 @media (max-width: 720px) {
