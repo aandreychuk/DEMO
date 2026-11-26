@@ -22,9 +22,9 @@ const topCallouts: readonly Callout[] = [
   { side: 'left', y: 108, line: [[248, 88], [224, 100], [209, 104]], control: 'L3', warehouse: 'Show / hide help', editor: 'Show / hide help' },
   { side: 'right', y: 16, line: [[289, 31], [289, 12]], control: 'Touchpad', warehouse: 'Break agent', touchpad: true },
   { side: 'right', y: 34, line: [[316, 38], [335, 38], [347, 30]], control: 'Options', warehouse: 'Pause / resume' },
-  { side: 'right', y: 52, line: [[324, 46], [336, 43], [351, 48]], control: '△', warehouse: 'Open layout editor', editor: 'Apply map' },
+  { side: 'right', y: 52, line: [[324, 46], [336, 43], [351, 48]], control: '△', warehouse: 'Open layout editor', editor: 'Discard edits' },
   { side: 'right', y: 70, line: [[314, 57], [317, 52], [343, 52], [350, 56]], control: '□', warehouse: 'Clear selection', editor: 'Undo edit' },
-  { side: 'right', y: 88, line: [[335, 57], [346, 60], [354, 72]], control: '○', warehouse: 'Take control', manual: 'Release control', editor: 'Discard edits' },
+  { side: 'right', y: 88, line: [[335, 57], [346, 60], [354, 72]], control: '○', warehouse: 'Take control', manual: 'Release control', editor: 'Apply map' },
   { side: 'right', y: 106, line: [[324, 67], [339, 75], [354, 91]], control: '×', warehouse: 'Reset camera', editor: 'Add or remove pallet' },
   { side: 'right', y: 124, line: [[311, 80], [328, 90], [348, 112]], control: 'Right stick', warehouse: 'Orbit camera' },
 ];
