@@ -46,6 +46,10 @@ class AgentState:
     pallet_y: int
     completed_tasks: int
 
+    @property
+    def operational(self) -> bool:
+        return not self.failed and self.recovery_state in (0, 4)
+
 
 @dataclass(frozen=True)
 class TowState:
@@ -647,7 +651,7 @@ class Bridge:
                         elif (
                             type(agent) is int
                             and 0 <= agent < count
-                            and previous[agent].recovery_state in (0, 4)
+                            and previous[agent].operational
                         ):
                             session.set_controlled_agent(agent)
                     elif action == "drive-agent":
@@ -657,7 +661,7 @@ class Bridge:
                             session.drive_agent(agent, move)
                     elif action == "fail":
                         agent = int(message.get("agent", -1))
-                        if 0 <= agent < count and previous[agent].recovery_state == 0:
+                        if 0 <= agent < count and previous[agent].operational:
                             if agent == session.controlled_agent:
                                 session.set_controlled_agent(-1)
                             frame = await session.fail_agent(agent)

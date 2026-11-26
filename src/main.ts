@@ -533,14 +533,14 @@ function hideTaskMarkers(): void {
   taskMarkers.direction.isVisible = false;
 }
 
-function canControlAgent(frame: LiveFrame, agent: number): boolean {
+function isAgentOperational(frame: LiveFrame, agent: number): boolean {
   const recovery = frame.recoveryStates[agent];
   return (frame.statuses[agent] & 16) === 0 && (recovery === 0 || recovery === 4);
 }
 
 function getManualTaskGoal(frame: LiveFrame, agent: number): { stage: number; x: number; z: number } | null {
   const pallet = palletCells[frame.palletIds[agent]];
-  if (!pallet || !canControlAgent(frame, agent)) return null;
+  if (!pallet || !isAgentOperational(frame, agent)) return null;
   const stage = frame.recoveryStates[agent] === 4 ? 0 : frame.stages[agent];
   const offset = agent * 2;
   let { x, z } = pallet;
@@ -2608,10 +2608,11 @@ function renderAgentPanel(): void {
   const transitioned = (status & 4) !== 0;
   const failed = (status & 16) !== 0;
   const recoveryState = frame.recoveryStates[id];
+  const operational = isAgentOperational(frame, id);
   const controlling = controlledAgentId === id;
   const controlSuspended = controlling && activeControlledAgentId !== id;
   const controlButton = document.querySelector<HTMLButtonElement>('#control-agent-button')!;
-  controlButton.disabled = socket?.readyState !== WebSocket.OPEN || (!controlling && !canControlAgent(frame, id));
+  controlButton.disabled = socket?.readyState !== WebSocket.OPEN || (!controlling && !operational);
   controlButton.setAttribute('aria-pressed', String(controlling));
   controlButton.textContent = tr(controlling ? 'Release control' : 'Take control');
   const controlHint = document.querySelector<HTMLElement>('#agent-control-hint')!;
@@ -2657,8 +2658,8 @@ function renderAgentPanel(): void {
   statePill.textContent = tr(stateLabel);
   statePill.className = `state-pill${failed ? ' failed' : recoveryState === 4 ? ' recovery' : loaded ? ' loaded' : ''}${waiting && !failed ? ' waiting' : ''}`;
   const failButton = document.querySelector<HTMLButtonElement>('#fail-agent-button')!;
-  failButton.disabled = recoveryState !== 0 || socket?.readyState !== WebSocket.OPEN;
-  document.querySelector('#fail-agent-label')!.textContent = tr(recoveryState !== 0
+  failButton.disabled = !operational || socket?.readyState !== WebSocket.OPEN;
+  document.querySelector('#fail-agent-label')!.textContent = tr(!operational
     ? 'Recovery in progress'
     : 'Break agent');
 
@@ -2743,7 +2744,7 @@ function setControlledAgent(agent: number): void {
 
 function syncManualControl(resetInput = false): void {
   const id = controlledAgentId;
-  const available = liveCurrent && canControlAgent(liveCurrent, id);
+  const available = liveCurrent && isAgentOperational(liveCurrent, id);
   const active = available ? id : -1;
   if (active === activeControlledAgentId && !resetInput) return;
   activeControlledAgentId = active;
@@ -3166,7 +3167,7 @@ stopButton.addEventListener('click', stopSimulation);
 
 function breakSelectedAgent(): void {
   if (failAgentButton.disabled || selectedAgentId < 0 || !liveCurrent) return;
-  if (liveCurrent.recoveryStates[selectedAgentId] !== 0) return;
+  if (!isAgentOperational(liveCurrent, selectedAgentId)) return;
   if (controlledAgentId === selectedAgentId) clearMovementKeys();
   failAgentButton.disabled = true;
   document.querySelector('#fail-agent-label')!.textContent = tr('Breaking…');
