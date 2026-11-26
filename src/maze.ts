@@ -56,14 +56,17 @@ const observationWindow = element('#maze-observation');
 const observationLegend = element('#maze-observation-legend');
 const links = element<SVGSVGElement>('#maze-links');
 const source = element('#maze-source');
+const agentKicker = element('#maze-agent-kicker');
 const agentTitle = element('#maze-agent-title');
 const agentSummary = element('#maze-agent-summary');
 const voteGrid = element('#maze-votes');
 const votesSection = element<HTMLElement>('.maze-votes-section');
 const decision = element<HTMLElement>('#maze-decision');
 const chosenAction = element('#maze-chosen-action');
+const neighborsSection = element('.maze-neighbors-section');
 const neighbors = element('#maze-neighbors');
 const allAgents = element('#maze-all-agents');
+const clearSelectionHint = element('#maze-clear-selection-hint');
 const scrub = element<HTMLInputElement>('#maze-scrub');
 const speedInput = element<HTMLInputElement>('#maze-speed');
 const playButton = element<HTMLButtonElement>('#maze-play');
@@ -83,10 +86,11 @@ let worker: Worker | null = null;
 let revision = 0;
 let config = defaultMazeConfig();
 let draft: MazeConfig | null = null;
+let editorAgent = 0;
 let editorTool: 'wall' | 'erase' | 'agent' | 'start' | 'goal' = 'wall';
 let frames: Snapshot[] = [];
 let cursor = 0;
-let selectedAgent = 0;
+let selectedAgent: number | null = null;
 let playing = true;
 let mazeActive = false;
 let busy = true;
@@ -148,7 +152,11 @@ function buildBoard(): void {
     agent.setAttribute('aria-label', fmt('Inspect agent {id}', { id: String(i + 1).padStart(2, '0') }));
     agent.style.setProperty('--agent-color', MAZE_COLORS[i]);
     agent.innerHTML = `<span class="arrow">${actionIcon(0)}</span><span class="agent-number">${i + 1}</span>`;
-    agent.addEventListener('click', () => { if (!draft) { selectedAgent = i; render(); } });
+    agent.addEventListener('click', () => {
+      if (draft || frames.length === 0) return;
+      selectedAgent = i;
+      render();
+    });
     board.append(agent);
     agentNodes.push(agent);
   }
@@ -166,23 +174,25 @@ function renderEditor(): void {
   board.classList.add('ready', 'editing');
   paintWalls(draft.walls);
   links.innerHTML = '';
-  selectedAgent = Math.min(selectedAgent, draft.agents.length - 1);
+  editorAgent = Math.max(0, Math.min(editorAgent, draft.agents.length - 1));
   for (let i = 0; i < MAZE_MODEL_SLOTS; i++) {
     const agent = draft.agents[i];
+    const selected = Boolean(agent) && i === editorAgent;
     agentNodes[i].hidden = !agent;
+    agentNodes[i].classList.toggle('selected', selected);
+    agentNodes[i].setAttribute('aria-pressed', String(selected));
     goalNodes[i].hidden = !agent || agent.goal === null;
     if (!agent) continue;
     atCell(agentNodes[i], agent.start, .13);
     agentNodes[i].querySelector('.arrow')!.innerHTML = actionIcon(0);
     agentNodes[i].title = '';
-    agentNodes[i].classList.toggle('selected', i === selectedAgent);
     if (agent.goal !== null) atCell(goalNodes[i], agent.goal, .21);
   }
   editorLifelong.checked = draft.lifelong;
   element('#maze-editor-count').textContent = `${draft.agents.length} / ${MAZE_MODEL_SLOTS}`;
-  editorAgents.innerHTML = draft.agents.map((agent, index) => `<button type="button" data-agent="${index}" class="${index === selectedAgent ? 'selected' : ''}" style="--agent-color:${MAZE_COLORS[index]}">${fmt('Agent {id}', { id: String(index + 1).padStart(2, '0') })}<span>(${mazeX(agent.start)}, ${mazeY(agent.start)}) → ${agent.goal === null ? tr('Set goal') : `(${mazeX(agent.goal)}, ${mazeY(agent.goal)})`}</span></button>`).join('');
+  editorAgents.innerHTML = draft.agents.map((agent, index) => `<button type="button" data-agent="${index}" class="${index === editorAgent ? 'selected' : ''}" style="--agent-color:${MAZE_COLORS[index]}">${fmt('Agent {id}', { id: String(index + 1).padStart(2, '0') })}<span>(${mazeX(agent.start)}, ${mazeY(agent.start)}) → ${agent.goal === null ? tr('Set goal') : `(${mazeX(agent.goal)}, ${mazeY(agent.goal)})`}</span></button>`).join('');
   for (const button of editorAgents.querySelectorAll<HTMLButtonElement>('button')) {
-    button.addEventListener('click', () => { selectedAgent = Number(button.dataset.agent); renderEditor(); });
+    button.addEventListener('click', () => { editorAgent = Number(button.dataset.agent); renderEditor(); });
   }
   for (const button of editor.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
     button.classList.toggle('active', button.dataset.tool === editorTool);
@@ -195,6 +205,7 @@ function openEditor(): void {
   observationLayer.hidden = true;
   observationLegend.hidden = true;
   draft = cloneMazeConfig(config);
+  editorAgent = selectedAgent ?? 0;
   presetSelect.disabled = true;
   editorTool = 'wall';
   setEditorMessage('');
@@ -236,23 +247,22 @@ function editorCell(cell: number, dragging = false): void {
     if (wall) draft.walls = draft.walls.filter((item) => item !== cell);
     else if (agentIndex >= 0 && !dragging) {
       draft.agents.splice(agentIndex, 1);
-      selectedAgent = Math.max(0, Math.min(selectedAgent, draft.agents.length - 1));
     } else if (goalIndex >= 0 && !dragging) draft.agents[goalIndex].goal = null;
   } else if (!dragging && editorTool === 'agent') {
     if (draft.agents.length >= MAZE_MODEL_SLOTS) setEditorMessage('The model supports up to {count} agents here.', { count: MAZE_MODEL_SLOTS });
     else if (wall || agentIndex >= 0) setEditorMessage('Choose a free floor cell for the new agent.');
     else {
       draft.agents.push({ start: cell, goal: null });
-      selectedAgent = draft.agents.length - 1;
+      editorAgent = draft.agents.length - 1;
       editorTool = 'goal';
-      setEditorMessage("Now set agent {id}'s goal.", { id: selectedAgent + 1 });
+      setEditorMessage("Now set agent {id}'s goal.", { id: editorAgent + 1 });
     }
   } else if (!dragging && editorTool === 'start') {
     if (wall || agentIndex >= 0) setEditorMessage('Choose a free floor cell for the start.');
-    else draft.agents[selectedAgent].start = cell;
+    else draft.agents[editorAgent].start = cell;
   } else if (!dragging && editorTool === 'goal') {
-    if (wall || (goalIndex >= 0 && goalIndex !== selectedAgent)) setEditorMessage('Choose a floor cell without another goal.');
-    else draft.agents[selectedAgent].goal = cell;
+    if (wall || (goalIndex >= 0 && goalIndex !== editorAgent)) setEditorMessage('Choose a floor cell without another goal.');
+    else draft.agents[editorAgent].goal = cell;
   }
   renderEditor();
 }
@@ -316,13 +326,17 @@ function seek(step: number): void {
 }
 
 function renderObservation(frame: Snapshot): void {
+  observationLayer.hidden = selectedAgent === null;
+  observationLegend.hidden = selectedAgent === null;
+  if (selectedAgent === null) {
+    delete observationWindow.dataset.agent;
+    return;
+  }
   const agent = String(selectedAgent);
   observationWindow.classList.toggle('snap', observationWindow.dataset.agent !== agent);
   observationWindow.dataset.agent = agent;
   stage.style.setProperty('--maze-observer-color', MAZE_COLORS[selectedAgent]);
   atCell(observationWindow, frame.positions[selectedAgent], .5);
-  observationLayer.hidden = false;
-  observationLegend.hidden = false;
 }
 
 function renderLinks(frame: Snapshot, round: number): void {
@@ -344,9 +358,9 @@ function renderLinks(frame: Snapshot, round: number): void {
   links.innerHTML = content;
 }
 
-function renderVotes(frame: Snapshot, round: number): void {
-  const finalScores = round === ROUNDS ? zValues(frame, round, selectedAgent) : null;
-  const agentVotes = Array.from({ length: ROUNDS }, (_, r) => frame.votes[r * frame.positions.length + selectedAgent]);
+function renderVotes(frame: Snapshot, round: number, agent: number): void {
+  const finalScores = round === ROUNDS ? zValues(frame, round, agent) : null;
+  const agentVotes = Array.from({ length: ROUNDS }, (_, r) => frame.votes[r * frame.positions.length + agent]);
   const headers = agentVotes.map((_, r) => {
     const number = r + 1;
     const label = fmt('Round {round}', { round: number });
@@ -366,35 +380,55 @@ function renderVotes(frame: Snapshot, round: number): void {
   }).join('');
   voteGrid.innerHTML = `<div></div>${headers}<div class="maze-vote-heading" title="${tr('Final intent score')}">${tr('Final score')}</div>${rows}`;
 
-  const chosen = finalScores && !frame.finished[selectedAgent] ? frame.plannedActions[selectedAgent] : undefined;
+  const chosen = finalScores && !frame.finished[agent] ? frame.plannedActions[agent] : undefined;
   decision.hidden = chosen === undefined;
   chosenAction.innerHTML = chosen === undefined ? '' : `${actionIcon(chosen)} ${actionName(chosen)}`;
 }
 
-function renderInspector(frame: Snapshot, round: number): void {
-  agentTitle.textContent = fmt('Agent {id}', { id: String(selectedAgent + 1).padStart(2, '0') });
-  agentTitle.style.color = MAZE_COLORS[selectedAgent];
-  const goal = frame.goals[selectedAgent];
+function renderOverview(summary: string): void {
+  agentTitle.textContent = tr('Overview');
+  agentTitle.style.color = '';
+  agentSummary.textContent = tr(summary);
+  agentKicker.hidden = true;
+  votesSection.hidden = true;
+  neighborsSection.hidden = true;
+  clearSelectionHint.hidden = true;
+}
+
+function renderAgentDetails(frame: Snapshot, round: number, agent: number): void {
+  agentKicker.hidden = false;
+  neighborsSection.hidden = false;
+  clearSelectionHint.hidden = false;
+  agentTitle.textContent = fmt('Agent {id}', { id: String(agent + 1).padStart(2, '0') });
+  agentTitle.style.color = MAZE_COLORS[agent];
+  const goal = frame.goals[agent];
   const goalPosition = { x: mazeX(goal), y: mazeY(goal) };
-  agentSummary.textContent = frame.finished[selectedAgent]
+  agentSummary.textContent = frame.finished[agent]
     ? fmt('Goal ({x}, {y}) reached.', goalPosition)
     : fmt('Goal ({x}, {y}).', goalPosition);
   votesSection.hidden = frame.solved;
-  if (!frame.solved) renderVotes(frame, round);
+  if (!frame.solved) renderVotes(frame, round, agent);
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
-    const id = frame.chat[selectedAgent * 13 + slot];
-    if (id >= 0 && id < frame.positions.length && id !== selectedAgent) sources.add(id);
+    const id = frame.chat[agent * 13 + slot];
+    if (id >= 0 && id < frame.positions.length && id !== agent) sources.add(id);
   }
   element('#maze-neighbor-count').textContent = formatCount(sources.size, 'agents');
   neighbors.innerHTML = sources.size
     ? [...sources].map((id) => `<span style="--agent-color:${MAZE_COLORS[id]}">${fmt('Agent {id}', { id: String(id + 1).padStart(2, '0') })}</span>`).join('')
     : `<span>${tr('No agents in range')}</span>`;
+}
+
+function renderInspector(frame: Snapshot, round: number): void {
+  if (selectedAgent === null) renderOverview('Select an agent to inspect its decision.');
+  else renderAgentDetails(frame, round, selectedAgent);
+
   allAgents.innerHTML = Array.from({ length: frame.positions.length }, (_, id) => {
     const values = zValues(frame, round, id);
     const action = round === 0 ? 0 : winner(values);
-    return `<button type="button" class="${id === selectedAgent ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-label="${fmt('Agent {id}: {state}', { id: String(id + 1).padStart(2, '0'), state: round === 0 ? tr('before communication') : actionName(action) })}"><span>${String(id + 1).padStart(2, '0')}</span><b>${actionIcon(action)}</b></button>`;
+    const selected = id === selectedAgent;
+    return `<button type="button" class="${selected ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-pressed="${selected}" aria-label="${fmt('Agent {id}: {state}', { id: String(id + 1).padStart(2, '0'), state: round === 0 ? tr('before communication') : actionName(action) })}"><span>${String(id + 1).padStart(2, '0')}</span><b>${actionIcon(action)}</b></button>`;
   }).join('');
   for (const button of allAgents.querySelectorAll<HTMLButtonElement>('button')) {
     button.addEventListener('click', () => { selectedAgent = Number(button.dataset.agent); render(); });
@@ -418,7 +452,7 @@ function render(): void {
   if (starting) board.classList.add('resetting');
   board.classList.add('ready');
   const { frame, round } = frameAt(cursor);
-  selectedAgent = Math.min(selectedAgent, frame.positions.length - 1);
+  if (selectedAgent !== null && selectedAgent >= frame.positions.length) selectedAgent = null;
   paintWalls(config.walls);
   solvedBanner.hidden = !frame.solved;
   element('#maze-action').textContent = String(frame.action + 1).padStart(3, '0');
@@ -434,6 +468,8 @@ function render(): void {
     const agent = agentNodes[i];
     const goalNode = goalNodes[i];
     agent.hidden = i >= frame.positions.length;
+    agent.classList.toggle('selected', i === selectedAgent);
+    agent.setAttribute('aria-pressed', String(i === selectedAgent));
     goalNode.hidden = i >= frame.positions.length;
     if (i >= frame.positions.length) continue;
     const current = zValues(frame, round, i);
@@ -443,7 +479,6 @@ function render(): void {
     if (changed) changes++;
     atCell(agent, frame.positions[i], .13);
     atCell(goalNode, frame.goals[i], .21);
-    agent.classList.toggle('selected', i === selectedAgent);
     agent.classList.toggle('finished', frame.finished[i] === 1);
     agent.classList.remove('changed');
     if (changed) { void agent.offsetWidth; agent.classList.add('changed'); }
@@ -475,6 +510,7 @@ function renderModelNote(): void {
 function startScenario(): void {
   frames = [];
   cursor = 0;
+  selectedAgent = null;
   busy = true;
   board.classList.remove('ready');
   observationLayer.hidden = true;
@@ -482,10 +518,7 @@ function startScenario(): void {
   links.innerHTML = '';
   paintWalls(config.walls);
   solvedBanner.hidden = true;
-  agentSummary.textContent = tr('Loading the selected maze scenario…');
-  voteGrid.innerHTML = '';
-  votesSection.hidden = false;
-  decision.hidden = true;
+  renderOverview('Loading the selected maze scenario…');
   allAgents.innerHTML = '';
   renderModelNote();
   if (source.classList.contains('error') || !worker) setSource('Loading model');
@@ -566,7 +599,6 @@ presetSelect.addEventListener('change', () => {
   if (draft || !next) return;
   customPresetOption.hidden = true;
   config = next;
-  selectedAgent = 0;
   startScenario();
 });
 const editButton = element<HTMLButtonElement>('#maze-edit');
@@ -577,13 +609,12 @@ for (const button of editor.querySelectorAll<HTMLButtonElement>('[data-tool]')) 
 editorLifelong.addEventListener('change', () => { if (draft) { draft.lifelong = editorLifelong.checked; renderEditor(); } });
 element<HTMLButtonElement>('#maze-editor-remove').addEventListener('click', () => {
   if (!draft || draft.agents.length === 0) return;
-  draft.agents.splice(selectedAgent, 1);
-  selectedAgent = Math.max(0, Math.min(selectedAgent, draft.agents.length - 1));
+  draft.agents.splice(editorAgent, 1);
   renderEditor();
 });
 element<HTMLButtonElement>('#maze-editor-default').addEventListener('click', () => {
   draft = defaultMazeConfig();
-  selectedAgent = 0;
+  editorAgent = 0;
   setEditorMessage('Default maze restored. Run the scenario to apply it.');
   renderEditor();
 });
@@ -595,7 +626,6 @@ element<HTMLButtonElement>('#maze-editor-apply').addEventListener('click', () =>
   config = cloneMazeConfig(draft);
   customPresetOption.hidden = false;
   presetSelect.value = 'custom';
-  selectedAgent = Math.min(selectedAgent, config.agents.length - 1);
   closeEditor();
   editButton.disabled = false;
   startScenario();
@@ -635,12 +665,18 @@ window.addEventListener('demo:languagechange', () => {
     }
   }
   else if (frames.length) render();
-  else agentSummary.textContent = tr('Loading the selected maze scenario…');
+  else renderOverview('Loading the selected maze scenario…');
 });
 window.addEventListener('keydown', (event) => {
   if (!mazeActive) return;
   if (draft) {
     if (event.key === 'Escape') { closeEditor(); editButton.disabled = false; }
+    return;
+  }
+  if (event.key === 'Escape' && selectedAgent !== null) {
+    event.preventDefault();
+    selectedAgent = null;
+    render();
     return;
   }
   if (event.metaKey || event.ctrlKey || event.altKey || (event.target instanceof Element && event.target.closest('a, button, input, select, summary'))) return;
