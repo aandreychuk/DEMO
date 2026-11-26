@@ -24,6 +24,9 @@
 .maze-tile.floor::after { content: ''; position: absolute; inset: 5px; border-top: 1px solid rgba(124, 215, 245, .035); border-left: 1px solid rgba(124, 215, 245, .035); }
 .maze-tile.wall { z-index: 1; border: 1px solid #417d93; border-bottom-color: #0a2634; background: linear-gradient(145deg, #397489 0%, #1d4f63 56%, #123849 100%); box-shadow: inset 0 2px rgba(194, 252, 255, .19), inset -3px -3px rgba(4, 29, 43, .35), 0 5px 0 #0b2c3b, 0 8px 11px rgba(0, 0, 0, .35); }
 .maze-tile.wall::after { content: ''; position: absolute; inset: 5px; border: 1px solid rgba(162, 238, 246, .08); }
+.maze-observation-layer { position: absolute; z-index: 2; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.maze-observation { position: absolute; transform: translate(-50%, -50%); border: 1.5px solid color-mix(in srgb, var(--maze-observer-color) 80%, transparent); background: color-mix(in srgb, var(--maze-observer-color) 8%, transparent); box-shadow: 0 0 0 100vmax rgba(2, 11, 19, .46); transition: left .55s ease, top .55s ease; }
+.maze-observation.snap, .maze-board.resetting .maze-observation { transition: none; }
 .maze-goal { position: absolute; z-index: 2; display: grid; place-items: center; width: calc(var(--cell) * .58); height: calc(var(--cell) * .58); border: 2px dashed var(--agent-color); border-radius: 9px; color: var(--agent-color); background: rgba(4, 17, 27, .68); box-shadow: 0 0 13px color-mix(in srgb, var(--agent-color) 30%, transparent); font-size: 11px; font-weight: 700; transition: left .55s ease, top .55s ease; pointer-events: none; }
 .maze-links { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .maze-links line { stroke: #61b8d8; stroke-width: .025; opacity: .13; }
@@ -50,6 +53,7 @@
 .maze-legend-wall { background: #397489; box-shadow: 0 3px #0b2c3b; }
 .maze-legend-goal { border: 1px dashed #69e8ff; border-radius: 2px; }
 .maze-legend-link { border-top: 2px dashed #8df0ff; }
+.maze-legend-observation { border: 1px solid var(--maze-observer-color); border-radius: 2px; background: color-mix(in srgb, var(--maze-observer-color) 12%, transparent); }
 #maze-changed { margin-left: auto; color: #b5d5e2; }
 .maze-analysis { display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; padding: 20px; scrollbar-color: #24506a transparent; }
 .maze-analysis-head h2 { margin: 0; font-size: 20px; letter-spacing: -.035em; }

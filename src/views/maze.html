@@ -37,8 +37,13 @@
     <section class="maze-stage glass" aria-label="Mini maze and communicating agents">
       <div class="maze-stage-heading"><div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Arrows show the agents’ intents. Lines show who can exchange messages. Agents move after the fourth round.</p></div><div class="maze-stage-counter"><small>Action</small><strong id="maze-action">001</strong><small>Round</small><strong id="maze-round">0 / 4</strong></div></div>
       <div id="maze-solved" class="maze-solved" hidden>✓ Solved — every agent reached its goal</div>
-      <div class="maze-viewport"><div id="maze-board" class="maze-board" aria-label="15 by 11 cell maze"><svg id="maze-links" class="maze-links" viewBox="0 0 15 11" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>
-      <div class="maze-stage-footer"><span><i class="maze-legend-wall"></i>Wall</span><span><i class="maze-legend-goal"></i>Agent goal</span><span><i class="maze-legend-link"></i>Communication</span><span id="maze-changed">0 changed intents this round</span></div>
+      <div class="maze-viewport">
+        <div id="maze-board" class="maze-board" aria-label="15 by 11 cell maze">
+          <div id="maze-observation-layer" class="maze-observation-layer" aria-hidden="true" hidden><div id="maze-observation" class="maze-observation"></div></div>
+          <svg id="maze-links" class="maze-links" viewBox="0 0 15 11" preserveAspectRatio="none" aria-hidden="true"></svg>
+        </div>
+      </div>
+      <div class="maze-stage-footer"><span><i class="maze-legend-wall"></i>Wall</span><span><i class="maze-legend-goal"></i>Agent goal</span><span><i class="maze-legend-link"></i>Communication</span><span id="maze-observation-legend" hidden><i class="maze-legend-observation"></i>Observation window <span id="maze-observation-size"></span></span><span id="maze-changed">0 changed intents this round</span></div>
     </section>
 
     <aside class="maze-analysis glass">
