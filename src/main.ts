@@ -72,6 +72,10 @@ const WS_URL = import.meta.env.VITE_MAPF_WS_URL ?? 'ws://127.0.0.1:18765';
 const DEFAULT_CAMERA_ALPHA = -Math.PI / 2;
 const DEFAULT_CAMERA_BETA = 0.34;
 const DEFAULT_CAMERA_RADIUS = 46;
+const AGENT_CYCLE_DELAY_MS = 320;
+const AGENT_CYCLE_SLOW_MS = 180;
+const AGENT_CYCLE_FAST_MS = 60;
+const AGENT_CYCLE_ACCELERATION_MS = 1200;
 
 type LiveFrame = {
   positions: Float32Array;
@@ -254,6 +258,7 @@ const gridActionsByTurn = [4, 2, 3, 1]; // East, south, west, north in world spa
 let sentDriveDirection = 0;
 let gamepadIndex = -1;
 let gamepadButtonState: number | null = null;
+let agentCycleHold: { direction: number; firstRepeatAt: number; nextAt: number } | null = null;
 let gamepadDriveKey: MoveKey | null = null;
 let gamepadDriveArmed = false;
 let gamepadDpadSuppressed = false;
@@ -261,8 +266,6 @@ let followGamepadAgent = false;
 let gamepadEditorAiming = false;
 const gamepadReticle = document.querySelector<HTMLElement>('#gamepad-reticle')!;
 const updateGamepadDiagram = createGamepadDiagram();
-const aimWorld = Vector3.Zero();
-const aimProjected = Vector3.Zero();
 const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
   KeyW: 'w',
   KeyA: 'a',
@@ -2890,6 +2893,7 @@ function updateControls(dt: number): Gamepad | null {
     }
     gamepadIndex = index;
     gamepadButtonState = null;
+    agentCycleHold = null;
     gamepadDriveKey = null;
     gamepadDriveArmed = false;
     gamepadDpadSuppressed = false;
@@ -2931,31 +2935,6 @@ function centerCameraOnAgent(agent: number): void {
   camera.target.z = matrices[agent * 16 + 14];
 }
 
-function agentAtReticle(): number {
-  if (!liveCurrent) return -1;
-  const halfWidth = canvas.clientWidth / 2;
-  const halfHeight = canvas.clientHeight / 2;
-  const cursorX = gamepadReticle.offsetLeft;
-  const cursorY = gamepadReticle.offsetTop;
-  const viewProjection = scene.getTransformMatrix();
-  let nearest = -1;
-  let nearestDistance = 18 ** 2;
-  for (let agent = 0; agent < liveCurrent.statuses.length; agent++) {
-    const offset = agent * 16;
-    aimWorld.set(matrices[offset + 12], matrices[offset + 13] + 0.42, matrices[offset + 14]);
-    Vector3.TransformCoordinatesToRef(aimWorld, viewProjection, aimProjected);
-    if (aimProjected.z < 0 || aimProjected.z > 1) continue;
-    const dx = (1 + aimProjected.x) * halfWidth - cursorX;
-    const dy = (1 - aimProjected.y) * halfHeight - cursorY;
-    const distance = dx * dx + dy * dy;
-    if (distance < nearestDistance) {
-      nearest = agent;
-      nearestDistance = distance;
-    }
-  }
-  return nearest;
-}
-
 function cycleAgent(direction: number): void {
   const count = liveCurrent?.statuses.length ?? 0;
   if (count === 0) return;
@@ -2966,15 +2945,32 @@ function cycleAgent(direction: number): void {
   centerCameraOnAgent(agent);
 }
 
+function updateGamepadAgentCycle(pressed: number, justPressed: number): void {
+  const shoulder = pressed & (GamepadButton.l1 | GamepadButton.r1);
+  if (shoulder !== GamepadButton.l1 && shoulder !== GamepadButton.r1) {
+    agentCycleHold = null;
+    return;
+  }
+  const direction = shoulder === GamepadButton.l1 ? -1 : 1;
+  const now = performance.now();
+  if (justPressed & shoulder) {
+    cycleAgent(direction);
+    const firstRepeatAt = now + AGENT_CYCLE_DELAY_MS;
+    agentCycleHold = { direction, firstRepeatAt, nextAt: firstRepeatAt };
+  } else if (agentCycleHold?.direction === direction && now >= agentCycleHold.nextAt) {
+    cycleAgent(direction);
+    const acceleration = Math.min(1, (now - agentCycleHold.firstRepeatAt) / AGENT_CYCLE_ACCELERATION_MS);
+    const interval = AGENT_CYCLE_SLOW_MS + (AGENT_CYCLE_FAST_MS - AGENT_CYCLE_SLOW_MS) * acceleration;
+    agentCycleHold.nextAt = now + interval;
+  }
+}
+
 function updateGamepadActions(pad: Gamepad | null): void {
-  const active = pad !== null && !editorActive;
   const editing = pad !== null && editorActive;
-  const aiming = editing || (active && controlledAgentId < 0);
   updateGamepadDiagram(pad, editorActive, controlledAgentId >= 0);
-  if (gamepadReticle.hidden === aiming) gamepadReticle.hidden = !aiming;
-  const aimedAgent = aiming && !editing ? agentAtReticle() : -1;
+  if (gamepadReticle.hidden === editing) gamepadReticle.hidden = !editing;
   const aimedCell = editing ? pickEditorCell(gamepadReticle.offsetLeft, gamepadReticle.offsetTop) : null;
-  gamepadReticle.toggleAttribute('data-target', aimedAgent >= 0 || aimedCell !== null);
+  gamepadReticle.toggleAttribute('data-target', aimedCell !== null);
   if (!pad) {
     if (gamepadEditorAiming) updateEditorCursor(null);
     gamepadEditorAiming = false;
@@ -2986,10 +2982,11 @@ function updateGamepadActions(pad: Gamepad | null): void {
   const justPressed = gamepadButtonState === null ? 0 : pressed & ~gamepadButtonState;
   gamepadButtonState = pressed;
   if (editing) {
+    agentCycleHold = null;
     if (editorAwaitingApply || justPressed === 0) return;
     const countDelta = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down))
       + 10 * (Number(!!(justPressed & GamepadButton.right)) - Number(!!(justPressed & GamepadButton.left)));
-    if (justPressed & (GamepadButton.circle | GamepadButton.l3)) cancelLayoutEditor();
+    if (justPressed & (GamepadButton.circle | GamepadButton.triangle)) cancelLayoutEditor();
     else if (justPressed & GamepadButton.options) applyLayoutEditor();
     else if (justPressed & GamepadButton.square) undoEditorEdit();
     else if (justPressed & GamepadButton.cross) {
@@ -3002,7 +2999,8 @@ function updateGamepadActions(pad: Gamepad | null): void {
     return;
   }
 
-  if (justPressed & GamepadButton.l3) {
+  if (justPressed & GamepadButton.triangle) {
+    agentCycleHold = null;
     enterLayoutEditor();
     gamepadEditorAiming = true;
     return;
@@ -3017,15 +3015,16 @@ function updateGamepadActions(pad: Gamepad | null): void {
   }
 
   if (justPressed & GamepadButton.square) clearAgentSelection();
-  else if (justPressed & GamepadButton.l1) cycleAgent(-1);
-  else if (justPressed & GamepadButton.r1) cycleAgent(1);
-  else if (justPressed & GamepadButton.cross) {
-    if (aimedAgent >= 0) selectAgent(aimedAgent);
-  } else if (justPressed & GamepadButton.circle) toggleManualControl(true);
+  else if (justPressed & GamepadButton.circle) toggleManualControl(true);
   else if (justPressed & GamepadButton.touchpad) breakSelectedAgent();
   else if (justPressed & GamepadButton.options) togglePause();
-  else if (justPressed & GamepadButton.r3) resetCamera();
+  else if (justPressed & GamepadButton.cross) resetCamera();
   else if (justPressed & GamepadButton.create) stopSimulation();
+  else {
+    updateGamepadAgentCycle(pressed, justPressed);
+    return;
+  }
+  agentCycleHold = null;
 }
 
 const agentsValue = document.querySelector('#agents-value')!;
@@ -3274,6 +3273,7 @@ window.addEventListener('keyup', (event) => {
 
 function clearInputOnFocusLoss(): void {
   gamepadButtonState = null;
+  agentCycleHold = null;
   clearMovementKeys();
 }
 window.addEventListener('blur', clearInputOnFocusLoss);

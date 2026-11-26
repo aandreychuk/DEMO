@@ -193,7 +193,7 @@ const RU: Record<string, string> = {
   'Zoom out': 'Отдалить камеру',
   'Zoom in': 'Приблизить камеру',
   'Hold L2 + R2 and press ↑ / ↓ to change speed': 'Удерживай L2 + R2 и нажимай ↑ / ↓ для смены скорости',
-  'Select at reticle': 'Выбрать в прицеле',
+  'Hold L1 / R1 to switch faster': 'Удерживай L1 / R1 для ускорения',
   'Switch agent': 'Сменить агента',
   'Toggle manual control': 'Ручное управление',
   'Manual control will resume after recovery.': 'Ручное управление вернётся после восстановления агента.',
