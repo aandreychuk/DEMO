@@ -235,10 +235,21 @@
 .gamepad-help summary::after { content: ''; width: 6px; height: 6px; border: solid #79c0d7; border-width: 0 1px 1px 0; transform: rotate(225deg) translate(-1px, -1px); }
 .gamepad-help[open] summary::after { transform: rotate(45deg) translate(-1px, -1px); }
 .gamepad-help summary:focus-visible { outline: 2px solid #60d8f6; outline-offset: 3px; }
-#app .gamepad-diagram { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(620px, calc(100vw - 40px)); max-height: calc(100dvh - 200px); overflow: auto; border-color: #254659; border-radius: 11px; background: #0a1926; box-shadow: 0 13px 36px #040d17a0; }
+#app .gamepad-diagram {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(562px, calc(100vw - 40px));
+  max-height: calc(100dvh - 160px);
+  overflow: auto;
+  border-color: rgba(116, 173, 201, .25);
+  border-radius: 11px;
+  background: rgba(9, 25, 38, .68);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 8px 24px rgba(4, 13, 23, .35);
+}
 .gamepad-view { display: block; width: 100%; height: auto; font-family: Inter, system-ui, sans-serif; }
 .gamepad-shoulder-view { border-top: 1px solid #1c3749; }
-.gamepad-view-title { fill: #9cbacb; font-size: 11px; font-weight: 600; }
 .gamepad-shell { fill: url(#gamepad-shell); stroke: #65889d; stroke-width: 1.3px; }
 .gamepad-inset { fill: #0c2130; stroke: #36586d; }
 .gamepad-trackpad, .gamepad-key, .gamepad-stick { fill: #112635; stroke: #7190a1; }
@@ -251,7 +262,7 @@
 .gamepad-leader, .gamepad-chord-line { fill: none; stroke: #60889f; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 .gamepad-chord-line { stroke-dasharray: 3 3; }
 .gamepad-anchor { fill: #75e0f7; }
-.gamepad-control-label { fill: #75d4ee; font-size: 10px; font-weight: 700; }
+.gamepad-control-label { fill: #75d4ee; font-weight: 700; }
 .gamepad-action-label { fill: #e1eff6; font-size: 11px; font-weight: 500; }
 .scanline { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(93, 197, 235, .011) 4px); }
 
