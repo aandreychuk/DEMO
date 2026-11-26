@@ -265,7 +265,8 @@ let gamepadDpadSuppressed = false;
 let followGamepadAgent = false;
 let gamepadEditorAiming = false;
 const gamepadReticle = document.querySelector<HTMLElement>('#gamepad-reticle')!;
-const updateGamepadDiagram = createGamepadDiagram();
+const gamepadHelp = document.querySelector<HTMLDetailsElement>('#gamepad-help')!;
+const updateGamepadDiagram = createGamepadDiagram(gamepadHelp);
 const cameraKeyByCode: Readonly<Record<string, MoveKey | undefined>> = {
   KeyW: 'w',
   KeyA: 'a',
@@ -2981,6 +2982,7 @@ function updateGamepadActions(pad: Gamepad | null): void {
   const pressed = pressedGamepadButtons(pad);
   const justPressed = gamepadButtonState === null ? 0 : pressed & ~gamepadButtonState;
   gamepadButtonState = pressed;
+  if (justPressed & GamepadButton.l3) gamepadHelp.open = !gamepadHelp.open;
   if (editing) {
     agentCycleHold = null;
     if (editorAwaitingApply || justPressed === 0) return;

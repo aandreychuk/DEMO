@@ -19,6 +19,7 @@ const topCallouts: readonly Callout[] = [
   { side: 'left', y: 43, line: [[245, 75], [222, 75], [193, 48]], control: 'Create', warehouse: 'Stop simulation' },
   { side: 'left', y: 89, line: [[234, 116], [199, 116], [176, 94]], control: 'D-pad', warehouse: '↑ / ↓ · Speed', manual: 'Drive agent', editor: 'Agents ↑/↓ ±1 · ←/→ ±10' },
   { side: 'left', y: 141, line: [[255, 152], [212, 152], [187, 146]], control: 'Left stick', warehouse: 'Pan camera', manual: 'Drive agent', editor: 'Aim at cell' },
+  { side: 'left', y: 187, line: [[263, 173], [221, 186], [187, 192]], control: 'L3', warehouse: 'Show / hide help', editor: 'Show / hide help' },
   { side: 'right', y: 23, line: [[342, 63], [342, 28]], control: 'Touchpad', warehouse: 'Break agent', touchpad: true },
   { side: 'right', y: 52, line: [[395, 76], [431, 76], [451, 57]], control: 'Options', warehouse: 'Pause / resume', editor: 'Apply & restart' },
   { side: 'right', y: 79, line: [[410, 93], [429, 90], [451, 84]], control: '△', warehouse: 'Open layout editor', editor: 'Discard edits' },
@@ -53,8 +54,7 @@ function drawCallouts(callouts: readonly Callout[], mode: Mode, touchpad: boolea
   }).join('');
 }
 
-export function createGamepadDiagram(): (pad: Gamepad | null, editing: boolean, controlling: boolean) => void {
-  const help = document.querySelector<HTMLDetailsElement>('#gamepad-help')!;
+export function createGamepadDiagram(help: HTMLDetailsElement): (pad: Gamepad | null, editing: boolean, controlling: boolean) => void {
   help.insertAdjacentHTML('beforeend', diagramMarkup);
   const top = help.querySelector('[data-gamepad-top-callouts]')!;
   const shoulder = help.querySelector('[data-gamepad-shoulder-callouts]')!;

@@ -11,6 +11,7 @@ export const GamepadButton = {
   r1: 1 << 5,
   create: 1 << 8,
   options: 1 << 9,
+  l3: 1 << 10,
   up: 1 << 12,
   down: 1 << 13,
   left: 1 << 14,
