@@ -37,8 +37,8 @@ const rooms = '#......#......#';
 const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
   {
     id: 'passing',
-    rows: [border, border, border, border, '#####.....#####', hall, '#####.....#####', border, border, border, border],
-    routes: [[[2, 5], [12, 5]], [[12, 5], [2, 5]]],
+    rows: [border, border, border, border, '#######.#######', '###.........###', border, border, border, border, border],
+    routes: [[[10, 5], [3, 5]], [[4, 5], [11, 5]]],
   },
   {
     id: 'crossing',
