@@ -17,7 +17,7 @@ type Callout = {
 
 const topCallouts: readonly Callout[] = [
   { side: 'left', y: 30, line: [[238, 37], [225, 37], [208, 26]], control: 'Create', warehouse: 'Stop simulation' },
-  { side: 'left', y: 56, line: [[233, 58], [217, 58], [204, 52]], control: 'D-pad', warehouse: '↑ / ↓ · Speed', manual: 'Drive agent', editor: 'Agents ↑↓ ±1 · ←→ ±10' },
+  { side: 'left', y: 56, line: [[233, 58], [217, 58], [204, 52]], control: 'D-pad', warehouse: 'Speed ↑↓', manual: 'Drive agent', editor: 'Agents ↑↓±1 ←→±10' },
   { side: 'left', y: 82, line: [[244, 77], [221, 77], [204, 78]], control: 'Left stick', warehouse: 'Pan camera', manual: 'Drive agent', editor: 'Aim at cell' },
   { side: 'left', y: 108, line: [[248, 88], [224, 100], [209, 104]], control: 'L3', warehouse: 'Show / hide help', editor: 'Show / hide help' },
   { side: 'right', y: 16, line: [[289, 31], [289, 12]], control: 'Touchpad', warehouse: 'Break agent', touchpad: true },
@@ -48,7 +48,7 @@ function drawCallouts(callouts: readonly Callout[], mode: Mode, touchpad: boolea
     return `<g>
       <polyline class="gamepad-leader" points="${points}" aria-hidden="true"/>
       <circle class="gamepad-anchor" cx="${line[0][0]}" cy="${line[0][1]}" r="1.9" aria-hidden="true"/>
-      <text class="gamepad-action-label" x="${textX}" y="${y}"><tspan class="gamepad-control-label">${tr(control)}</tspan> · ${tr(action)}</text>
+      <text class="gamepad-action-label" x="${textX}" y="${y}"><tspan class="gamepad-control-label">${tr(control)}</tspan><tspan dx="5"> ${tr(action)}</tspan></text>
     </g>`;
   }).join('');
 }
