@@ -2988,8 +2988,8 @@ function updateGamepadActions(pad: Gamepad | null): void {
     if (editorAwaitingApply || justPressed === 0) return;
     const countDelta = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down))
       + 10 * (Number(!!(justPressed & GamepadButton.right)) - Number(!!(justPressed & GamepadButton.left)));
-    if (justPressed & (GamepadButton.circle | GamepadButton.triangle)) cancelLayoutEditor();
-    else if (justPressed & GamepadButton.options) applyLayoutEditor();
+    if (justPressed & GamepadButton.circle) cancelLayoutEditor();
+    else if (justPressed & GamepadButton.triangle) applyLayoutEditor();
     else if (justPressed & GamepadButton.square) undoEditorEdit();
     else if (justPressed & GamepadButton.cross) {
       gamepadEditorAiming = true;

@@ -181,6 +181,7 @@ const RU: Record<string, string> = {
   'Show / hide help': 'Показать / скрыть',
   'Top view': 'Вид сверху',
   'Trigger-side view': 'Со стороны курков',
+  'Arrows': 'Стрелки',
   'Speed ↑↓': 'Скорость ↑↓',
   'Agents ↑↓±1 ←→±10': 'Агенты ↑↓±1 ←→±10',
   'Apply map': 'Применить карту',
