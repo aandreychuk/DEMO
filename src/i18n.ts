@@ -259,6 +259,7 @@ const RU: Record<string, string> = {
   'Wall': 'Стена',
   'Agent goal': 'Цель агента',
   'Communication': 'Коммуникация',
+  'Observation window': 'Окно наблюдения',
   '0 changed intents this round': '0 изменений намерений в этом раунде',
   'Intent inspector': 'Намерения агента',
   'Agent 01': 'Агент 01',

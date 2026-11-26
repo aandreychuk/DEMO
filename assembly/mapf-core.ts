@@ -1,11 +1,12 @@
 // Dense browser-side MAPF primitives. AssemblyScript keeps the hot loops
 // (cost-to-go BFS, observation tokenization and collision shielding) in WASM.
 
+import { OBS_RADIUS } from './observation-layout';
+
 const MAX_AGENTS: i32 = 1000;
 const OBS_TOKENS: i32 = 256;
 const CHAT_SLOTS: i32 = 13;
 const ACTIONS: i32 = 5;
-const OBS_RADIUS: i32 = 5;
 const LIMIT: i32 = 20;
 const PAD_TOKEN: i32 = 66;
 

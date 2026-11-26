@@ -1,4 +1,5 @@
 import { onViewActivityChange } from './demo-view';
+import { OBS_RADIUS } from '../assembly/observation-layout';
 import { MAZE_COLORS, MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, cloneMazeConfig, defaultMazeConfig, mazePresetConfig, mazeX, mazeY, validateMazeConfig, type MazeConfig } from './maze-scenario';
 import { bestMazeAction as winner } from './maze-motion';
 import { fmt, formatCount, formatFixed, tr, translateMessage } from './i18n';
@@ -49,6 +50,10 @@ function element<T extends Element = HTMLElement>(selector: string): T {
 }
 
 const board = element('#maze-board');
+const stage = element('.maze-stage');
+const observationLayer = element('#maze-observation-layer');
+const observationWindow = element('#maze-observation');
+const observationLegend = element('#maze-observation-legend');
 const links = element<SVGSVGElement>('#maze-links');
 const source = element('#maze-source');
 const agentTitle = element('#maze-agent-title');
@@ -115,13 +120,17 @@ function atCell(node: HTMLElement, cell: number, inset: number): void {
 }
 
 function buildBoard(): void {
+  const observationSize = 2 * OBS_RADIUS + 1;
+  observationWindow.style.width = `${observationSize / MAZE_WIDTH * 100}%`;
+  observationWindow.style.height = `${observationSize / MAZE_HEIGHT * 100}%`;
+  element('#maze-observation-size').textContent = `${observationSize} × ${observationSize}`;
   for (let y = 0; y < MAZE_HEIGHT; y++) {
     for (let x = 0; x < MAZE_WIDTH; x++) {
       const tile = document.createElement('div');
       tile.className = 'maze-tile floor';
       tile.style.left = `${x / MAZE_WIDTH * 100}%`;
       tile.style.top = `${y / MAZE_HEIGHT * 100}%`;
-      board.insertBefore(tile, links);
+      board.insertBefore(tile, observationLayer);
       tileNodes.push(tile);
     }
   }
@@ -183,6 +192,8 @@ function renderEditor(): void {
 function openEditor(): void {
   setPlaying(false);
   solvedBanner.hidden = true;
+  observationLayer.hidden = true;
+  observationLegend.hidden = true;
   draft = cloneMazeConfig(config);
   presetSelect.disabled = true;
   editorTool = 'wall';
@@ -302,6 +313,16 @@ function seek(step: number): void {
   setPlaying(false);
   cursor = Math.max(0, Math.min(lastRecordedStep(), step));
   render();
+}
+
+function renderObservation(frame: Snapshot): void {
+  const agent = String(selectedAgent);
+  observationWindow.classList.toggle('snap', observationWindow.dataset.agent !== agent);
+  observationWindow.dataset.agent = agent;
+  stage.style.setProperty('--maze-observer-color', MAZE_COLORS[selectedAgent]);
+  atCell(observationWindow, frame.positions[selectedAgent], .5);
+  observationLayer.hidden = false;
+  observationLegend.hidden = false;
 }
 
 function renderLinks(frame: Snapshot, round: number): void {
@@ -437,6 +458,7 @@ function render(): void {
   }
   lastChangedIntents = changes;
   renderRoundCopy(frame, round, changes);
+  renderObservation(frame);
   renderLinks(frame, round);
   renderInspector(frame, round);
   if (starting) {
@@ -455,6 +477,8 @@ function startScenario(): void {
   cursor = 0;
   busy = true;
   board.classList.remove('ready');
+  observationLayer.hidden = true;
+  observationLegend.hidden = true;
   links.innerHTML = '';
   paintWalls(config.walls);
   solvedBanner.hidden = true;
