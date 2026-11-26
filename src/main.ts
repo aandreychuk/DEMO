@@ -78,9 +78,12 @@ const AGENT_CYCLE_DELAY_MS = 320;
 const AGENT_CYCLE_SLOW_MS = 180;
 const AGENT_CYCLE_FAST_MS = 60;
 const AGENT_CYCLE_ACCELERATION_MS = 1200;
-const EDITOR_COUNT_REPEAT_DELAY_MS = 320;
-const EDITOR_COUNT_REPEAT_INTERVAL_MS = 125;
-const EDITOR_COUNT_ARROWS = GamepadButton.up | GamepadButton.down | GamepadButton.left | GamepadButton.right;
+const ARROW_REPEAT_DELAY_MS = 320;
+const ARROW_REPEAT_INTERVAL_MS = 125;
+const SPEED_ARROWS = GamepadButton.up | GamepadButton.down;
+const EDITOR_COUNT_ARROWS = SPEED_ARROWS | GamepadButton.left | GamepadButton.right;
+
+type ArrowRepeat = { nextAt: number | null };
 
 type LiveFrame = {
   positions: Float32Array;
@@ -277,7 +280,8 @@ let sentDriveDirection = 0;
 let gamepadIndex = -1;
 let gamepadButtonState: number | null = null;
 let agentCycleHold: { direction: number; firstRepeatAt: number; nextAt: number } | null = null;
-let nextEditorCountRepeatAt: number | null = null;
+const editorCountRepeat: ArrowRepeat = { nextAt: null };
+const warehouseSpeedRepeat: ArrowRepeat = { nextAt: null };
 let gamepadDriveKey: MoveKey | null = null;
 let gamepadDriveArmed = false;
 let gamepadDpadSuppressed = false;
@@ -2964,7 +2968,8 @@ function updateControls(dt: number): Gamepad | null {
     gamepadIndex = index;
     gamepadButtonState = null;
     agentCycleHold = null;
-    nextEditorCountRepeatAt = null;
+    editorCountRepeat.nextAt = null;
+    warehouseSpeedRepeat.nextAt = null;
     gamepadDriveKey = null;
     gamepadDriveArmed = false;
     gamepadDpadSuppressed = false;
@@ -3036,18 +3041,22 @@ function updateGamepadAgentCycle(pressed: number, justPressed: number): void {
   }
 }
 
-function updateEditorCountFromGamepad(pressed: number, justPressed: number): void {
-  const arrows = pressed & EDITOR_COUNT_ARROWS;
+function repeatingArrowButtons(arrows: number, justPressed: number, repeat: ArrowRepeat): number {
   if (arrows === 0) {
-    nextEditorCountRepeatAt = null;
-    return;
+    repeat.nextAt = null;
+    return 0;
   }
   const tapped = justPressed & arrows;
   const now = performance.now();
-  if (!tapped && (nextEditorCountRepeatAt === null || now < nextEditorCountRepeatAt)) return;
+  if (!tapped && (repeat.nextAt === null || now < repeat.nextAt)) return 0;
 
-  nextEditorCountRepeatAt = now + (tapped ? EDITOR_COUNT_REPEAT_DELAY_MS : EDITOR_COUNT_REPEAT_INTERVAL_MS);
-  const buttons = tapped || arrows;
+  repeat.nextAt = now + (tapped ? ARROW_REPEAT_DELAY_MS : ARROW_REPEAT_INTERVAL_MS);
+  return tapped || arrows;
+}
+
+function updateEditorCountFromGamepad(pressed: number, justPressed: number): void {
+  const buttons = repeatingArrowButtons(pressed & EDITOR_COUNT_ARROWS, justPressed, editorCountRepeat);
+  if (buttons === 0) return;
   const countDelta = Number(!!(buttons & GamepadButton.up)) - Number(!!(buttons & GamepadButton.down))
     + 10 * (Number(!!(buttons & GamepadButton.right)) - Number(!!(buttons & GamepadButton.left)));
   setEditorAgentCount(editorAgentCount + countDelta);
@@ -3055,7 +3064,9 @@ function updateEditorCountFromGamepad(pressed: number, justPressed: number): voi
 
 function updateGamepadActions(pad: Gamepad | null): void {
   const editing = pad !== null && editorActive;
-  if (!editing || editorAwaitingApply) nextEditorCountRepeatAt = null;
+  const canAdjustSpeed = pad !== null && !editing && (controlledAgentId < 0 || gamepadSpeedModifier(pad));
+  if (!editing || editorAwaitingApply) editorCountRepeat.nextAt = null;
+  if (!canAdjustSpeed) warehouseSpeedRepeat.nextAt = null;
   updateGamepadDiagram(pad, editorActive, controlledAgentId >= 0);
   if (gamepadReticle.hidden === editing) gamepadReticle.hidden = !editing;
   const aimedCell = editing ? pickEditorCell(gamepadReticle.offsetLeft, gamepadReticle.offsetTop) : null;
@@ -3093,12 +3104,13 @@ function updateGamepadActions(pad: Gamepad | null): void {
     gamepadEditorAiming = true;
     return;
   }
-  if (controlledAgentId < 0 || gamepadSpeedModifier(pad)) {
-    const speedStep = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down));
+  if (canAdjustSpeed) {
+    const speedButtons = repeatingArrowButtons(pressed & SPEED_ARROWS, justPressed, warehouseSpeedRepeat);
+    const speedStep = Number(!!(speedButtons & GamepadButton.up)) - Number(!!(speedButtons & GamepadButton.down));
     if (speedStep !== 0) {
       speedInput.stepUp(speedStep);
       applySimulationSpeed();
-      return;
+      if (justPressed & speedButtons) return;
     }
   }
 
@@ -3369,7 +3381,8 @@ window.addEventListener('keyup', (event) => {
 function clearInputOnFocusLoss(): void {
   gamepadButtonState = null;
   agentCycleHold = null;
-  nextEditorCountRepeatAt = null;
+  editorCountRepeat.nextAt = null;
+  warehouseSpeedRepeat.nextAt = null;
   clearMovementKeys();
 }
 window.addEventListener('blur', clearInputOnFocusLoss);
