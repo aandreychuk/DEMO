@@ -775,20 +775,29 @@ function schedule(): void {
   if (booted && active && !paused) timer = workerScope.setTimeout(() => void tick(), 1000 / (TICK_RATE * speed));
 }
 
+function isAgentOperational(agent: number): boolean {
+  return Number.isInteger(agent) && agent >= 0 && agent < agentCount
+    && !failed[agent] && (recovery[agent] === 0 || recovery[agent] === 4);
+}
+
 function setControlledAgent(agent: number): void {
-  controlledAgent = Number.isInteger(agent) && agent >= 0 && agent < agentCount
-    && (recovery[agent] === 0 || recovery[agent] === 4)
-    ? agent : -1;
+  controlledAgent = isAgentOperational(agent) ? agent : -1;
   heldMove = 0;
   pendingMove = 0;
 }
 
 function failAgent(agent: number): void {
-  if (agent < 0 || agent >= agentCount || recovery[agent] !== 0) return;
+  if (!isAgentOperational(agent)) return;
   if (agent === controlledAgent) setControlledAgent(-1);
   generation++;
-  failed[agent] = 1; recovery[agent] = 1; resumeGoals[agent] = goals[agent];
-  recoveringPallet[agent] = loaded[agent]; recoveryDwellStarted[agent] = 0; repairDwell[agent] = 0;
+  if (recovery[agent] === 0) {
+    resumeGoals[agent] = goals[agent];
+    recoveringPallet[agent] = loaded[agent];
+  }
+  failed[agent] = 1;
+  recovery[agent] = 1;
+  recoveryDwellStarted[agent] = 0;
+  repairDwell[agent] = 0;
   if (loaded[agent] && taskIndex[agent] >= 0) {
     const palletId = currentPalletId(agent);
     loaded[agent] = 0; palletPresent[palletId] = 1; palletPositions[palletId] = positions[agent];

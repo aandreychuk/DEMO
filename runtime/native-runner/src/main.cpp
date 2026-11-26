@@ -1027,6 +1027,12 @@ int main(int argc, char** argv)
     long long fallback_steps = 0;
     int fallback_burst_steps = 0;
 
+    auto is_agent_operational = [&](int agent) {
+      return agent >= 0 && agent < static_cast<int>(ins.N) && !failed[agent] &&
+             (recovery_state[agent] == RecoveryState::Normal ||
+              recovery_state[agent] == RecoveryState::RecoveringPallet);
+    };
+
     emit_stream_frame(0, current);
     for (int step = 0;
          (args.max_steps == 0 || step < args.max_steps) &&
@@ -1044,10 +1050,7 @@ int main(int argc, char** argv)
           if (action == "drive") {
             int direction = 0;
             if (lifelong && args.mode == "pibt" && input >> agent >> direction &&
-                agent >= 0 && agent < static_cast<int>(ins.N) &&
-                direction >= 0 && direction <= 4 &&
-                (recovery_state[agent] == RecoveryState::Normal ||
-                 recovery_state[agent] == RecoveryState::RecoveringPallet)) {
+                direction >= 0 && direction <= 4 && is_agent_operational(agent)) {
               manual.agent = agent;
               for (auto* neighbor : current[agent]->neighbor) {
                 if (action_index(current[agent], neighbor) != direction) continue;
@@ -1057,13 +1060,13 @@ int main(int argc, char** argv)
             }
             continue;
           }
-          if (action == "fail" && input >> agent &&
-              agent >= 0 && agent < static_cast<int>(ins.N) &&
-              recovery_state[agent] == RecoveryState::Normal) {
+          if (action == "fail" && input >> agent && is_agent_operational(agent)) {
+            if (recovery_state[agent] == RecoveryState::Normal) {
+              resume_goals[agent] = ins.goals[agent];
+              recovering_pallet[agent] = loaded[agent];
+            }
             failed[agent] = true;
             recovery_state[agent] = RecoveryState::WaitingForTow;
-            resume_goals[agent] = ins.goals[agent];
-            recovering_pallet[agent] = loaded[agent];
             recovery_dwell_started[agent] = false;
             repair_dwell_remaining[agent] = 0;
             if (loaded[agent] && agent_task[agent] >= 0) {
