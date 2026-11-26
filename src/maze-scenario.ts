@@ -48,7 +48,7 @@ const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes:
   {
     id: 'rooms',
     rows: [border, rooms, rooms, rooms, rooms, hall, rooms, rooms, rooms, rooms, border],
-    routes: [[[2, 3], [11, 3]], [[4, 8], [11, 8]], [[12, 7], [2, 7]], [[11, 3], [10, 4]]],
+    routes: [[[2, 3], [11, 3]], [[4, 8], [11, 8]], [[12, 7], [2, 7]], [[11, 3], [2, 4]]],
   },
 ];
 
