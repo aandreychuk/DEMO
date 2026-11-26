@@ -16,24 +16,24 @@ type Callout = {
 };
 
 const topCallouts: readonly Callout[] = [
-  { side: 'left', y: 43, line: [[245, 75], [222, 75], [193, 48]], control: 'Create', warehouse: 'Stop simulation' },
-  { side: 'left', y: 89, line: [[234, 116], [199, 116], [176, 94]], control: 'D-pad', warehouse: '↑ / ↓ · Speed', manual: 'Drive agent', editor: 'Agents ↑/↓ ±1 · ←/→ ±10' },
-  { side: 'left', y: 141, line: [[255, 152], [212, 152], [187, 146]], control: 'Left stick', warehouse: 'Pan camera', manual: 'Drive agent', editor: 'Aim at cell' },
-  { side: 'left', y: 187, line: [[263, 173], [221, 186], [187, 192]], control: 'L3', warehouse: 'Show / hide help', editor: 'Show / hide help' },
-  { side: 'right', y: 23, line: [[342, 63], [342, 28]], control: 'Touchpad', warehouse: 'Break agent', touchpad: true },
-  { side: 'right', y: 52, line: [[395, 76], [431, 76], [451, 57]], control: 'Options', warehouse: 'Pause / resume', editor: 'Apply & restart' },
-  { side: 'right', y: 79, line: [[410, 93], [429, 90], [451, 84]], control: '△', warehouse: 'Open layout editor', editor: 'Discard edits' },
-  { side: 'right', y: 106, line: [[390, 113], [397, 104], [447, 104], [459, 111]], control: '□', warehouse: 'Clear selection', editor: 'Undo edit' },
-  { side: 'right', y: 133, line: [[430, 113], [452, 120], [462, 138]], control: '○', warehouse: 'Take control', manual: 'Release control', editor: 'Discard edits' },
-  { side: 'right', y: 160, line: [[410, 133], [438, 145], [460, 165]], control: '×', warehouse: 'Reset camera', editor: 'Add or remove pallet' },
-  { side: 'right', y: 187, line: [[384, 157], [416, 175], [438, 192]], control: 'Right stick', warehouse: 'Orbit camera' },
+  { side: 'left', y: 30, line: [[238, 37], [225, 37], [208, 26]], control: 'Create', warehouse: 'Stop simulation' },
+  { side: 'left', y: 56, line: [[233, 58], [217, 58], [204, 52]], control: 'D-pad', warehouse: '↑ / ↓ · Speed', manual: 'Drive agent', editor: 'Agents ↑↓ ±1 · ←→ ±10' },
+  { side: 'left', y: 82, line: [[244, 77], [221, 77], [204, 78]], control: 'Left stick', warehouse: 'Pan camera', manual: 'Drive agent', editor: 'Aim at cell' },
+  { side: 'left', y: 108, line: [[248, 88], [224, 100], [209, 104]], control: 'L3', warehouse: 'Show / hide help', editor: 'Show / hide help' },
+  { side: 'right', y: 16, line: [[289, 31], [289, 12]], control: 'Touchpad', warehouse: 'Break agent', touchpad: true },
+  { side: 'right', y: 34, line: [[316, 38], [335, 38], [347, 30]], control: 'Options', warehouse: 'Pause / resume', editor: 'Apply map' },
+  { side: 'right', y: 52, line: [[324, 46], [336, 43], [351, 48]], control: '△', warehouse: 'Open layout editor', editor: 'Discard edits' },
+  { side: 'right', y: 70, line: [[314, 57], [317, 52], [343, 52], [350, 56]], control: '□', warehouse: 'Clear selection', editor: 'Undo edit' },
+  { side: 'right', y: 88, line: [[335, 57], [346, 60], [354, 72]], control: '○', warehouse: 'Take control', manual: 'Release control', editor: 'Discard edits' },
+  { side: 'right', y: 106, line: [[324, 67], [339, 75], [354, 91]], control: '×', warehouse: 'Reset camera', editor: 'Add or remove pallet' },
+  { side: 'right', y: 124, line: [[311, 80], [328, 90], [348, 112]], control: 'Right stick', warehouse: 'Orbit camera' },
 ];
 
 const shoulderCallouts: readonly Callout[] = [
-  { side: 'left', y: 38, line: [[218, 54], [197, 54], [184, 43]], control: 'L1', warehouse: 'Previous agent' },
-  { side: 'right', y: 38, line: [[422, 54], [443, 54], [456, 43]], control: 'R1', warehouse: 'Next agent' },
-  { side: 'left', y: 77, line: [[205, 77], [184, 82]], control: 'L2', warehouse: 'Zoom out', editor: 'Zoom out' },
-  { side: 'right', y: 77, line: [[435, 77], [456, 82]], control: 'R2', warehouse: 'Zoom in', editor: 'Zoom in' },
+  { side: 'left', y: 20, line: [[224, 16], [201, 16]], control: 'L1', warehouse: 'Previous agent' },
+  { side: 'right', y: 20, line: [[330, 16], [354, 16]], control: 'R1', warehouse: 'Next agent' },
+  { side: 'left', y: 38, line: [[218, 28], [204, 34]], control: 'L2', warehouse: 'Zoom out', editor: 'Zoom out' },
+  { side: 'right', y: 38, line: [[337, 28], [351, 34]], control: 'R2', warehouse: 'Zoom in', editor: 'Zoom in' },
 ];
 
 function drawCallouts(callouts: readonly Callout[], mode: Mode, touchpad: boolean): string {
@@ -42,14 +42,13 @@ function drawCallouts(callouts: readonly Callout[], mode: Mode, touchpad: boolea
     if (!action || (callout.touchpad && !touchpad)) return '';
     const { side, y, line, control } = callout;
     const left = side === 'left';
-    const textX = left ? 14 : 480;
-    const lineEnd = left ? 155 : 470;
-    const points = [...line, [lineEnd, y + 5]].map((point) => point.join(',')).join(' ');
+    const textX = left ? 12 : 376;
+    const lineEnd = left ? 194 : 368;
+    const points = [...line, [lineEnd, y - 4]].map((point) => point.join(',')).join(' ');
     return `<g>
       <polyline class="gamepad-leader" points="${points}" aria-hidden="true"/>
-      <circle class="gamepad-anchor" cx="${line[0][0]}" cy="${line[0][1]}" r="2.5" aria-hidden="true"/>
-      <text class="gamepad-control-label" x="${textX}" y="${y}">${tr(control)}</text>
-      <text class="gamepad-action-label" x="${textX}" y="${y + 14}">${tr(action)}</text>
+      <circle class="gamepad-anchor" cx="${line[0][0]}" cy="${line[0][1]}" r="1.9" aria-hidden="true"/>
+      <text class="gamepad-action-label" x="${textX}" y="${y}"><tspan class="gamepad-control-label">${tr(control)}</tspan> · ${tr(action)}</text>
     </g>`;
   }).join('');
 }
