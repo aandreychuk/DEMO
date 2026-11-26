@@ -78,6 +78,9 @@ const AGENT_CYCLE_DELAY_MS = 320;
 const AGENT_CYCLE_SLOW_MS = 180;
 const AGENT_CYCLE_FAST_MS = 60;
 const AGENT_CYCLE_ACCELERATION_MS = 1200;
+const EDITOR_COUNT_REPEAT_DELAY_MS = 320;
+const EDITOR_COUNT_REPEAT_INTERVAL_MS = 125;
+const EDITOR_COUNT_ARROWS = GamepadButton.up | GamepadButton.down | GamepadButton.left | GamepadButton.right;
 
 type LiveFrame = {
   positions: Float32Array;
@@ -274,6 +277,7 @@ let sentDriveDirection = 0;
 let gamepadIndex = -1;
 let gamepadButtonState: number | null = null;
 let agentCycleHold: { direction: number; firstRepeatAt: number; nextAt: number } | null = null;
+let nextEditorCountRepeatAt: number | null = null;
 let gamepadDriveKey: MoveKey | null = null;
 let gamepadDriveArmed = false;
 let gamepadDpadSuppressed = false;
@@ -2960,6 +2964,7 @@ function updateControls(dt: number): Gamepad | null {
     gamepadIndex = index;
     gamepadButtonState = null;
     agentCycleHold = null;
+    nextEditorCountRepeatAt = null;
     gamepadDriveKey = null;
     gamepadDriveArmed = false;
     gamepadDpadSuppressed = false;
@@ -3031,8 +3036,26 @@ function updateGamepadAgentCycle(pressed: number, justPressed: number): void {
   }
 }
 
+function updateEditorCountFromGamepad(pressed: number, justPressed: number): void {
+  const arrows = pressed & EDITOR_COUNT_ARROWS;
+  if (arrows === 0) {
+    nextEditorCountRepeatAt = null;
+    return;
+  }
+  const tapped = justPressed & arrows;
+  const now = performance.now();
+  if (!tapped && (nextEditorCountRepeatAt === null || now < nextEditorCountRepeatAt)) return;
+
+  nextEditorCountRepeatAt = now + (tapped ? EDITOR_COUNT_REPEAT_DELAY_MS : EDITOR_COUNT_REPEAT_INTERVAL_MS);
+  const buttons = tapped || arrows;
+  const countDelta = Number(!!(buttons & GamepadButton.up)) - Number(!!(buttons & GamepadButton.down))
+    + 10 * (Number(!!(buttons & GamepadButton.right)) - Number(!!(buttons & GamepadButton.left)));
+  setEditorAgentCount(editorAgentCount + countDelta);
+}
+
 function updateGamepadActions(pad: Gamepad | null): void {
   const editing = pad !== null && editorActive;
+  if (!editing || editorAwaitingApply) nextEditorCountRepeatAt = null;
   updateGamepadDiagram(pad, editorActive, controlledAgentId >= 0);
   if (gamepadReticle.hidden === editing) gamepadReticle.hidden = !editing;
   const aimedCell = editing ? pickEditorCell(gamepadReticle.offsetLeft, gamepadReticle.offsetTop) : null;
@@ -3050,9 +3073,7 @@ function updateGamepadActions(pad: Gamepad | null): void {
   if (justPressed & GamepadButton.l3) gamepadHelp.open = !gamepadHelp.open;
   if (editing) {
     agentCycleHold = null;
-    if (editorAwaitingApply || justPressed === 0) return;
-    const countDelta = Number(!!(justPressed & GamepadButton.up)) - Number(!!(justPressed & GamepadButton.down))
-      + 10 * (Number(!!(justPressed & GamepadButton.right)) - Number(!!(justPressed & GamepadButton.left)));
+    if (editorAwaitingApply) return;
     if (justPressed & GamepadButton.circle) cancelLayoutEditor();
     else if (justPressed & GamepadButton.triangle) applyLayoutEditor();
     else if (justPressed & GamepadButton.square) undoEditorEdit();
@@ -3062,7 +3083,7 @@ function updateGamepadActions(pad: Gamepad | null): void {
         pushEditorHistory();
         setEditorPallet(aimedCell, !editorLayout.has(palletCellKey(aimedCell.x, aimedCell.z)));
       }
-    } else if (countDelta !== 0) setEditorAgentCount(editorAgentCount + countDelta);
+    } else updateEditorCountFromGamepad(pressed, justPressed);
     return;
   }
 
@@ -3246,7 +3267,9 @@ document.querySelector('#reset-camera')!.addEventListener('click', resetCamera);
 document.querySelector('#layout-editor-button')!.addEventListener('click', enterLayoutEditor);
 
 function setEditorAgentCount(count: number): void {
-  editorAgentCount = Math.max(1, Math.min(MAX_AGENTS, count));
+  const nextCount = Math.max(1, Math.min(MAX_AGENTS, count));
+  if (nextCount === editorAgentCount) return;
+  editorAgentCount = nextCount;
   document.querySelector<HTMLInputElement>('#editor-agent-count')!.value = String(editorAgentCount);
   document.querySelector<HTMLInputElement>('#editor-agent-number')!.value = String(editorAgentCount);
   updateEditorPanel();
@@ -3346,6 +3369,7 @@ window.addEventListener('keyup', (event) => {
 function clearInputOnFocusLoss(): void {
   gamepadButtonState = null;
   agentCycleHold = null;
+  nextEditorCountRepeatAt = null;
   clearMovementKeys();
 }
 window.addEventListener('blur', clearInputOnFocusLoss);
