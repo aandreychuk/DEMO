@@ -178,6 +178,7 @@ const RU: Record<string, string> = {
   'All goals reached': 'Все цели достигнуты',
   'Reset camera': 'Сбросить камеру',
   'Gamepad controls': 'Управление геймпадом',
+  'Show / hide help': 'Показать / скрыть',
   'Top view': 'Вид сверху',
   'Trigger-side view': 'Со стороны курков',
   'D-pad': 'Крестовина',
