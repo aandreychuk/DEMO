@@ -32,7 +32,7 @@ export const MAZE_ROUTES: MazeRoutes = [
 
 const border = '###############';
 const hall = '#.............#';
-const crossArm = '######...######';
+const crossArm = '#######.#######';
 const rooms = '#......#......#';
 const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
   {
@@ -42,8 +42,8 @@ const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes:
   },
   {
     id: 'crossing',
-    rows: [border, crossArm, crossArm, crossArm, hall, hall, hall, crossArm, crossArm, crossArm, border],
-    routes: [[[6, 1], [6, 9]], [[8, 9], [8, 1]], [[2, 4], [12, 4]], [[12, 6], [2, 6]]],
+    rows: [border, crossArm, crossArm, crossArm, crossArm, '###.........###', crossArm, crossArm, crossArm, crossArm, border],
+    routes: [[[4, 5], [7, 1]], [[7, 2], [11, 5]], [[10, 5], [7, 9]], [[7, 8], [3, 5]]],
   },
   {
     id: 'rooms',
