@@ -3020,8 +3020,8 @@ function updateGamepadActions(pad: Gamepad | null): void {
   if (editing) {
     agentCycleHold = null;
     if (editorAwaitingApply) return;
-    if (justPressed & GamepadButton.circle) cancelLayoutEditor();
-    else if (justPressed & GamepadButton.triangle) applyLayoutEditor();
+    if (justPressed & GamepadButton.triangle) cancelLayoutEditor();
+    else if (justPressed & GamepadButton.circle) applyLayoutEditor();
     else if (justPressed & GamepadButton.square) undoEditorEdit();
     else if (justPressed & GamepadButton.cross) {
       gamepadEditorAiming = true;
