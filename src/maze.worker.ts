@@ -1,5 +1,6 @@
 import * as ort from 'onnxruntime-web';
 import { applyMazeActions, bestMazeAction } from './maze-motion';
+import { createMazeRandom, fillMazeVoteNoise } from './maze-random';
 import { MAZE_HEIGHT, MAZE_MODEL_SLOTS, MAZE_WIDTH, defaultMazeConfig, validateMazeConfig, type MazeConfig } from './maze-scenario';
 
 const ROUNDS = 4;
@@ -24,7 +25,7 @@ type MazeCore = {
   executedActionsPointer: () => number;
 };
 
-type Command = { type: 'configure'; config: MazeConfig; revision: number } | { type: 'advance'; revision: number };
+type Command = { type: 'configure'; config: MazeConfig; seed: number; revision: number } | { type: 'advance'; revision: number };
 
 const scope = self as unknown as {
   postMessage: (message: unknown) => void;
@@ -45,12 +46,16 @@ let initialized = false;
 let pending: Promise<void> = Promise.resolve();
 let revision = 0;
 let latestRevision = 0;
+let voteRandom: (() => number) | null = null;
+let goalRandom = createMazeRandom(0);
 
 const observations = new BigInt64Array(MODEL_SLOTS * OBS_TOKENS);
 const chat = new BigInt64Array(MODEL_SLOTS * CHAT_SLOTS);
+const voteNoise = new Float32Array(ROUNDS * MODEL_SLOTS * ACTIONS);
 const feeds = {
   observations: new ort.Tensor('int64', observations, [1, MODEL_SLOTS, OBS_TOKENS]),
   chat: new ort.Tensor('int64', chat, [1, MODEL_SLOTS, CHAT_SLOTS]),
+  vote_noise: new ort.Tensor('float32', voteNoise, [ROUNDS, MODEL_SLOTS, ACTIONS]),
 };
 
 function post(message: object): void { scope.postMessage({ ...message, revision }); }
@@ -68,7 +73,7 @@ async function loadCore(): Promise<MazeCore> {
 async function loadModel(): Promise<ort.InferenceSession> {
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.simd = true;
-  const url = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-comm-trace.onnx`, self.location.origin);
+  const url = new URL(`${import.meta.env.BASE_URL}runtime/fastdmm-0.8m-comm-trace.onnx?v=4`, self.location.origin);
   post({ type: 'status', text: 'Loading DMM-0.8M trace on WASM…' });
   return ort.InferenceSession.create(url.href, { executionProviders: ['wasm'] });
 }
@@ -138,6 +143,7 @@ async function infer(): Promise<void> {
   const chat32 = new Int32Array(memory, core.chatPointer(), chat.length);
   for (let i = 0; i < observations.length; i++) observations[i] = BigInt(obs32[i]);
   for (let i = 0; i < chat.length; i++) chat[i] = BigInt(chat32[i]);
+  if (voteRandom) fillMazeVoteNoise(voteNoise, voteRandom);
   const started = performance.now();
   const output = await session.run(feeds);
   let trace: number[];
@@ -190,7 +196,7 @@ function nextGoal(agent: number): number {
   const choices = queue.filter((cell) => cell !== positions[agent] && !used.has(cell));
   const fallback = queue.filter((cell) => cell !== positions[agent]);
   const candidates = choices.length ? choices : fallback;
-  return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : positions[agent];
+  return candidates.length ? candidates[Math.floor(goalRandom() * candidates.length)] : positions[agent];
 }
 
 async function handle(command: Command): Promise<void> {
@@ -202,6 +208,9 @@ async function handle(command: Command): Promise<void> {
     }
     if (revision !== latestRevision) return;
     config = command.config;
+    voteRandom = command.seed === 0 ? null : createMazeRandom(command.seed);
+    goalRandom = createMazeRandom(command.seed ^ 0x9e3779b9);
+    voteNoise.fill(0);
     resetScenario();
     post({ type: 'status', text: 'Computing the first communication trace…' });
     await infer();
