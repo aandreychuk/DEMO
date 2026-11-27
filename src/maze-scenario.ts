@@ -42,7 +42,7 @@ const fifteenStart: readonly number[] = [
   5, 1, 2, 3,
   9, 11, 6, 4,
   10, 12, 7, 8,
-  13, 14, 15, 0,
+  0, 0, 0, 0,
 ];
 
 function fifteenRoutes(seed: number): MazeRoutes {
@@ -53,8 +53,8 @@ function fifteenRoutes(seed: number): MazeRoutes {
     const j = Math.floor(random() * (i + 1));
     [goals[i], goals[j]] = [goals[j], goals[i]];
   }
-  // The last shuffled cell has no agent's goal.
-  return goals.slice(0, -1).map((goal, i) => [cell(fifteenStart.indexOf(i + 1)), goal]);
+  const agentCount = fifteenStart.filter((agent) => agent !== 0).length;
+  return goals.slice(0, agentCount).map((goal, i) => [cell(fifteenStart.indexOf(i + 1)), goal]);
 }
 
 const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
