@@ -34,6 +34,20 @@ const border = '###############';
 const hall = '#.............#';
 const crossArm = '#######.#######';
 const rooms = '#......#......#';
+const fifteenRoom = '######....#####';
+const fifteenStart: readonly number[] = [
+  5, 1, 2, 3,
+  9, 11, 6, 4,
+  10, 12, 7, 8,
+  13, 14, 15, 0,
+];
+
+function fifteenRoutes(): MazeRoutes {
+  const cell = (index: number) => [6 + index % 4, 4 + Math.floor(index / 4)] as const;
+  // Goals are numbered left to right, top to bottom. Zero marks the vacant cell.
+  return Array.from({ length: 15 }, (_, i) => [cell(fifteenStart.indexOf(i + 1)), cell(i)]);
+}
+
 const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
   {
     id: 'passing',
@@ -49,6 +63,11 @@ const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes:
     id: 'rooms',
     rows: [border, rooms, rooms, rooms, rooms, hall, rooms, rooms, rooms, rooms, border],
     routes: [[[2, 3], [11, 3]], [[4, 8], [11, 8]], [[12, 7], [2, 7]], [[11, 3], [2, 4]]],
+  },
+  {
+    id: 'fifteen',
+    rows: [border, border, border, border, fifteenRoom, fifteenRoom, fifteenRoom, fifteenRoom, border, border, border],
+    routes: fifteenRoutes(),
   },
 ];
 

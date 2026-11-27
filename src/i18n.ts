@@ -173,6 +173,7 @@ const RU: Record<string, string> = {
   'Head-on passage': 'Встречный проход',
   'Crossroads': 'Перекрёсток',
   'Two rooms': 'Две комнаты',
+  '15 Puzzle': 'Пятнашки',
   'Custom scenario': 'Свой сценарий',
   'One-shot without PIBT. The run ends when all agents are at their goals at the same time.': 'One-shot без PIBT. Прогон завершается, когда все агенты одновременно находятся на своих целях.',
   'All goals reached': 'Все цели достигнуты',
