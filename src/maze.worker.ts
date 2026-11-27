@@ -37,9 +37,9 @@ let session: ort.InferenceSession;
 let config = defaultMazeConfig();
 let positions = new Int32Array(0);
 let goals = new Int32Array(0);
-let finished = new Uint8Array(0);
 let walls = new Set<number>();
 let plannedActions: number[] = [];
+let oneShotNextPositions: Int32Array = new Int32Array(0);
 let action = 0;
 const backend = 'WASM';
 let initialized = false;
@@ -87,33 +87,34 @@ function resetScenario(): void {
   for (const cell of config.walls) core.setWall(cell, 1);
   positions = Int32Array.from(config.agents, (agent) => agent.start);
   goals = Int32Array.from(config.agents, (agent) => agent.goal!);
-  finished = new Uint8Array(agents);
-  for (let i = 0; i < agents; i++) {
-    if (positions[i] !== goals[i]) continue;
-    if (config.lifelong) goals[i] = nextGoal(i);
-    else finished[i] = 1;
-  }
+  if (config.lifelong) assignNewGoals();
   action = 0;
+}
+
+function allGoalsOccupied(): boolean {
+  return positions.every((position, agent) => position === goals[agent]);
 }
 
 function syncCore(): void {
   core.setTow(-1, -1, -1, -1, 0);
   for (let i = 0; i < positions.length; i++) {
-    core.setAgentState(i, positions[i], goals[i], 0, 0, finished[i]);
+    core.setAgentState(i, positions[i], goals[i], 0, 0, 0);
   }
 }
 
 function publishSnapshot(trace: number[], votes: number[], chat: number[], inferenceMs: number, solved = false): void {
   post({
     type: 'snapshot', action, positions: Array.from(positions), goals: Array.from(goals),
-    chat, trace, votes, plannedActions, finished: Array.from(finished), solved, inferenceMs, backend,
+    chat, trace, votes, plannedActions, solved, inferenceMs, backend,
   });
 }
 
 function chooseActions(trace: number[]): number[] {
   const final = trace.slice((ROUNDS - 1) * positions.length * ACTIONS);
   if (!config.lifelong) {
-    return Array.from(finished, (done, i) => done ? 0 : bestMazeAction(final.slice(i * ACTIONS, (i + 1) * ACTIONS)));
+    const requested = Array.from(positions, (_, i) => bestMazeAction(final.slice(i * ACTIONS, (i + 1) * ACTIONS)));
+    oneShotNextPositions = applyMazeActions(positions, requested, walls);
+    return requested.map((move, i) => oneShotNextPositions[i] === positions[i] ? 0 : move);
   }
   const probabilities = new Float32Array(core.memory.buffer, core.probabilitiesPointer(), positions.length * ACTIONS);
   for (let agent = 0; agent < positions.length; agent++) {
@@ -131,7 +132,7 @@ function chooseActions(trace: number[]): number[] {
 }
 
 async function infer(): Promise<void> {
-  if (!config.lifelong && finished.every((value) => value !== 0)) {
+  if (!config.lifelong && allGoalsOccupied()) {
     plannedActions = [];
     publishSnapshot([], [], Array(positions.length * CHAT_SLOTS).fill(-1), 0, true);
     return;
@@ -199,6 +200,12 @@ function nextGoal(agent: number): number {
   return candidates.length ? candidates[Math.floor(goalRandom() * candidates.length)] : positions[agent];
 }
 
+function assignNewGoals(): void {
+  for (let i = 0; i < positions.length; i++) {
+    if (positions[i] === goals[i]) goals[i] = nextGoal(i);
+  }
+}
+
 async function handle(command: Command): Promise<void> {
   if (command.type === 'configure') {
     if (!initialized) {
@@ -218,16 +225,11 @@ async function handle(command: Command): Promise<void> {
   }
   if (config.lifelong) {
     positions.set(new Int32Array(core.memory.buffer, core.nextPositionsPointer(), positions.length));
+    assignNewGoals();
   } else {
-    if (finished.every((value) => value !== 0)) return;
-    const next = applyMazeActions(positions, plannedActions, walls);
-    for (let i = 0; i < positions.length; i++) core.recordAction(i, next[i] === positions[i] ? 0 : plannedActions[i]);
-    positions.set(next);
-  }
-  for (let i = 0; i < positions.length; i++) {
-    if (positions[i] !== goals[i]) continue;
-    if (config.lifelong) goals[i] = nextGoal(i);
-    else finished[i] = 1;
+    if (allGoalsOccupied()) return;
+    for (let i = 0; i < positions.length; i++) core.recordAction(i, plannedActions[i]);
+    positions.set(oneShotNextPositions);
   }
   action++;
   await infer();

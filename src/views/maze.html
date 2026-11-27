@@ -36,7 +36,7 @@
   <main class="maze-main">
     <section class="maze-stage glass" aria-label="Mini maze and communicating agents">
       <div class="maze-stage-heading">
-        <div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Arrows show the agents’ intents. Lines show who can exchange messages. Agents move after the fourth round.</p></div>
+        <div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Arrows show intents during communication and the next move after round four. Lines show who can exchange messages.</p></div>
         <div class="maze-stage-controls">
           <form id="maze-seed-form" class="maze-seed">
             <label for="maze-seed">Seed</label>
@@ -61,7 +61,7 @@
       <section class="maze-votes-section" hidden>
         <div class="maze-section-title"><h3>Votes by round</h3></div>
         <div id="maze-votes" class="maze-votes" role="group" aria-label="Votes and final intent scores for the selected agent"></div>
-        <div id="maze-decision" class="maze-decision" hidden><small>Chosen action</small><strong id="maze-chosen-action"></strong></div>
+        <div id="maze-decision" class="maze-decision" hidden><small>Next move</small><strong id="maze-chosen-action"></strong></div>
       </section>
       <section class="maze-neighbors-section" hidden><div class="maze-section-title"><h3>Message sources</h3><small id="maze-neighbor-count">0 agents</small></div><div id="maze-neighbors" class="maze-neighbors"></div></section>
       <section class="maze-all-section"><div class="maze-section-title"><h3>Agents</h3><small id="maze-clear-selection-hint" hidden>Esc to clear selection</small></div><div id="maze-all-agents" class="maze-all-agents"></div></section>
