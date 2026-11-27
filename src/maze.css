@@ -44,7 +44,7 @@
 .maze-agent::before { content: ''; position: absolute; inset: 4px; border: 1px solid rgba(2, 24, 35, .4); border-radius: 8px; }
 .maze-agent:hover, .maze-agent.selected { transform: translateY(-3px); box-shadow: 0 7px 0 color-mix(in srgb, var(--agent-color) 50%, #052136), 0 12px 19px rgba(0,0,0,.5), 0 0 20px color-mix(in srgb, var(--agent-color) 52%, transparent); }
 .maze-agent.changed { animation: intent-pop .52s ease; }
-.maze-agent.finished { box-shadow: 0 0 0 3px rgba(91,240,182,.38), 0 0 18px rgba(91,240,182,.3); }
+.maze-agent.at-goal { box-shadow: 0 0 0 3px rgba(91,240,182,.38), 0 0 18px rgba(91,240,182,.3); }
 @keyframes intent-pop { 45% { filter: brightness(1.6); } }
 .maze-action-icon { display: inline-block; width: 1em; height: 1em; flex: none; vertical-align: -.12em; }
 .maze-agent .arrow { position: relative; z-index: 1; display: grid; place-items: center; }

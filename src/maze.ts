@@ -14,6 +14,7 @@ const ACTIONS = [
 ] as const;
 const BASE_ROUND_MS = 1300;
 const LIFELONG_NOTE = 'Votes update the intent scores. After the fourth round, the planner uses the scores to choose collision-free moves.';
+const GOAL_REACHED_ICON = '<svg class="maze-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 5 5 9-10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>';
 
 function formatIntentScore(value: number): string {
   return `${value > 0 ? '+' : ''}${formatFixed(value, 2)}`;
@@ -36,7 +37,6 @@ type Snapshot = {
   trace: number[];
   votes: number[];
   plannedActions: number[];
-  finished: number[];
   solved: boolean;
   inferenceMs: number;
   backend: string;
@@ -290,6 +290,12 @@ function zValues(frame: Snapshot, round: number, agent: number): number[] {
   return frame.trace.slice(start, start + ACTIONS.length);
 }
 
+function nextMoveName(frame: Snapshot, agent: number): string {
+  const move = frame.plannedActions[agent];
+  if (!config.lifelong && move === 0 && winner(zValues(frame, ROUNDS, agent)) !== 0) return tr('Move blocked');
+  return actionName(move);
+}
+
 function lastRecordedStep(): number {
   return (frames.length - 1) * (ROUNDS + 1) + (frames[frames.length - 1].solved ? 0 : ROUNDS);
 }
@@ -386,9 +392,9 @@ function renderVotes(frame: Snapshot, round: number, agent: number): void {
   }).join('');
   voteGrid.innerHTML = `<div></div>${headers}<div class="maze-vote-heading" title="${tr('Final intent score')}">${tr('Final score')}</div>${rows}`;
 
-  const chosen = finalScores && !frame.finished[agent] ? frame.plannedActions[agent] : undefined;
+  const chosen = finalScores ? frame.plannedActions[agent] : undefined;
   decision.hidden = chosen === undefined;
-  chosenAction.innerHTML = chosen === undefined ? '' : `${actionIcon(chosen)} ${actionName(chosen)}`;
+  chosenAction.innerHTML = chosen === undefined ? '' : `${actionIcon(chosen)} ${nextMoveName(frame, agent)}`;
 }
 
 function renderOverview(summary: string): void {
@@ -409,11 +415,10 @@ function renderAgentDetails(frame: Snapshot, round: number, agent: number): void
   agentTitle.style.color = MAZE_COLORS[agent];
   const goal = frame.goals[agent];
   const goalPosition = { x: mazeX(goal), y: mazeY(goal) };
-  agentSummary.textContent = frame.finished[agent]
-    ? fmt('Goal ({x}, {y}) reached.', goalPosition)
-    : fmt('Goal ({x}, {y}).', goalPosition);
+  const atGoal = frame.positions[agent] === goal;
+  agentSummary.textContent = fmt(atGoal ? 'At goal ({x}, {y}).' : 'Goal ({x}, {y}).', goalPosition);
   votesSection.hidden = frame.solved;
-  if (!frame.solved) renderVotes(frame, round, agent);
+  if (!votesSection.hidden) renderVotes(frame, round, agent);
 
   const sources = new Set<number>();
   for (let slot = 0; slot < 13; slot++) {
@@ -431,10 +436,12 @@ function renderInspector(frame: Snapshot, round: number): void {
   else renderAgentDetails(frame, round, selectedAgent);
 
   allAgents.innerHTML = Array.from({ length: frame.positions.length }, (_, id) => {
-    const values = zValues(frame, round, id);
-    const action = round === 0 ? 0 : winner(values);
+    const action = round === ROUNDS ? frame.plannedActions[id] : winner(zValues(frame, round, id));
+    const state = frame.solved ? tr('Goal reached') : round === ROUNDS ? nextMoveName(frame, id)
+      : round === 0 ? tr('before communication') : actionName(action);
+    const icon = frame.solved ? GOAL_REACHED_ICON : actionIcon(action);
     const selected = id === selectedAgent;
-    return `<button type="button" class="${selected ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-pressed="${selected}" aria-label="${fmt('Agent {id}: {state}', { id: String(id + 1).padStart(2, '0'), state: round === 0 ? tr('before communication') : actionName(action) })}"><span>${String(id + 1).padStart(2, '0')}</span><b>${actionIcon(action)}</b></button>`;
+    return `<button type="button" class="${selected ? 'selected' : ''}" data-agent="${id}" style="--agent-color:${MAZE_COLORS[id]}" aria-pressed="${selected}" aria-label="${fmt('Agent {id}: {state}', { id: String(id + 1).padStart(2, '0'), state })}"><span>${String(id + 1).padStart(2, '0')}</span><b>${icon}</b></button>`;
   }).join('');
   for (const button of allAgents.querySelectorAll<HTMLButtonElement>('button')) {
     button.addEventListener('click', () => { selectedAgent = Number(button.dataset.agent); render(); });
@@ -485,17 +492,19 @@ function render(): void {
     if (changed) changes++;
     atCell(agent, frame.positions[i], .13);
     atCell(goalNode, frame.goals[i], .21);
-    agent.classList.toggle('finished', frame.finished[i] === 1);
+    agent.classList.toggle('at-goal', frame.positions[i] === frame.goals[i]);
     agent.classList.remove('changed');
     if (changed) { void agent.offsetWidth; agent.classList.add('changed'); }
-    agent.querySelector('.arrow')!.innerHTML = actionIcon(frame.finished[i] === 1 || round === 0 ? 0 : currentAction);
-    agent.title = frame.finished[i] === 1
+    agent.querySelector('.arrow')!.innerHTML = frame.solved ? GOAL_REACHED_ICON : actionIcon(round === ROUNDS ? frame.plannedActions[i] : currentAction);
+    agent.title = frame.solved
       ? fmt('Agent {id}: goal reached', { id: i + 1 })
-      : round === 0
-        ? fmt('Agent {id}: awaiting communication', { id: i + 1 })
-        : fmt('Agent {id}, intent {action} ({value})', {
-          id: i + 1, action: actionName(currentAction).toLowerCase(), value: formatIntentScore(current[currentAction]),
-        });
+      : round === ROUNDS
+        ? fmt('Agent {id}: {state}', { id: i + 1, state: nextMoveName(frame, i) })
+        : round === 0
+          ? fmt('Agent {id}: awaiting communication', { id: i + 1 })
+          : fmt('Agent {id}, intent {action} ({value})', {
+            id: i + 1, action: actionName(currentAction).toLowerCase(), value: formatIntentScore(current[currentAction]),
+          });
   }
   lastChangedIntents = changes;
   renderRoundCopy(frame, round, changes);
@@ -510,7 +519,7 @@ function render(): void {
 
 function renderModelNote(): void {
   modelNote.textContent = tr(config.lifelong ? LIFELONG_NOTE
-    : 'One-shot without PIBT. Agents follow the model’s decisions and stop at their goals.');
+    : 'One-shot without PIBT. The run ends when all agents are at their goals at the same time.');
 }
 
 function startScenario(play = true): void {
