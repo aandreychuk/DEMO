@@ -23,7 +23,7 @@ class CommunicationTrace(nn.Module):
         self.model = model
 
     def forward(
-        self, observations: Tensor, chat: Tensor
+        self, observations: Tensor, chat: Tensor, vote_noise: Tensor
     ) -> tuple[Tensor, Tensor]:
         model = self.model
         batch, agents, _ = observations.shape
@@ -35,11 +35,11 @@ class CommunicationTrace(nn.Module):
         ).to(dtype)
         rounds = []
         votes = []
-        for _ in range(model.config.n_comm_rounds):
+        for round_index in range(model.config.n_comm_rounds):
             logits, h = model._run_round(z, h, chat, key, value, padding)
-            # Match deterministic_zero_act's optimized deployment path exactly.
+            # Zero noise recovers the vote in deterministic_zero_act.
             logits = torch.where(logits.eq(logits), logits, 0.0)
-            vote = logits.argmax(dim=-1)
+            vote = (logits + vote_noise[round_index].reshape_as(logits)).argmax(dim=-1)
             votes.append(vote.reshape(batch, agents)[0].to(torch.float32))
             # This is algebraically the centred log of a smoothed one-hot.
             # Writing it directly keeps ONNX optimization from dropping the
@@ -64,20 +64,21 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model, checkpoint = load_model(checkpoint_path, torch.device("cpu"))
     observations, chat = sample_inputs(args.agents, torch.device("cpu"))
+    vote_noise = torch.zeros(model.config.n_comm_rounds, args.agents, 5)
     reference = model.deterministic_zero_act(observations, chat)[0].detach().numpy()
     for module in model.modules():
         if isinstance(module, (ExplicitSDPASelfAttention, QueryCrossAttentionBlock)):
             module.onnx_explicit_attention = True
     wrapper = CommunicationTrace(model).eval()
     with torch.inference_mode():
-        expected_z, expected_votes = wrapper(observations, chat)
+        expected_z, expected_votes = wrapper(observations, chat, vote_noise)
         expected_z = expected_z.numpy()
         expected_votes = expected_votes.numpy()
         torch.onnx.export(
             wrapper,
-            (observations, chat),
+            (observations, chat, vote_noise),
             output_path,
-            input_names=("observations", "chat"),
+            input_names=("observations", "chat", "vote_noise"),
             output_names=("round_z", "round_votes"),
             opset_version=20,
             dynamo=True,
@@ -92,6 +93,7 @@ def main() -> None:
     actual_z, actual_votes = session.run(None, {
         "observations": observations.numpy(),
         "chat": chat.numpy(),
+        "vote_noise": vote_noise.numpy(),
     })
     if actual_z.shape != (model.config.n_comm_rounds, args.agents, 5):
         raise RuntimeError(f"unexpected z shape: {actual_z.shape}")
@@ -108,12 +110,13 @@ def main() -> None:
         )
     output_path.with_suffix(output_path.suffix + ".json").write_text(
         json.dumps({
-            "schema": "fastdmm-communication-z-and-votes/v3",
+            "schema": "fastdmm-communication-z-and-votes/v4",
             "checkpoint": checkpoint_path.name,
             "checkpoint_sha256": sha256(checkpoint_path),
             "checkpoint_step": checkpoint.get("val_step", checkpoint.get("iter_num")),
             "agents": args.agents,
             "rounds": model.config.n_comm_rounds,
+            "vote_noise": "float32[round, agent, action] added to vote logits",
             "outputs": ["round_z[round, agent, action]", "round_votes[round, agent]"],
             "max_abs_error": max_abs,
             "final_max_abs_error": final_max_abs,

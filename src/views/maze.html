@@ -35,7 +35,17 @@
 
   <main class="maze-main">
     <section class="maze-stage glass" aria-label="Mini maze and communicating agents">
-      <div class="maze-stage-heading"><div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Arrows show the agents’ intents. Lines show who can exchange messages. Agents move after the fourth round.</p></div><div class="maze-stage-counter"><small>Action</small><strong id="maze-action">001</strong><small>Round</small><strong id="maze-round">0 / 4</strong></div></div>
+      <div class="maze-stage-heading">
+        <div><p class="maze-kicker">Live policy trace</p><h1>The decision before the move</h1><p>Arrows show the agents’ intents. Lines show who can exchange messages. Agents move after the fourth round.</p></div>
+        <div class="maze-stage-controls">
+          <form id="maze-seed-form" class="maze-seed">
+            <label for="maze-seed">Seed</label>
+            <input id="maze-seed" type="number" min="0" max="4294967295" step="1" value="0" required>
+            <button type="submit">Apply</button>
+          </form>
+          <div class="maze-stage-counter"><small>Action</small><strong id="maze-action">001</strong><small>Round</small><strong id="maze-round">0 / 4</strong></div>
+        </div>
+      </div>
       <div id="maze-solved" class="maze-solved" hidden>✓ Solved — every agent reached its goal</div>
       <div class="maze-viewport">
         <div id="maze-board" class="maze-board" aria-label="15 by 11 cell maze">

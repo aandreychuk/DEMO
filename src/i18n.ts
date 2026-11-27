@@ -264,6 +264,8 @@ const RU: Record<string, string> = {
   'Arrows show the agents’ intents. Lines show who can exchange messages. Agents move after the fourth round.': 'Стрелки показывают намерения агентов. Линии показывают, кто может обмениваться сообщениями. Агенты двигаются после четвёртого раунда.',
   'Action': 'Действие',
   'Round': 'Раунд',
+  'Seed': 'Сид',
+  'Apply': 'Применить',
   '✓ Solved — every agent reached its goal': '✓ Решено — все агенты достигли целей',
   '15 by 11 cell maze': 'Лабиринт 15 × 11 клеток',
   'Wall': 'Стена',

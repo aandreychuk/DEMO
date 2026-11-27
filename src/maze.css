@@ -10,6 +10,14 @@
 .maze-analysis[hidden], .maze-editor[hidden], .maze-solved[hidden] { display: none; }
 .maze-stage { display: flex; flex-direction: column; overflow: hidden; }
 .maze-stage-heading { display: flex; justify-content: space-between; gap: 20px; padding: 20px 23px 9px; }
+.maze-stage-controls { display: flex; gap: 8px; align-self: start; flex: none; }
+.maze-seed { display: grid; grid-template-columns: auto auto; align-content: start; gap: 5px; padding: 6px 8px; border: 1px solid rgba(116, 207, 235, .11); border-radius: 8px; background: rgba(6, 24, 38, .65); }
+.maze-seed label { grid-column: 1 / -1; color: #86a8ba; font-size: 10px; }
+.maze-seed input, .maze-seed button { min-width: 0; padding: 3px 5px; border: 1px solid rgba(116, 207, 235, .2); border-radius: 5px; background: #0c2331; color: #dffaff; font: inherit; font-size: 11px; }
+.maze-seed input { width: 12ch; font-variant-numeric: tabular-nums; }
+.maze-seed button { cursor: pointer; }
+.maze-seed button:hover:not(:disabled) { border-color: #54d6ec; }
+.maze-seed :disabled { opacity: .5; cursor: default; }
 .maze-kicker { margin: 0 0 7px; color: #4fbdde; font-size: 10px; font-weight: 700; letter-spacing: .07em; }
 .maze-stage h1 { margin: 0; font-size: clamp(20px, 2vw, 27px); font-weight: 600; letter-spacing: -.04em; }
 .maze-stage-heading p:last-child { max-width: 680px; margin: 7px 0 0; color: #86a8ba; font-size: 11px; line-height: 1.5; }
@@ -128,4 +136,4 @@ button.maze-vote-heading:hover, .maze-vote-heading[aria-current='step'] { color:
 #maze-preset { flex: none; height: 36px; max-width: 165px; padding: 0 7px; border-radius: 7px; font: 700 10px Inter, system-ui, sans-serif; color-scheme: dark; }
 @media (max-width: 1030px) { .maze-main { grid-template-columns: minmax(0, 1fr) 320px; } }
 @media (max-width: 850px) { #maze-app { height: auto; grid-template-rows: auto auto 84px; } .maze-main { grid-template-columns: 1fr; } .maze-stage { min-height: 565px; } .maze-analysis { min-height: 470px; max-height: 640px; } }
-@media (max-width: 760px) { #maze-app { gap: 10px; } .maze-stage-heading { padding: 15px; } .maze-stage-counter { display: none; } .maze-player { padding: 0 8px; gap: 5px; } .maze-speed { width: 90px; } }
+@media (max-width: 760px) { #maze-app { gap: 10px; } .maze-stage-heading { padding: 15px; flex-wrap: wrap; } .maze-player { padding: 0 8px; gap: 5px; } .maze-speed { width: 90px; } }

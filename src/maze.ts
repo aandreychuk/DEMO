@@ -79,12 +79,16 @@ const editorMessage = element('#maze-editor-message');
 const editorLifelong = element<HTMLInputElement>('#maze-lifelong');
 const solvedBanner = element('#maze-solved');
 const presetSelect = element<HTMLSelectElement>('#maze-preset');
+const seedForm = element<HTMLFormElement>('#maze-seed-form');
+const seedInput = element<HTMLInputElement>('#maze-seed');
+const applySeed = seedForm.querySelector('button')!;
 const customPresetOption = element<HTMLOptionElement>('#maze-preset option[value="custom"]');
 const modelNote = element('#maze-model-note');
 
 let worker: Worker | null = null;
 let revision = 0;
 let config = defaultMazeConfig();
+let seed = 0;
 let draft: MazeConfig | null = null;
 let editorAgent = 0;
 let editorTool: 'wall' | 'erase' | 'agent' | 'start' | 'goal' = 'wall';
@@ -207,6 +211,7 @@ function openEditor(): void {
   draft = cloneMazeConfig(config);
   editorAgent = selectedAgent ?? 0;
   presetSelect.disabled = true;
+  seedInput.disabled = applySeed.disabled = true;
   editorTool = 'wall';
   setEditorMessage('');
   analysis.hidden = true;
@@ -217,6 +222,7 @@ function openEditor(): void {
 function closeEditor(): void {
   draft = null;
   presetSelect.disabled = false;
+  seedInput.disabled = applySeed.disabled = false;
   editor.hidden = true;
   analysis.hidden = false;
   board.classList.remove('editing');
@@ -507,7 +513,7 @@ function renderModelNote(): void {
     : 'One-shot without PIBT. Agents follow the model’s decisions and stop at their goals.');
 }
 
-function startScenario(): void {
+function startScenario(play = true): void {
   frames = [];
   cursor = 0;
   selectedAgent = null;
@@ -533,9 +539,9 @@ function startScenario(): void {
   element('#maze-timeline-label').textContent = tr('Before communication');
   element('#maze-step-label').textContent = fmt('Step {step}', { step: 0 });
   element('#maze-changed').textContent = '';
-  setPlaying(true);
+  setPlaying(play);
   worker ??= createWorker();
-  worker.postMessage({ type: 'configure', config, revision: ++revision });
+  worker.postMessage({ type: 'configure', config, seed, revision: ++revision });
 }
 
 function createWorker(): Worker {
@@ -594,6 +600,14 @@ speedInput.addEventListener('input', () => {
   schedule();
 });
 element<HTMLButtonElement>('#maze-reset').addEventListener('click', () => { if (!draft) startScenario(); });
+seedForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (draft || !seedInput.validity.valid) return;
+  const nextSeed = seedInput.valueAsNumber;
+  if (seed === nextSeed) return;
+  seed = nextSeed;
+  startScenario(playing);
+});
 presetSelect.addEventListener('change', () => {
   const next = mazePresetConfig(presetSelect.value);
   if (draft || !next) return;
