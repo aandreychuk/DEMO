@@ -615,10 +615,11 @@ seedForm.addEventListener('submit', (event) => {
   const nextSeed = seedInput.valueAsNumber;
   if (seed === nextSeed) return;
   seed = nextSeed;
+  config = mazePresetConfig(presetSelect.value, seed) ?? config;
   startScenario(playing);
 });
 presetSelect.addEventListener('change', () => {
-  const next = mazePresetConfig(presetSelect.value);
+  const next = mazePresetConfig(presetSelect.value, seed);
   if (draft || !next) return;
   customPresetOption.hidden = true;
   config = next;

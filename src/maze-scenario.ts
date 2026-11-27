@@ -1,3 +1,5 @@
+import { createMazeRandom } from './maze-random';
+
 export const MAZE_ROWS = [
   '###############',
   '#.....#.......#',
@@ -35,6 +37,7 @@ const hall = '#.............#';
 const crossArm = '#######.#######';
 const rooms = '#......#......#';
 const fifteenRoom = '######....#####';
+const fifteenRows = [border, border, border, border, fifteenRoom, fifteenRoom, fifteenRoom, fifteenRoom, border, border, border];
 const fifteenStart: readonly number[] = [
   5, 1, 2, 3,
   9, 11, 6, 4,
@@ -42,10 +45,16 @@ const fifteenStart: readonly number[] = [
   13, 14, 15, 0,
 ];
 
-function fifteenRoutes(): MazeRoutes {
+function fifteenRoutes(seed: number): MazeRoutes {
   const cell = (index: number) => [6 + index % 4, 4 + Math.floor(index / 4)] as const;
-  // Goals are numbered left to right, top to bottom. Zero marks the vacant cell.
-  return Array.from({ length: 15 }, (_, i) => [cell(fifteenStart.indexOf(i + 1)), cell(i)]);
+  const goals = fifteenStart.map((_, index) => cell(index));
+  const random = createMazeRandom(seed ^ 0xa511e9b3);
+  for (let i = goals.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [goals[i], goals[j]] = [goals[j], goals[i]];
+  }
+  // The last shuffled cell has no agent's goal.
+  return goals.slice(0, -1).map((goal, i) => [cell(fifteenStart.indexOf(i + 1)), goal]);
 }
 
 const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes: MazeRoutes }> = [
@@ -64,11 +73,6 @@ const MAZE_PRESETS: ReadonlyArray<{ id: string; rows: readonly string[]; routes:
     rows: [border, rooms, rooms, rooms, rooms, hall, rooms, rooms, rooms, rooms, border],
     routes: [[[2, 3], [11, 3]], [[4, 8], [11, 8]], [[12, 7], [2, 7]], [[11, 3], [2, 4]]],
   },
-  {
-    id: 'fifteen',
-    rows: [border, border, border, border, fifteenRoom, fifteenRoom, fifteenRoom, fifteenRoom, border, border, border],
-    routes: fifteenRoutes(),
-  },
 ];
 
 export const MAZE_COLORS = [
@@ -82,8 +86,9 @@ export function defaultMazeConfig(): MazeConfig {
   return configFromRows(MAZE_ROWS, MAZE_ROUTES, true);
 }
 
-export function mazePresetConfig(id: string): MazeConfig | undefined {
+export function mazePresetConfig(id: string, seed = 0): MazeConfig | undefined {
   if (id === 'default') return defaultMazeConfig();
+  if (id === 'fifteen') return configFromRows(fifteenRows, fifteenRoutes(seed), false);
   const preset = MAZE_PRESETS.find((entry) => entry.id === id);
   if (preset) return configFromRows(preset.rows, preset.routes, false);
 }
